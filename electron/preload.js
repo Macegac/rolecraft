@@ -1,5 +1,5 @@
 /**
- * EllipsisLM Electron Preload Script
+ * Rolecraft Electron Preload Script
  * 
  * Runs in an isolated context. Uses contextBridge to safely expose
  * a limited set of Node/IPC capabilities to the HTML renderer

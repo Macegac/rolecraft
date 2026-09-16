@@ -232,7 +232,7 @@ Example output: "Atmospheric dark ambient instrumental, 70 BPM, deep synthesizer
                         'Authorization': `Bearer ${apiKey}`,
                         'Content-Type': 'application/json',
                         'HTTP-Referer': window.location.href,
-                        'X-Title': 'Ellipsis LM'
+                        'X-Title': 'Rolecraft'
                     },
                     body: JSON.stringify({
                         model: model,

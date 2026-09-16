@@ -1,27 +1,26 @@
-# EllipsisLM: Private, Local-First AI Roleplay
+# Rolecraft: Private, Local-First AI Roleplay
 
-EllipsisLM is a private, local-first roleplay interface designed to give users total control over their stories, characters, and AI models. It runs as a self-contained application that handles everything from hierarchical story management to spatial world maps and background narrative agents.
+Rolecraft is a private, local-first roleplay interface designed to give users total control over their stories, characters, and AI models. It runs as a self-contained application that handles everything from hierarchical story management to spatial world maps and background narrative agents.
 
-Unlike traditional chat interfaces that are limited to linear exchanges, EllipsisLM provides a framework for building complex worlds that remain consistent over long-running roleplays.
+Unlike traditional chat interfaces that are limited to linear exchanges, Rolecraft provides a framework for building complex worlds that remain consistent over long-running roleplays.
 
 
-![EllipsisLM Hero Shot](assets/screenshots/hero_shot.png)
+![Rolecraft Hero Shot](assets/screenshots/hero_shot.png)
 
 ---
 
 ## Getting Started
 
-### Browser Version
-The entire app is a single HTML file. You can run it instantly from GitHub Pages:
-[Open EllipsisLM](https://pacmanincarnate.github.io/EllipsisLM/)
+### Browser (phone or PC)
+Rolecraft runs straight from GitHub Pages with no install. The link will be added here once the site is published.
+Add it to your home screen to use it like an app; it keeps working offline once loaded.
+
+### Running it yourself
+Serve the folder with any static web server (for example `python -m http.server`) and open `index.html`.
+Opening the file directly without a server also works in most browsers, but offline caching needs a server.
 
 ### Desktop App
-For the best experience on Windows or macOS, use the Electron version. It will automate the download and running of KoboldCPP for you.
-[Download Latest Release](https://github.com/pacmanincarnate/EllipsisLM/releases)
-
-### Single File Download
-You can download `index.html` directly and open it in any modern browser. It works offline and stores all your data in your browser's local cache.
-[Download index.html](https://github.com/pacmanincarnate/EllipsisLM/blob/main/index.html)
+The Electron version can download and run KoboldCPP for you. Build it with `npm install` then `npm run dist`.
 
 ---
 
@@ -51,7 +50,7 @@ This pipeline ensures that every part of your world—from the characters' pasts
 
 ## Library and Data Management
 
-EllipsisLM views every character as part of a larger world that can be explored through multiple roleplay narratives.
+Rolecraft views every character as part of a larger world that can be explored through multiple roleplay narratives.
 
 ### The Story Hierarchy
 We use a tiered structure to manage complex, branching narratives without cluttering your library.
@@ -82,7 +81,7 @@ This hierarchy allows you to start multiple "runs" of the same scenario without 
 ## The Roleplay Engine
 
 ### Characters and Narrator Mode
-EllipsisLM supports unlimited characters in any given story.
+Rolecraft supports unlimited characters in any given story.
 
 ![Actor and Narrator Management](assets/screenshots/character_roster.png)
 
@@ -154,12 +153,12 @@ EllipsisLM supports unlimited characters in any given story.
 
 ## Backends and Privacy
 
-EllipsisLM is backend-agnostic. You can switch between local and cloud models depending on your hardware.
+Rolecraft is backend-agnostic. You can switch between local and cloud models depending on your hardware.
 
 - **Local Models**: Native support for **KoboldCPP** and **LM Studio**. All processing happens on your machine with 100% privacy.
 - **Cloud Models**: Support for **Google Gemini** and **OpenRouter** (for access to GPT, Claude, etc.) using your own API keys.
 
-| Feature | Cloud-Only Apps | EllipsisLM |
+| Feature | Cloud-Only Apps | Rolecraft |
 | :--- | :--- | :--- |
 | **Data Privacy** | Conversations may be logged/trained on. | Stored 100% locally. |
 | **Content Filtering** | Often restrictive and censored. | No built-in filters; total creative freedom. |
@@ -170,7 +169,7 @@ EllipsisLM is backend-agnostic. You can switch between local and cloud models de
 
 ## Backend Setup Guide
 
-To use EllipsisLM, you need to connect it to an AI model. You can choose between **Cloud APIs** (easiest to set up) or **Local Backends** (completely private and free if you have the hardware). The installed version of EllipsisLM will allow you to automatically download and run KoboldCPP from within the app, so you don't need to manually download or start it separately from EllipsisLM to run locally, and for the html version, you also have the option to run a model fully in your browser using the built-in WebLLM.
+To use Rolecraft, you need to connect it to an AI model. You can choose between **Cloud APIs** (easiest to set up) or **Local Backends** (completely private and free if you have the hardware). The installed version of Rolecraft will allow you to automatically download and run KoboldCPP from within the app, so you don't need to manually download or start it separately from Rolecraft to run locally, and for the html version, you also have the option to run a model fully in your browser using the built-in WebLLM.
 
 ### 1. Google Gemini (Cloud)
 Google offers a generous free tier for their Gemini models.
@@ -178,7 +177,7 @@ Google offers a generous free tier for their Gemini models.
 2.  Sign in with your Google account.
 3.  Click **"Get API key"** in the left sidebar.
 4.  Create a new API key in a new or existing project.
-5.  **In EllipsisLM**: Open **Global Settings** (gear icon) > **AI Backend** > Select **Google Gemini** > Paste your key into the **Gemini API Key** field.
+5.  **In Rolecraft**: Open **Global Settings** (gear icon) > **AI Backend** > Select **Google Gemini** > Paste your key into the **Gemini API Key** field.
 
 * Note: Gemini is necessary for TTS functionality.
 
@@ -186,20 +185,20 @@ Google offers a generous free tier for their Gemini models.
 OpenRouter provides access to dozens of models (Claude, GPT-4, Llama 3) through a single API.
 1.  Visit **[OpenRouter Keys](https://openrouter.ai/keys)**.
 2.  Sign in and click **"Create Key"**.
-3.  Name your key (e.g., "EllipsisLM") and click **"Create"**.
+3.  Name your key (e.g., "Rolecraft") and click **"Create"**.
 4.  **Copy your key immediately**—you won't be able to see it again.
-5.  **In EllipsisLM**: Open **Global Settings** > **AI Backend** > Select **OpenRouter** > Paste your key into the **OpenRouter API Key** field.
+5.  **In Rolecraft**: Open **Global Settings** > **AI Backend** > Select **OpenRouter** > Paste your key into the **OpenRouter API Key** field.
 
 * Note: OpenRouter is recommended for the best selection of models and features. There are generous free tiers for many models, and adding $10 in credits will increase free model limits indefinitely, and can last months if use with larger paid models and image generation.
 
 ### 3. KoboldCPP (Local)
 The preferred local backend for GGUF models on Windows and macOS.
-**Note:** The installed version of EllipsisLM will allow you to automatically download and run KoboldCPP from within the app, so you don't need to manually download or start it separately from EllipsisLM.
+**Note:** The installed version of Rolecraft will allow you to automatically download and run KoboldCPP from within the app, so you don't need to manually download or start it separately from Rolecraft.
 1.  Download the latest release from the **[Official GitHub](https://github.com/LostRuins/koboldcpp/releases)**.
 2.  Launch `koboldcpp.exe`, click **"Browse"** to select your GGUF model file.
 3.  Configure your GPU layers (if applicable) and click **"Launch"**.
 4.  By default, KoboldCPP runs at `http://localhost:5001`.
-5.  **In EllipsisLM**: Open **Global Settings** > **AI Backend** > Select **KoboldCPP**. The **API Base URL** should already be set to `http://localhost:5001`.
+5.  **In Rolecraft**: Open **Global Settings** > **AI Backend** > Select **KoboldCPP**. The **API Base URL** should already be set to `http://localhost:5001`.
 
 * Note: KoboldCPP is the recommended backend for either local text generation or local image generation.
 
@@ -210,7 +209,7 @@ A user-friendly local interface for downloading and running models.
 3.  Go to the **"Developer / Local Server"** tab (terminal icon).
 4.  Select your model and click **"Start Server"**.
 5.  By default, LM Studio runs at `http://localhost:1234`.
-6.  **In EllipsisLM**: Open **Global Settings** > **AI Backend** > Select **LM Studio**. Ensure the **LM Studio Server URL** is set to `http://localhost:1234/v1`.
+6.  **In Rolecraft**: Open **Global Settings** > **AI Backend** > Select **LM Studio**. Ensure the **LM Studio Server URL** is set to `http://localhost:1234/v1`.
 
 ---
 
@@ -225,7 +224,7 @@ leave the house even when your writing model is in the cloud.
 
 1. Load any vision-capable model in KoboldCPP or LM Studio. For KoboldCPP that means picking a
    multimodal projector (an `mmproj` file) alongside the model itself.
-2. In EllipsisLM, open **Settings → Model** and scroll to **Vision Bridge**.
+2. In Rolecraft, open **Settings → Model** and scroll to **Vision Bridge**.
 3. Choose your backend, confirm the address, and press **Test Connection**.
 4. If you would rather use a cloud describer, choose OpenRouter and name a vision model.
 
@@ -238,9 +237,9 @@ too shy about what is actually in the picture.
 If the bridge is off, unreachable, or fails for any reason, nothing breaks — you simply get the old
 behaviour, where the character tells you they cannot see the image.
 
-### Connecting to EllipsisLM
+### Connecting to Rolecraft
 Once your backend is running or your API key is ready:
-1.  Click the **Global Settings** (gear icon) in the top-right corner of EllipsisLM.
+1.  Click the **Global Settings** (gear icon) in the top-right corner of Rolecraft.
 2.  Under the **AI Backend** section, use the dropdown to select your provider.
 3.  Input your **API Key** or **Server URL** as required.
 4.  For OpenRouter or LM Studio, you can use the **Search / Browse** icons next to the model field to select from available models.
@@ -250,13 +249,17 @@ Once your backend is running or your API key is ready:
 
 ## Technical Details
 
-The core of EllipsisLM is a single "monolithic" HTML file containing 23,000+ lines of vanilla JavaScript and CSS. This design choice ensures the application remains portable and dependency-free. There are no external frameworks like React or Vue to manage; the entire state is handled through a custom reactive store.
+Rolecraft is vanilla JavaScript and CSS with no frameworks and no build step. `index.html` holds the markup and loads
+the styles in `css/` and the code in `js/` directly, so the folder you edit is exactly what gets served. The live state
+is handled through a custom reactive store.
 
-The codebase is tested via a custom test suite covering format parsing, lore triggering, and story generation stability to prevent regressions. A pre-commit hook automatically enforces technical map modularity across code updates.
+`npm test` runs the unit tests and `tools/check-files.js`, which confirms every file in `js/` and `css/` is loaded by
+`index.html` exactly once and that no name is declared twice. The pre-commit hook runs the same check.
 
 The Electron wrapper is a lightweight shell that adds desktop-specific features like auto-updating and local process management for KoboldCPP.
 
 ---
 
-## License
-EllipsisLM is open-source under the MIT License.
+## Credits and License
+Rolecraft began as a fork of [EllipsisLM](https://github.com/pacmanincarnate/EllipsisLM) by pacmanincarnate and
+contributors, and has since been restructured and extended. It is distributed under the Apache License 2.0; see `LICENSE`.

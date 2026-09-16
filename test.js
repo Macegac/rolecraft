@@ -1,4 +1,4 @@
-// EllipsisLM test runner.
+// Rolecraft test runner.
 // =====================================================================
 // HOW IT WORKS
 //
@@ -1498,4 +1498,26 @@ test('buildVisionContextBlock: instructs the model never to reveal the mechanism
     assert.ok(out.includes('[VISUAL CONTEXT]'));
     assert.ok(/never mention this/i.test(out));
     assert.ok(/described to you/i.test(out));
+});
+
+// ─── appAssetUrl ─────────────────────────────────────────────────────────
+
+test('appAssetUrl: with no page loaded, the path comes back unchanged', () => {
+    assert.equal(UTILITY.appAssetUrl('assets/demo/user.png'), 'assets/demo/user.png');
+});
+
+test('appAssetUrl: resolves against the page address, including a GitHub Pages subfolder', () => {
+    const pageUtility = vm.runInNewContext(extractBlock('UTILITY') + '\nUTILITY', {
+        URL,
+        document: { baseURI: 'https://example.github.io/rolecraft/index.html' },
+    });
+    assert.equal(pageUtility.appAssetUrl('assets/demo/user.png'), 'https://example.github.io/rolecraft/assets/demo/user.png');
+});
+
+test('appAssetUrl: resolved addresses start with http, so image code treats them as links not database keys', () => {
+    const pageUtility = vm.runInNewContext(extractBlock('UTILITY') + '\nUTILITY', {
+        URL,
+        document: { baseURI: 'http://localhost:8781/' },
+    });
+    assert.ok(pageUtility.appAssetUrl('assets/demo/kael.png').startsWith('http'));
 });

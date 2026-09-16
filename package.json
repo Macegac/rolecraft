@@ -1,8 +1,8 @@
 {
-  "name": "ellipsis-lm",
+  "name": "rolecraft",
   "version": "1.1.0",
-  "description": "EllipsisLM — AI-powered roleplay, self-hosted desktop edition.",
-  "author": "EllipsisLM",
+  "description": "Rolecraft — private AI roleplay, self-hosted desktop edition.",
+  "author": "Mario Cano",
   "main": "electron/main.js",
   "scripts": {
     "start": "electron .",
@@ -18,9 +18,9 @@
     "tailwindcss": "3.4"
   },
   "build": {
-    "appId": "com.ellipsislm.app",
-    "productName": "EllipsisLM",
-    "copyright": "Copyright © 2025 EllipsisLM",
+    "appId": "com.rolecraft.app",
+    "productName": "Rolecraft",
+    "copyright": "Copyright © 2026 Mario Cano. Based on EllipsisLM (Apache-2.0).",
     "win": {
       "target": "nsis",
       "icon": "electron/icon.ico",
@@ -39,7 +39,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "EllipsisLM"
+      "shortcutName": "Rolecraft"
     },
     "extraResources": [
       {

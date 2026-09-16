@@ -1,5 +1,5 @@
 /**
- * EllipsisLM Electron Main Process
+ * Rolecraft Electron Main Process
  *
  * Responsibilities:
  *   1. Create the application window and load the HTML app.
@@ -118,7 +118,7 @@ async function getLatestVersion() {
         const options = {
             hostname: 'api.github.com',
             path: '/repos/LostRuins/koboldcpp/releases/latest',
-            headers: { 'User-Agent': 'EllipsisLM-Desktop' }
+            headers: { 'User-Agent': 'Rolecraft-Desktop' }
         };
 
         https.get(options, (res) => {
@@ -409,8 +409,8 @@ ipcMain.handle('app:getLatestVersion', async () => {
     return new Promise((resolve, reject) => {
         const options = {
             hostname: 'api.github.com',
-            path: '/repos/pacmanincarnate/EllipsisLM/releases/latest',
-            headers: { 'User-Agent': 'EllipsisLM-Desktop' }
+            path: '/repos/Macegac/rolecraft/releases/latest',
+            headers: { 'User-Agent': 'Rolecraft-Desktop' }
         };
         https.get(options, (res) => {
             let body = '';
@@ -451,7 +451,7 @@ let appUpdateDownloader = null;
 ipcMain.handle('app:downloadUpdate', async (_event, url) => {
     const tempDir = app.getPath('temp');
     const ext = process.platform === 'darwin' ? '.dmg' : '.exe';
-    const installerPath = path.join(tempDir, `EllipsisLM_Setup_Update${ext}`);
+    const installerPath = path.join(tempDir, `Rolecraft_Setup_Update${ext}`);
 
     return new Promise((resolve, reject) => {
         const file = fs.createWriteStream(installerPath);
@@ -696,7 +696,7 @@ function createWindow() {
         height: 900,
         minWidth: 800,
         minHeight: 600,
-        title: 'EllipsisLM',
+        title: 'Rolecraft',
         backgroundColor: '#111827', // Match app background to prevent flash
         show: false,               // Don't show until ready-to-show fires
         webPreferences: {

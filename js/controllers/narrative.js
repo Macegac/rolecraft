@@ -2622,7 +2622,7 @@ Return ONLY the physical description. Write in the 3rd person. No preamble.`;
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;
-                    a.download = `Ellipsis_Scene_${Date.now()}.png`;
+                    a.download = `Rolecraft_Scene_${Date.now()}.png`;
                     document.body.appendChild(a);
                     a.click();
                     document.body.removeChild(a);

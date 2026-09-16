@@ -2483,7 +2483,7 @@ OPENING SCENE: ${firstMsg.substring(0, 200)}`;
                 }
 
                 if (format !== 'json' && format !== 'zip') {
-                    const proceed = await UIManager.showConfirmationPromise("Exporting to a non-Ellipsis format may result in data loss. Continue?");
+                    const proceed = await UIManager.showConfirmationPromise("Exporting to a non-Rolecraft format may result in data loss. Continue?");
                     if (!proceed) return;
                 }
 

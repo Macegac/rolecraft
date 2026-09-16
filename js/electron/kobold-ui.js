@@ -105,7 +105,7 @@
                      * =================================================================================================
                      * [SEC:JS:MOD:UPD]
                      * Electron Updater
-                     * Auto-update logic for the EllipsisLM Electron build.
+                     * Auto-update logic for the Rolecraft Electron build.
                      * =================================================================================================
                      */
                     let downloadedInstallerPath = null;

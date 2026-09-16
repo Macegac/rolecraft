@@ -942,7 +942,8 @@
                 if (!keyOrUrl) return null;
                 // Exclude current session blob URLs if they are not in cache (likely stale), but allow valid http/data
                 if (keyOrUrl.startsWith('data:')) return keyOrUrl;
-                if (keyOrUrl.startsWith('http') && !keyOrUrl.startsWith('blob:')) return keyOrUrl;
+                // file: covers bundled images in the Electron build, which loads index.html from disk.
+                if (keyOrUrl.startsWith('http') || keyOrUrl.startsWith('file:')) return keyOrUrl;
 
                 // Check Cache
                 if (this.RUNTIME.worldImageCache[keyOrUrl]) return this.RUNTIME.worldImageCache[keyOrUrl];
@@ -2775,7 +2776,7 @@
                 }
 
                 if (!defaultBackgroundUrl) {
-                    defaultBackgroundUrl = 'https://raw.githubusercontent.com/pacmanincarnate/EllipsisLM/main/assets/demo/hearthstone_inn.png';
+                    defaultBackgroundUrl = UTILITY.appAssetUrl('assets/demo/hearthstone_inn.png');
                 }
 
                 // Start background Url at overall background image

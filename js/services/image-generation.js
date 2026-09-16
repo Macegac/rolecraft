@@ -221,7 +221,7 @@
                             "Authorization": `Bearer ${key}`,
                             "Content-Type": "application/json",
                             "HTTP-Referer": window.location.href,
-                            "X-Title": "Ellipsis LM"
+                            "X-Title": "Rolecraft"
                         },
                         body: JSON.stringify(payload)
                     });

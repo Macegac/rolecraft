@@ -1,4 +1,4 @@
-// EllipsisLM service worker.
+// Rolecraft service worker.
 //
 // The app is split across index.html plus many js/ and css/ files. If a phone
 // served some of those from an old cache and some fresh from the network, it
@@ -8,7 +8,7 @@
 // network is unavailable. Cross-origin requests (AI providers, CDNs, fonts)
 // are left alone.
 
-const CACHE = 'ellipsis-v3';
+const CACHE = 'rolecraft-v1';
 const CORE = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 
 // Read the file list from index.html so it can never drift from what the page loads.

@@ -867,6 +867,19 @@
              * Returns the default user character, optionally inheriting from the global default persona.
              * @returns {Object}
              */
+            /**
+             * Turns a path inside the app folder (e.g. "assets/demo/user.png") into a full
+             * address. Image code treats anything not starting with http as a key into the
+             * local image database, so bundled images must be stored as full addresses.
+             * @param {string} relativePath - Path relative to index.html.
+             * @returns {string} - Absolute URL, or the path unchanged when there is no page.
+             */
+            appAssetUrl(relativePath) {
+                const base = (typeof document !== 'undefined' && document.baseURI) ? document.baseURI : '';
+                if (!base) return relativePath;
+                try { return new URL(relativePath, base).href; } catch (e) { return relativePath; }
+            },
+
             getDefaultUserCharacter() {
                 const globals = (typeof StateManager !== 'undefined' && StateManager.data && StateManager.data.globalSettings) ? StateManager.data.globalSettings : {};
                 let userChar = {
@@ -875,7 +888,7 @@
                     description: "A mysterious wandering adventurer drawn to the crossroads town of Hearthstone by rumors of the Shattered Crown — an ancient artifact of immense power, fractured into fragments and scattered across Aethermoor two centuries ago.\n\nYou wear a dark, weathered traveling cloak with a deep hood that casts your features into shadow, revealing only a grim, determined jawline and piercing eyes. Beneath the cloak, you wear rugged, practical leather armor suited for long periods on the road. A faint, almost imperceptible magical mist sometimes seems to cling to your silhouette.\n\nYou carry a weathered journal filled with sketches of Crown fragment locations and pre-Shattering runic translations. This journal was passed down to you by your mentor, a scholar who vanished mysteriously while pursuing the same quest. You are resourceful, adaptable, and driven by a quiet determination to finish your mentor's work and discover the truth behind the Crown's shattering.\n\nYou rarely speak of your past before the road, preferring to keep your companions guessing, but your skills in survival and your deep knowledge of arcane history suggest a complicated lineage.",
                     short_description: "A mysterious wandering adventurer seeking the fragments of the Shattered Crown.",
                     model_instructions: "Write a response for {character} in a creative, immersive, and descriptive style. Use second-person perspective. Describe sensory details — sights, sounds, smells — to bring the scene alive. Maintain an air of competence and quiet mystery.",
-                    is_user: true, is_active: true, image_url: 'https://raw.githubusercontent.com/pacmanincarnate/EllipsisLM/main/assets/demo/user.png', extra_portraits: [], tags: ["adventurer", "protagonist", "mysterious"], is_narrator: false,
+                    is_user: true, is_active: true, image_url: UTILITY.appAssetUrl('assets/demo/user.png'), extra_portraits: [], tags: ["adventurer", "protagonist", "mysterious"], is_narrator: false,
                     dynamic_knowledge: []
                 };
 

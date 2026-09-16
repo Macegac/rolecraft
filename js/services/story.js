@@ -440,7 +440,7 @@
             /**
              * Creates a default story and narrative for a fresh start.
              * Seeds a rich, fully-featured fantasy demo ("The Shattered Crown") that
-             * showcases all of EllipsisLM's capabilities: multi-character management,
+             * showcases all of Rolecraft's capabilities: multi-character management,
              * world map, static knowledge, dynamic knowledge (including sequential
              * multi-field entries), probability-based triggers, and a detailed opening.
              * @returns {Promise<{newStory: Object, newNarrative: Object}>}
@@ -464,7 +464,7 @@
                     ...UTILITY.getDefaultUiSettings(),
                     ...UTILITY.getDefaultSystemPrompts(),
                     ...UTILITY.getDefaultStorySettings(),
-                    creator_notes: "A demo story showcasing EllipsisLM's features. Explore the characters, lorebook, world map, and knowledge systems — then feel free to modify or delete this story and create your own!",
+                    creator_notes: "A demo story showcasing Rolecraft's features. Explore the characters, lorebook, world map, and knowledge systems — then feel free to modify or delete this story and create your own!",
                     tags: ["fantasy", "adventure", "demo"],
                     enableAnalysis: true,
                     enableAutoStaticKnowledge: true,
@@ -479,7 +479,7 @@
                     characterImageMode: 'bubble',
                     md_italic_color: '#d9737b',
                     md_italic_font: "'Lora', serif",
-                    backgroundImageURL: "https://raw.githubusercontent.com/pacmanincarnate/EllipsisLM/main/assets/demo/hearthstone_inn.png",
+                    backgroundImageURL: UTILITY.appAssetUrl("assets/demo/hearthstone_inn.png"),
 
                     // --- Characters ---
                     characters: [
@@ -500,7 +500,7 @@
                             description: "An elven mage of roughly two hundred years, though she appears no older than thirty by human reckoning. Her silver-white hair falls in a long braid over one shoulder, threaded with tiny crystal beads that catch the light. Her eyes are a striking violet, sharp and calculating, though she masks her intensity behind a wry, sardonic wit.\n\nElara presents herself as a freelance scholar researching pre-Shattering magical theory, but this is a half-truth. She is secretly a ranking operative of the Shadow Court — a clandestine order that believes the Crown's fragments must be destroyed rather than reunited, fearing any mortal who wields its full power. She has attached herself to the adventurer's quest to monitor their progress and, if necessary, sabotage the reunification.\n\nDespite her mission, Elara is not heartless. She genuinely enjoys intellectual discourse, has a dry sense of humor, and finds herself increasingly conflicted as she grows to respect her companions. She is an expert in ward magic and elemental evocation, favoring precise, elegant spellwork over raw power.\n\nSpeaks with measured eloquence, occasionally lapsing into archaic Elvish phrases when emotional. Has a weakness for honeyed mead and ancient texts.",
                             short_description: "A sharp-tongued elven mage with a hidden agenda.",
                             model_instructions: "Write as Elara Windsong — an elven mage who is intelligent, sardonic, and secretive. She speaks with elegant precision and dry wit. She occasionally uses archaic turns of phrase. She deflects personal questions with humor or counter-questions. She is privately conflicted about her secret mission. Never reveal her Shadow Court allegiance unless dramatically appropriate. In combat, describe her magic as precise and geometric — silver glyphs, crystalline barriers, focused beams of light.",
-                            is_user: false, is_active: true, image_url: 'https://raw.githubusercontent.com/pacmanincarnate/EllipsisLM/main/assets/demo/elara.png', extra_portraits: [], tags: ["elf", "mage", "secretive"],
+                            is_user: false, is_active: true, image_url: UTILITY.appAssetUrl('assets/demo/elara.png'), extra_portraits: [], tags: ["elf", "mage", "secretive"],
                             color: { base: '#312e81', bold: '#a5b4fc' }, is_narrator: false,
                             dynamic_knowledge: []
                         },
@@ -510,7 +510,7 @@
                             description: "A human ranger in his late forties, broad-shouldered and weathered by decades of life on the road. His dark hair is streaked with grey at the temples, and a jagged scar runs from his left ear to his jaw — a memento from a border skirmish he rarely discusses. He wears practical leather armor, carries a well-maintained longbow, and keeps a short sword at his hip.\n\nKael is a former soldier of the Aethermoor Compact — the loose alliance of city-states that formed after the Shattering. He left military service after a mission went catastrophically wrong, costing the lives of people under his command. He now works as a guide and tracker, preferring the company of forests to politics.\n\nHe is gruff, practical, and slow to trust, but fiercely loyal once that trust is earned. He joined the Crown quest reluctantly, persuaded by Thorne (an old friend) that the fragments' power could stabilize the increasingly dangerous Arcane Tides. He is skeptical of magic users in general and watches Elara with quiet suspicion.\n\nKael is an excellent cook (surprisingly), a skilled tracker, and has an encyclopedic knowledge of Aethermoor's wilderness. He speaks plainly and directly, with occasional flashes of dark humor.",
                             short_description: "A grizzled human ranger and reluctant hero.",
                             model_instructions: "Write as Kael Ironheart — a gruff, practical ranger and ex-soldier. He speaks directly and plainly, using short sentences. He distrusts magic and watches Elara warily. He's protective of his companions but expresses it through actions, not words. He has a dry, dark sense of humor that surfaces unexpectedly. He often references practical survival knowledge. In combat, describe his fighting as efficient and experienced — no wasted movement.",
-                            is_user: false, is_active: true, image_url: 'https://raw.githubusercontent.com/pacmanincarnate/EllipsisLM/main/assets/demo/kael.png', extra_portraits: [], tags: ["human", "ranger", "veteran"],
+                            is_user: false, is_active: true, image_url: UTILITY.appAssetUrl('assets/demo/kael.png'), extra_portraits: [], tags: ["human", "ranger", "veteran"],
                             color: { base: '#3f2c1b', bold: '#d4a574' }, is_narrator: false,
                             dynamic_knowledge: []
                         },
@@ -520,7 +520,7 @@
                             description: "A stout dwarven innkeeper who runs the Hearthstone Inn at the crossroads of Aethermoor's major trade routes. Rosy-cheeked with a magnificent braided auburn beard adorned with copper rings, Thorne is the picture of jovial hospitality. He stands barely four feet tall but fills any room with his booming laugh and generous spirit.\n\nBeneath the cheerful exterior, Thorne is one of the best-connected information brokers on the continent. Travelers from every corner of Aethermoor pass through his inn, and he has cultivated a network of contacts spanning merchants, soldiers, scholars, and smugglers. He knows far more about the political landscape than he lets on.\n\nThorne is an old friend of Kael's from the ranger's military days — he served as a quartermaster before retiring to civilian life. He was the one who connected the adventurer's party, recognizing that each member brought skills critical to the Crown quest.\n\nHe is warm, gossipy, and generous with food and drink, but shrewd in business. He speaks with a thick dwarven brogue and peppers his speech with old dwarven proverbs.",
                             short_description: "A jovial dwarven innkeeper who knows everyone's secrets.",
                             model_instructions: "Write as Thorne Copperkettle — a jovial dwarven innkeeper. He speaks with warmth and a thick brogue, using dwarven proverbs and folksy expressions. He loves sharing gossip and local news. He is perceptive and shrewd beneath his cheerful exterior. He often offers food or drink during conversations. He refers to regular patrons by nicknames.",
-                            is_user: false, is_active: false, image_url: 'https://raw.githubusercontent.com/pacmanincarnate/EllipsisLM/main/assets/demo/thorne.png', extra_portraits: [], tags: ["dwarf", "innkeeper", "informant"],
+                            is_user: false, is_active: false, image_url: UTILITY.appAssetUrl('assets/demo/thorne.png'), extra_portraits: [], tags: ["dwarf", "innkeeper", "informant"],
                             color: { base: '#78350f', bold: '#fbbf24' }, is_narrator: false,
                             dynamic_knowledge: []
                         }
