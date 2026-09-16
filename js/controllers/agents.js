@@ -30,20 +30,36 @@
             },
 
             /**
-             * Makes sure the built-in agents exist in the library. The Event Master's chance and
-             * default come from the old global "Event Master Chance" default when one was set.
+             * Fills the library with what every install starts with: the built-in Event Master and
+             * the starter agents. The Event Master's chance and default come from the old global
+             * "Event Master Chance" default when one was set. Starters are added once each; the keys
+             * already added are remembered in global settings, so a starter the user deleted stays
+             * deleted and a starter added in a later version still arrives.
              * @returns {Promise<void>}
              */
             async ensureBuiltins() {
-                if (typeof AgentStore === 'undefined' || !AgentStore.loaded || this.eventMaster()) return;
+                if (typeof AgentStore === 'undefined' || !AgentStore.loaded) return;
                 const globals = (StateManager.data && StateManager.data.globalSettings) || {};
-                const legacyDefault = parseInt(globals.default_event_master_probability, 10);
-                const agent = AgentSchema.createEventMaster(legacyDefault > 0 ? legacyDefault : 20);
-                agent.defaultOn = legacyDefault > 0;
+
                 try {
-                    await AgentStore.save(agent);
+                    if (!this.eventMaster()) {
+                        const legacyDefault = parseInt(globals.default_event_master_probability, 10);
+                        const agent = AgentSchema.createEventMaster(legacyDefault > 0 ? legacyDefault : 20);
+                        agent.defaultOn = legacyDefault > 0;
+                        await AgentStore.save(agent);
+                    }
+
+                    const seeded = new Set(Array.isArray(globals.agent_starters_seeded) ? globals.agent_starters_seeded : []);
+                    const fresh = AgentStarters.list().filter(a => !seeded.has(a.source.id));
+                    if (!fresh.length) return;
+                    for (const agent of fresh) {
+                        await AgentStore.save(agent);
+                        seeded.add(agent.source.id);
+                    }
+                    StateManager.data.globalSettings.agent_starters_seeded = [...seeded];
+                    StateManager.saveGlobalSettings();
                 } catch (e) {
-                    console.warn('AgentController: could not create the Event Master.', e);
+                    console.warn('AgentController: could not add the default agents.', e);
                 }
             },
 

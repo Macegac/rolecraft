@@ -1751,3 +1751,29 @@ test('AgentSchema.legacyEventMasterSwitch: the old chance slider maps to on, off
     assert.equal(AgentSchema.legacyEventMasterSwitch(undefined), null);
     assert.equal(AgentSchema.legacyEventMasterSwitch('abc'), null);
 });
+
+// ─── AgentStarters ───────────────────────────────────────────────────────
+
+const AgentStarters = vm.runInNewContext(
+    fs.readFileSync(path.join(__dirname, 'js', 'util', 'agent-starters.js'), 'utf8') + '\nAgentStarters', { AgentSchema });
+
+test('AgentStarters.list: every starter is complete, off by default, and has a unique stable key', () => {
+    const list = AgentStarters.list();
+    assert.ok(list.length >= 5);
+    const keys = new Set(list.map(a => a.source.id));
+    assert.equal(keys.size, list.length);
+    assert.equal(new Set(list.map(a => a.name)).size, list.length);
+    list.forEach(a => {
+        assert.equal(a.defaultOn, false, a.name);
+        assert.equal(a.source.app, 'rolecraft-starter', a.name);
+        assert.equal(a.builtin, '', a.name + ' must stay deletable');
+        assert.ok(a.prompt.trim().length > 80, a.name);
+        assert.ok(!a.prompt.includes('{{') || /\{\{(char|user)\}\}/.test(a.prompt), a.name + ' uses only supported placeholders');
+    });
+});
+
+test('AgentStarters.list: note agents never sit last in the prompt, where instructions get recited back', () => {
+    AgentStarters.list().filter(a => a.kind === 'note').forEach(a => {
+        assert.ok(a.placement.position !== 'chat' || a.placement.depth > 0, a.name);
+    });
+});

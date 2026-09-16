@@ -133,17 +133,16 @@
 
         .agents-row-top {
             display: flex;
+            flex-wrap: wrap;
             align-items: center;
-            gap: 0.5rem;
+            gap: 0.35rem 0.5rem;
             max-width: 100%;
         }
 
         .agents-row-name {
             font-weight: 600;
             color: #fff;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
+            overflow-wrap: anywhere;
         }
 
         .agents-row-desc { font-size: 0.8125rem; color: #d1d5db; }

@@ -21,6 +21,7 @@
 
                 // 2. Load Library
                 await StateManager.loadLibrary();
+                await AgentController.ensureBuiltins();
                 const library = StateManager.getLibrary();
 
                 // If the library is empty, seed the demo story and flag for onboarding.
@@ -151,7 +152,6 @@
                 } else {
                     // Initialize Store
                     ReactiveStore.init(state);
-                    await AgentController.ensureBuiltins();
                     await AgentController.migrateStory();
 
                     // Initialize Runtime Variables
