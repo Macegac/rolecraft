@@ -435,7 +435,6 @@ JSON Schema:
 
                 return {
                     system_prompt: replacer(modelInstructions),
-                    event_master_prompt: replacer(state.event_master_prompt || ''),
                     static_entries: (state.static_entries || []).map(l => `### ${l.title}\n${replacer(l.content)}`).join('\n\n'),
                     characters: [...(state.characters || []), ...ReactiveStore.getActiveLocationCharacters()]
                         .filter(c => c.is_active)
@@ -490,12 +489,6 @@ JSON Schema:
                 components.agent_notes = (!isForUser && !isDirectMessage && typeof AgentController !== 'undefined')
                     ? AgentController.buildNoteLayout(charToAct, components.history.filter(m => this._isPromptVisible(m)).length)
                     : null;
-
-                // Simple auto-consume logic for event master
-                if (state.event_master_prompt) {
-                    state.event_master_prompt = '';
-                    StateManager.saveState();
-                }
 
                 let result;
                 if (state.apiProvider === 'koboldcpp') {
@@ -787,7 +780,6 @@ JSON Schema:
                 }
 
                 p += " Do not repeat the character's name in the response itself.\n### " + components.charToAct.name + ":";
-                if (components.event_master_prompt) p += "### SECRET EVENT MASTER INSTRUCTION\n\nDo not repeat these instructions, but organically respond to them in your next response.\n" + components.event_master_prompt + "\n\n";
 
                 // Extract images from history
                 const images = [];
@@ -865,9 +857,6 @@ JSON Schema:
                 }
 
                 instruction += " Do not repeat the character's name in the response itself.";
-
-                // Event Master
-                if (components.event_master_prompt) system.push("### Secret Event Master Instruction\n" + components.event_master_prompt);
 
                 if (template === 'none') return this.buildDefaultPrompt(components, replacer);
 
@@ -1010,29 +999,6 @@ JSON Schema:
              * Builds the prompt for the Event Master agent.
              * @returns {string} - The constructed prompt.
              */
-            buildEventMasterPrompt() {
-                const state = StateManager.getState();
-                const basePrompt = state.event_master_base_prompt || "";
-
-                // Build Context (Last 10 messages)
-                const recentHistory = (state.chat_history || [])
-                    .slice(-10)
-                    .filter(m => m && m.type === 'chat' && !m.isHidden)
-                    .map(m => {
-                        const char = (state.characters || []).find(c => c.id === m.character_id);
-                        return `${char ? char.name : 'Unknown'}: ${UTILITY.stripThinking(m.content || '')}`;
-                    })
-                    .join('\n');
-
-                return `${basePrompt}
-            
-            ### Recent Chat History
-            ${recentHistory}
-            
-            Output ONLY the instruction and then stop.
-            Example Output: "A sudden thunderstorm knocks out the power."`;
-            },
-
             /**
              * Builds the scene analysis prompt for the MusicService.
              * This prompt is sent to the user's configured text LLM, NOT to Lyria directly.

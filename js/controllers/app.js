@@ -473,7 +473,6 @@
                 instruction += " Do not repeat the character's name in the response itself.";
 
                 const systemText = (components.system_prompt || '') + '\n\n' +
-                    (components.event_master_prompt ? ("### Secret Event Master Instruction\n" + components.event_master_prompt) : '') + '\n\n' +
                     instruction + '\n\n' +
                     exampleDialogueText;
                 const systemTokens = UTILITY.estimateTokens(systemText);
@@ -1425,13 +1424,7 @@
                 if (document.getElementById('response-length-selector')) setListener('response-length-selector', 'responseLength');
                 if (document.getElementById('response-style-selector')) setListener('response-style-selector', 'responseStyle');
 
-                // Local event & visual master chance sliders
-                if (document.getElementById('event-master-prob-slider')) {
-                    setupSlider('event-master-prob-slider', 'event-master-prob-value', 'event_master_probability', (val) => {
-                        const el = document.getElementById('event-master-prob-value');
-                        if (el) el.textContent = `${val}%`;
-                    });
-                }
+                // Local visual master chance slider (the Event Master is an agent now: Settings → Agents)
                 if (document.getElementById('visual-master-prob-slider')) {
                     setupSlider('visual-master-prob-slider', 'visual-master-prob-value', 'visual_master_probability', (val) => {
                         const el = document.getElementById('visual-master-prob-value');
@@ -1452,7 +1445,7 @@
                 // --- Prompt Editor Logic (Unified) ---
                 const promptGroups = {
                     'Core Narrative': ['system_prompt', 'prompt_combine_messages', 'prompt_response_options_gen', 'prompt_stats_init', 'prompt_story_notes_gen', 'prompt_story_tags_gen'],
-                    'Agents': ['event_master_base_prompt', 'visual_master_base_prompt', 'prompt_persona_gen', 'prompt_living_persona_gen', 'prompt_timeline_extractor', 'prompt_relationship_matrix'],
+                    'Agents': ['visual_master_base_prompt', 'prompt_persona_gen', 'prompt_living_persona_gen', 'prompt_timeline_extractor', 'prompt_relationship_matrix'],
                     'Lore & Map': ['prompt_world_map_gen', 'prompt_location_gen', 'prompt_adjacent_locations_gen', 'prompt_entry_gen', 'prompt_location_memory_gen', 'prompt_auto_static_knowledge'],
                     'Director Mode': ['swarm_scratchpad_prompt', 'swarm_director_prompt'],
                     'Objectivity': ['prompt_objectivity_description', 'prompt_objectivity_thoughts'],
@@ -1461,7 +1454,6 @@
 
                 const promptInfo = {
                     'system_prompt': 'The core persona and instructions for the main narrative AI. Variables: {character_name}',
-                    'event_master_base_prompt': 'Define the base instruction for the Event Master, which injects plot twists.',
                     'visual_master_base_prompt': 'Automatically generates visuals for the scene based on chat context. Variable: {chat_history}',
                     'prompt_persona_gen': 'Used by the AI button on a character\'s persona. Variables: {concept}, {name}',
                     'prompt_living_persona_gen': 'Evolves a character based on recent history. Variables: {base_persona}, {transcript}',
@@ -1636,7 +1628,6 @@
                 bindGlobalSelect('global-default-response-length-selector', 'default_responseLength');
                 bindGlobalSelect('global-default-response-style-selector', 'default_responseStyle');
 
-                setupGlobalSlider('global-default-event-master-prob-slider', 'global-default-event-master-prob-value', 'default_event_master_probability', 0);
                 setupGlobalSlider('global-default-visual-master-prob-slider', 'global-default-visual-master-prob-value', 'default_visual_master_probability', 50);
 
                 // --- Story Toggles (Prompts Tab) ---

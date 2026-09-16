@@ -266,8 +266,9 @@
                         return;
                     }
 
-                    // 2. Run Event Master (BLOCKING)
-                    await this.checkEventMaster(forceEventMaster);
+                    // 2. Event Master picked as the speaker: plan a surprise now (BLOCKING).
+                    // Otherwise it runs as an agent after replies and needs nothing here.
+                    if (forceEventMaster) await AgentController.forceEventMaster();
 
                     if (forceEventMaster) {
                         selectorElement.value = 'any';
@@ -673,61 +674,6 @@ Return ONLY the physical description. Write in the 3rd person. No preamble.`;
              * Rolls a die and, if successful, generates a system instruction for the AI.
              * @param {boolean} force - If true, bypasses the probability check.
              */
-            async checkEventMaster(force = false) {
-                const state = ReactiveStore.state;
-
-                // 1. Configuration Guard
-                if (!state.event_master_base_prompt) return;
-
-                // 2. Dice Roll: Configurable Chance
-                if (!force) {
-                    // Strictly parse probability to prevent NaN causing 100% trigger rate
-                    let probability = parseInt(state.event_master_probability);
-                    // Fix: Default to 0 (Disabled) if invalid or undefined (Legacy mismatch fix)
-                    if (isNaN(probability)) probability = 0;
-
-                    // Guard: Strict disable if probability is 0 (or less)
-                    if (probability <= 0) return;
-
-                    // Logic: If random roll (0-100) is GREATER than probability, we SKIP.
-                    // Example: Prob 15. Roll 20. 20 > 15 is True. Return (Skip).
-                    if (Math.random() * 100 > probability) return;
-                }
-
-                // 3. Overlap Guard
-                if (state.event_master_prompt) return;
-
-                // 4. Show UI Feedback
-                // Since this blocks the chat, we must tell the user what is happening.
-                UIManager.showLoadingSpinner("The Event Master is plotting...");
-
-                try {
-                    console.log("Event Master: 🎲 Roll successful. Analyzing narrative...");
-
-                    // 5. Build Context (Last 10 messages)
-                    // 6. Construct Prompt via PromptBuilder
-                    const prompt = PromptBuilder.buildEventMasterPrompt();
-
-                    // 7. Blocking API Call
-                    // We use a new AbortController so this specific request has its own lifecycle
-                    const controller = new AbortController();
-                    const instruction = await APIService.callAI(prompt, false, controller.signal);
-
-                    if (instruction && instruction.trim().length > 0) {
-                        console.log("Event Master Triggered:", instruction);
-                        // Save to state. 
-                        // The PromptBuilder will inject this into the System Prompt when triggerAIResponse runs next.
-                        state.event_master_prompt = instruction;
-                    }
-
-                } catch (e) {
-                    console.warn("Event Master skipped turn:", e);
-                } finally {
-                    // 8. Always hide the spinner, whether we succeeded or failed
-                    UIManager.hideLoadingSpinner();
-                }
-            },
-
             /**
              * Processes and applies static knowledge updates.
              * Handles category formatting, backward-compatibility plain title matching, and smart merging.
@@ -1204,9 +1150,9 @@ Return ONLY the physical description. Write in the 3rd person. No preamble.`;
                 }
                 // ── END SWARM MODE BRANCH ─────────────────────────────────────────────────
 
-                // 3. Run Event Master (BLOCKING)
-                // This "cuts in line" before the character replies.
-                await this.checkEventMaster(forceEventMaster);
+                // 3. Event Master picked as the speaker: plan a surprise now (BLOCKING), so it
+                // reads this message. Otherwise it runs as an agent after replies.
+                if (forceEventMaster) await AgentController.forceEventMaster();
 
                 if (forceEventMaster) {
                     selectorElement.value = 'any';

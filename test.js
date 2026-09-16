@@ -1685,3 +1685,69 @@ test('AgentSchema.estimateTokens: about four characters per token', () => {
     assert.equal(AgentSchema.estimateTokens('abcd'), 1);
     assert.equal(AgentSchema.estimateTokens('abcde'), 2);
 });
+
+test('AgentSchema.fromSillyBunny: an inline tracker becomes a panel helper that feeds its state forward', () => {
+    const tracker = {
+        ...SB_INLINE, name: 'Time Tracker', category: 'tracker', enabled: true,
+        postProcess: { enabled: true, type: 'extract' }, regexScripts: [{}],
+        companion: { includeHistory: true, historyDepth: 3, contextMessages: 10 }
+    };
+    const a = AgentSchema.fromSillyBunny(tracker);
+    assert.equal(a.kind, 'helper');
+    assert.equal(a.defaultOn, true);
+    assert.equal(a.helper.run, 'auto');
+    assert.equal(a.helper.display, 'panel');
+    assert.equal(a.helper.feedForward, true);
+    assert.equal(a.helper.priorNotes, 3);
+    assert.equal(a.source.skipped.length, 1, 'only the conversion note; its reply regex no longer applies');
+    assert.ok(a.source.skipped[0].includes('Agent notes panel'));
+});
+
+test('AgentSchema.fromSillyBunny: a tracker set to intercept is not converted', () => {
+    const a = AgentSchema.fromSillyBunny({ ...SB_INLINE, category: 'tracker', preProcess: { mode: 'intercept' } });
+    assert.equal(a.kind, 'note');
+    assert.equal(a.defaultOn, false);
+});
+
+test('AgentSchema.isEmptyResult: blank answers and tracker-none are not notes', () => {
+    assert.equal(AgentSchema.isEmptyResult(''), true);
+    assert.equal(AgentSchema.isEmptyResult('  tracker-none \n'), true);
+    assert.equal(AgentSchema.isEmptyResult('Tracker-None.'), true);
+    assert.equal(AgentSchema.isEmptyResult('[TIME|Day 2|Evening]'), false);
+});
+
+test('AgentSchema.createEventMaster: a hidden, feed-once helper placed one message back', () => {
+    const em = AgentSchema.createEventMaster(35);
+    assert.equal(em.builtin, 'event_master');
+    assert.equal(em.kind, 'helper');
+    assert.equal(em.trigger.probability, 35);
+    assert.equal(em.helper.display, 'hidden');
+    assert.equal(em.helper.feedForward, true);
+    assert.equal(em.helper.feedOnce, true);
+    deepEq(em.placement, { position: 'chat', depth: 1, role: 'system', order: 50 });
+    assert.ok(em.prompt.includes('{{random::'), 'rolls a kind of surprise each run');
+    assert.ok(em.prompt.includes('{{user}}'), 'keeps the user in charge of their own character');
+});
+
+test('AgentSchema.createEventMaster: its surprise roll expands to exactly one option', () => {
+    const em = AgentSchema.createEventMaster();
+    const expanded = AgentSchema.expandMacros(em.prompt, { char: 'Cocoa', user: 'Mario', pick: () => 0 });
+    assert.ok(!expanded.includes('{{'));
+    assert.ok(expanded.includes('This time the surprise is: A practical snag'));
+    assert.ok(!expanded.includes('An interruption'));
+});
+
+test('AgentSchema.pickFeedNotes: feed-once skips notes already used', () => {
+    const notes = [{ id: 'a', usedAt: 5 }, { id: 'b' }, { id: 'c', usedAt: 9 }];
+    deepEq(AgentSchema.pickFeedNotes(notes, { feedOnce: true, feedCount: 1 }).map(n => n.id), ['b']);
+    deepEq(AgentSchema.pickFeedNotes(notes, { feedOnce: false, feedCount: 2 }).map(n => n.id), ['b', 'c']);
+    deepEq(AgentSchema.pickFeedNotes([{ id: 'a', usedAt: 1 }], { feedOnce: true, feedCount: 1 }), []);
+});
+
+test('AgentSchema.legacyEventMasterSwitch: the old chance slider maps to on, off, or untouched', () => {
+    assert.equal(AgentSchema.legacyEventMasterSwitch(20), true);
+    assert.equal(AgentSchema.legacyEventMasterSwitch('15'), true);
+    assert.equal(AgentSchema.legacyEventMasterSwitch(0), false);
+    assert.equal(AgentSchema.legacyEventMasterSwitch(undefined), null);
+    assert.equal(AgentSchema.legacyEventMasterSwitch('abc'), null);
+});

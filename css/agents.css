@@ -161,6 +161,7 @@
 
         .agents-kind-note { background: rgba(13, 148, 136, 0.25); color: #5eead4; }
         .agents-kind-helper { background: rgba(79, 70, 229, 0.3); color: #c7d2fe; }
+        .agents-kind-builtin { background: rgba(217, 119, 6, 0.25); color: #fcd34d; }
 
         .agents-switch {
             position: relative;

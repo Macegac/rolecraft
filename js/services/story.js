@@ -401,8 +401,9 @@
                             'enableAutoStaticKnowledge', 'enableAnalysis', 'enableResponseOptions', 'enableStats', 'enableLivingPersona', 'enableJournal',
                             'combineAsNarrator',
 
-                            // Agents: this story's own on/off switches (agent id -> boolean)
-                            'agent_switches',
+                            // Agents: this story's own on/off switches (agent id -> boolean),
+                            // and which one-time moves from old settings have already run
+                            'agent_switches', 'agent_migrations',
                             'enableAutoBuildLocations', 'enableAutoGenerateLocationImages',
                             'enableTextMode', 'dmAllowEmoji', 'dmTimestampAwareness', 'dmTypingIndicator', 'dmUnpromptedTexts',
 

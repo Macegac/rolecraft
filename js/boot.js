@@ -157,6 +157,8 @@
                 } else {
                     // Initialize Store
                     ReactiveStore.init(state);
+                    await AgentController.ensureBuiltins();
+                    await AgentController.migrateStory();
 
                     // Initialize Runtime Variables
                     if (typeof WorldController !== 'undefined') {

@@ -53,6 +53,7 @@
                         display: 'card',
                         feedForward: false,
                         feedCount: 1,
+                        feedOnce: false,
                         maxTokens: 0
                     },
                     brain: { model: '' },
@@ -125,6 +126,7 @@
                         display: this._pick(h.display, this.DISPLAYS, d.helper.display),
                         feedForward: h.feedForward === true,
                         feedCount: this._int(h.feedCount, d.helper.feedCount, 1, 20),
+                        feedOnce: h.feedOnce === true,
                         maxTokens: this._int(h.maxTokens, d.helper.maxTokens, 0, 200000)
                     },
                     brain: { model: this._str((r.brain || {}).model).trim() },
@@ -156,6 +158,11 @@
              * Converts one SillyBunny agent. Anything Rolecraft cannot do yet is listed in
              * source.skipped, in plain words, so the import can say so instead of dropping it
              * silently. Agents that only worked through a skipped feature arrive switched off.
+             *
+             * SillyBunny "tracker" agents made the chat model write data blocks into its reply and
+             * relied on regex to hide them. They arrive as helpers instead, the same conversion as
+             * SillyBunny's own "Trackers -> Companions": they run after each reply, show in the Agent
+             * notes panel, and feed their latest state into the next reply.
              * @param {Object} sb
              * @returns {Object} normalized Rolecraft agent
              */
@@ -166,10 +173,13 @@
                 const pre = sb.preProcess || {};
                 const post = sb.postProcess || {};
                 const conditions = sb.conditions || {};
-                const isCompanion = sb.execution === 'companion';
+                const isTracker = sb.execution !== 'companion' && sb.category === 'tracker' && pre.mode !== 'intercept';
+                const isCompanion = sb.execution === 'companion' || isTracker;
                 let usable = true;
 
-                if (!isCompanion) {
+                if (isTracker) {
+                    skipped.push('It wrote its tracker block into replies; it now runs as its own request after each reply and shows in the Agent notes panel.');
+                } else if (!isCompanion) {
                     if (pre.mode === 'intercept') {
                         skipped.push('It rewrote the prompt before sending (an intercept). Imported switched off.');
                         usable = false;
@@ -180,8 +190,9 @@
                     }
                 }
                 if (post.promptTransformEnabled) skipped.push('It rewrote or extended finished replies with a second AI pass.');
-                if (post.enabled) skipped.push('It pulled values out of replies (post-processing).');
-                if (Array.isArray(sb.regexScripts) && sb.regexScripts.length) skipped.push(`It carried ${sb.regexScripts.length} regex script(s).`);
+                // A converted tracker no longer writes into replies, so its reply regex and extraction have nothing to do.
+                if (post.enabled && !isTracker) skipped.push('It pulled values out of replies (post-processing).');
+                if (Array.isArray(sb.regexScripts) && sb.regexScripts.length && !isTracker) skipped.push(`It carried ${sb.regexScripts.length} regex script(s).`);
                 if (companion.batch) skipped.push('It batched its request with other companions.');
                 if (Array.isArray(companion.dependencies) && companion.dependencies.length) skipped.push('It waited on other companions.');
                 if (companion.sendContextToCompanions) skipped.push('It passed its notes to other companions.');
@@ -212,17 +223,29 @@
                         role: roleMap[injection.role] || 'system',
                         order: injection.order ?? 100
                     },
-                    helper: {
-                        run: companion.trigger === 'manual' ? 'manual' : 'auto',
-                        contextMessages: companion.contextMessages ?? 10,
-                        includeCharacters: companion.includeCharacterCard !== false,
-                        includeLore: companion.includeWorldInfo === true,
-                        priorNotes: companion.includeHistory ? (companion.historyDepth ?? 1) : 0,
-                        display: companion.displayMode,
-                        feedForward: !!(companion.feedback && companion.feedback.enabled),
-                        feedCount: (companion.feedback && companion.feedback.depth) || 1,
-                        maxTokens: 0
-                    },
+                    helper: isTracker
+                        ? {
+                            run: 'auto',
+                            contextMessages: companion.contextMessages ?? 10,
+                            includeCharacters: true,
+                            includeLore: companion.includeWorldInfo === true,
+                            priorNotes: companion.includeHistory ? Math.max(1, companion.historyDepth ?? 1) : 1,
+                            display: 'panel',
+                            feedForward: true,
+                            feedCount: 1,
+                            maxTokens: 0
+                        }
+                        : {
+                            run: companion.trigger === 'manual' ? 'manual' : 'auto',
+                            contextMessages: companion.contextMessages ?? 10,
+                            includeCharacters: companion.includeCharacterCard !== false,
+                            includeLore: companion.includeWorldInfo === true,
+                            priorNotes: companion.includeHistory ? (companion.historyDepth ?? 1) : 0,
+                            display: companion.displayMode,
+                            feedForward: !!(companion.feedback && companion.feedback.enabled),
+                            feedCount: (companion.feedback && companion.feedback.depth) || 1,
+                            maxTokens: 0
+                        },
                     brain: { model: sb.modelOverride || '' },
                     source: {
                         app: 'sillybunny',
@@ -287,6 +310,84 @@
                         return copy;
                     })
                 };
+            },
+
+            /**
+             * The built-in Event Master. It reads the recent chat, is handed one kind of surprise at
+             * random, invents a version of it that fits this story, and slips it into the next reply
+             * exactly once. It runs after a reply, so it is ready before the user sends and never
+             * holds up the chat. Placed one message back rather than last: instructions placed last
+             * tend to get recited back as the reply.
+             * @param {number} probability - Chance per reply, 0-100.
+             * @returns {Object} normalized agent (no id yet)
+             */
+            createEventMaster(probability = 20) {
+                return this.normalize({
+                    name: 'Event Master',
+                    description: 'Plans a surprise that fits the story and slips it into the next reply',
+                    kind: 'helper',
+                    builtin: 'event_master',
+                    defaultOn: false,
+                    prompt: [
+                        "Plan one surprise for the next reply of this roleplay. It should feel like it was always possible in this story: grounded in the setting, the characters' situation and what just happened, but not something anyone saw coming.",
+                        '',
+                        "This time the surprise is: {{random::A practical snag: something breaks, runs out, gets locked, or starts running late.::A shift in someone's mood or priorities that makes them less willing to go along.::A gap in what people know: someone learns, hides, or misreads something that matters.::A small letdown: a promise quietly broken, help withheld, or credit taken.::An interruption: a person, message, or noise that demands attention right now.::A tightening squeeze: less time, less privacy, or less room to act.::The past catching up: an earlier choice, favor, or lie comes due.::An unexpected need: someone admits or discovers they need something, and asking costs them.}}",
+                        '',
+                        'Rules:',
+                        '- One surprise only, sized to the scene. It complicates the moment; it does not end it.',
+                        '- Build it from people, places and things already in the story where you can.',
+                        '- Never decide what {{user}} does, says, thinks or feels. The surprise happens around {{user}}.',
+                        '- Write it as a direct instruction to the storyteller in one or two sentences, present tense. No preamble, no explanation, no quotation marks.'
+                    ].join('\n'),
+                    trigger: { probability },
+                    placement: { position: 'chat', depth: 1, role: 'system', order: 50 },
+                    helper: {
+                        run: 'auto',
+                        contextMessages: 10,
+                        includeCharacters: true,
+                        includeLore: false,
+                        priorNotes: 0,
+                        display: 'hidden',
+                        feedForward: true,
+                        feedCount: 1,
+                        feedOnce: true
+                    }
+                });
+            },
+
+            /**
+             * Which of a helper's notes go into the next reply. Normally its latest `feedCount`.
+             * With feedOnce, only notes not yet used, so each surprise lands in one reply.
+             * @param {Object[]} notes - The agent's notes, oldest first.
+             * @param {Object} helper - agent.helper
+             * @returns {Object[]}
+             */
+            pickFeedNotes(notes, helper) {
+                const pool = helper.feedOnce ? (notes || []).filter(n => !n.usedAt) : (notes || []);
+                return pool.slice(-Math.max(1, helper.feedCount || 1));
+            },
+
+            /**
+             * Reads the old per-story Event Master chance. A story that set it gets the agent
+             * switched to match; a story that never had a valid value is left alone.
+             * @param {*} probability - story.event_master_probability
+             * @returns {boolean|null}
+             */
+            legacyEventMasterSwitch(probability) {
+                const n = parseInt(probability, 10);
+                if (!Number.isFinite(n)) return null;
+                return n > 0;
+            },
+
+            /**
+             * Whether a helper's answer means "nothing to report". SillyBunny trackers answer
+             * `tracker-none` on quiet turns; those, and blank answers, are not kept as notes.
+             * @param {string} text
+             * @returns {boolean}
+             */
+            isEmptyResult(text) {
+                const t = String(text || '').trim();
+                return !t || /^tracker-none\.?$/i.test(t);
             },
 
             /**

@@ -23,6 +23,108 @@
 
             NOTES_PER_AGENT: 20,
 
+            // ─── Built-in agents ────────────────────────────────────────────────
+
+            eventMaster() {
+                return (typeof AgentStore !== 'undefined') ? AgentStore.agents.find(a => a.builtin === 'event_master') || null : null;
+            },
+
+            /**
+             * Makes sure the built-in agents exist in the library. The Event Master's chance and
+             * default come from the old global "Event Master Chance" default when one was set.
+             * @returns {Promise<void>}
+             */
+            async ensureBuiltins() {
+                if (typeof AgentStore === 'undefined' || !AgentStore.loaded || this.eventMaster()) return;
+                const globals = (StateManager.data && StateManager.data.globalSettings) || {};
+                const legacyDefault = parseInt(globals.default_event_master_probability, 10);
+                const agent = AgentSchema.createEventMaster(legacyDefault > 0 ? legacyDefault : 20);
+                agent.defaultOn = legacyDefault > 0;
+                try {
+                    await AgentStore.save(agent);
+                } catch (e) {
+                    console.warn('AgentController: could not create the Event Master.', e);
+                }
+            },
+
+            /**
+             * One-time move of a story's old Event Master settings onto the agent: its chance
+             * slider becomes this story's switch, a custom Event Master prompt becomes its own
+             * agent, and a twist still waiting from the old system is kept for the next reply.
+             * Runs when a story loads; the story remembers it has been done.
+             * @returns {Promise<void>}
+             */
+            async migrateStory() {
+                const state = this._state();
+                const em = this.eventMaster();
+                if (!state || !em) return;
+                const done = JSON.parse(JSON.stringify(state.agent_migrations || {}));
+                if (done.event_master) return;
+
+                const legacyDefaultText = UTILITY.getDefaultSystemPrompts().event_master_base_prompt;
+                const switches = JSON.parse(JSON.stringify(state.agent_switches || {}));
+                const legacyOn = AgentSchema.legacyEventMasterSwitch(state.event_master_probability);
+                const customPrompt = (state.event_master_base_prompt || '').trim();
+
+                if (legacyOn !== null && typeof switches[em.id] !== 'boolean') {
+                    if (customPrompt && customPrompt !== legacyDefaultText) {
+                        const copy = AgentSchema.createEventMaster(parseInt(state.event_master_probability, 10) || em.trigger.probability);
+                        copy.builtin = '';
+                        copy.name = `Event Master (${state.name || 'this story'})`;
+                        copy.prompt = customPrompt;
+                        const saved = await AgentStore.save(copy);
+                        switches[saved.id] = legacyOn;
+                        switches[em.id] = false;
+                    } else {
+                        switches[em.id] = legacyOn;
+                    }
+                    state.agent_switches = switches;
+                }
+
+                const pending = (state.event_master_prompt || '').trim();
+                if (pending && pending !== legacyDefaultText) {
+                    const notes = JSON.parse(JSON.stringify(state.agent_notes || []));
+                    notes.push({ id: UTILITY.uuid(), agentId: em.id, agentName: em.name, display: 'hidden', messageId: '', content: pending, created: Date.now() });
+                    state.agent_notes = notes;
+                }
+                if (state.event_master_prompt) state.event_master_prompt = '';
+
+                done.event_master = true;
+                state.agent_migrations = done;
+            },
+
+            isEventMasterOn() {
+                const em = this.eventMaster();
+                return !!(em && this.isOnHere(em));
+            },
+
+            /**
+             * The "Event Master" speaker choice: plan a surprise right now, reading the user's newest
+             * message, so the reply about to be written uses it. Runs even when the agent is switched
+             * off for this story, because the user asked for it.
+             * @returns {Promise<void>}
+             */
+            async forceEventMaster() {
+                const em = this.eventMaster();
+                const state = this._state();
+                if (!em || !state) return;
+                const latest = [...(state.chat_history || [])].reverse().find(m => m && m.type === 'chat' && !m.isHidden);
+                if (!latest) return;
+                // A surprise asked for now replaces one still waiting, so the next two replies don't both get one.
+                const waiting = new Set(AgentSchema.pickFeedNotes(this.notesFor(em.id, state), { ...em.helper, feedCount: 1000 }).map(n => n.id));
+                if (waiting.size) {
+                    const all = JSON.parse(JSON.stringify(state.agent_notes || []));
+                    all.forEach(n => { if (waiting.has(n.id)) n.usedAt = Date.now(); });
+                    state.agent_notes = all;
+                }
+                UIManager.showLoadingSpinner('The Event Master is plotting...');
+                try {
+                    await this.runHelper(em, latest, true);
+                } finally {
+                    UIManager.hideLoadingSpinner();
+                }
+            },
+
             // ─── Story switches ─────────────────────────────────────────────────
 
             _state() {
@@ -117,6 +219,7 @@
                 const recentTexts = this._recentTexts(state);
                 const chatTokens = this._chatTokens(state);
                 const notes = [];
+                const usedIds = new Set();
 
                 AgentStore.list().forEach(agent => {
                     if (!this.isOnHere(agent)) return;
@@ -135,11 +238,23 @@
                     }
 
                     if (agent.kind === 'helper' && agent.helper.feedForward) {
-                        this.notesFor(agent.id, state).slice(-agent.helper.feedCount).forEach(note => {
-                            notes.push({ ...agent.placement, agentId: agent.id, text: `[${agent.name}]\n${note.content}` });
+                        AgentSchema.pickFeedNotes(this.notesFor(agent.id, state), agent.helper).forEach(note => {
+                            const header = agent.helper.feedOnce
+                                ? `[${agent.name}: make this happen in your response. Show it; never mention these notes.]`
+                                : `[${agent.name}]`;
+                            notes.push({ ...agent.placement, agentId: agent.id, text: `${header}\n${note.content}` });
+                            if (agent.helper.feedOnce) usedIds.add(note.id);
                         });
                     }
                 });
+
+                // A feed-once note is spent the moment a reply prompt carries it, rerolls included,
+                // the same way the old Event Master instruction was consumed.
+                if (usedIds.size) {
+                    const all = JSON.parse(JSON.stringify(state.agent_notes || []));
+                    all.forEach(n => { if (usedIds.has(n.id)) n.usedAt = Date.now(); });
+                    ReactiveStore.state.agent_notes = all;
+                }
 
                 return notes.length ? AgentSchema.layoutNotes(notes, messageCount) : null;
             },
@@ -162,6 +277,7 @@
                 const chatTokens = this._chatTokens(state);
                 AgentStore.list()
                     .filter(agent => agent.kind === 'helper' && agent.helper.run === 'auto' && agent.prompt.trim() && this.isOnHere(agent))
+                    .filter(agent => !(agent.helper.feedOnce && AgentSchema.pickFeedNotes(this.notesFor(agent.id, state), agent.helper).length))
                     .filter(agent => AgentSchema.shouldFire(agent, { messageCounter: state.messageCounter || 0, recentTexts, chatTokens, roll: Math.random() }))
                     .forEach(agent => { this.runHelper(agent, message); });
             },
@@ -262,8 +378,8 @@
                     const prompt = this.buildHelperPrompt(agent, message);
                     const text = await APIService.callAI(prompt, false, null, !manual, { model: agent.brain.model });
                     const content = (text || '').trim();
-                    if (!content) {
-                        if (manual) UIManager.showNotification(`${agent.name} returned nothing.`, 'error');
+                    if (AgentSchema.isEmptyResult(content)) {
+                        if (manual) UIManager.showNotification(`${agent.name} had nothing to report this turn.`, 'info');
                         return false;
                     }
                     this._saveNote(agent, message, content);
@@ -442,6 +558,7 @@
                                 <span class="agents-row-top">
                                     <span class="agents-row-name">${agent.name}</span>
                                     <span class="agents-kind agents-kind-${agent.kind}">${agent.kind === 'note' ? 'Note' : 'Helper'}</span>
+                                    ${agent.builtin ? DOM.html`<span class="agents-kind agents-kind-builtin">Built in</span>` : ''}
                                 </span>
                                 ${agent.description ? DOM.html`<span class="agents-row-desc">${agent.description}</span>` : ''}
                                 <span class="agents-row-meta">${this._describeAgent(agent)}</span>
@@ -467,6 +584,7 @@
                     <div class="agents-editor-head">
                         <button class="agents-btn" data-action="agents-cancel">Back</button>
                         <h3 class="agents-title">${isNew ? 'New agent' : 'Edit agent'}</h3>
+                        ${a.builtin ? DOM.html`<span class="agents-kind agents-kind-builtin">Built in</span>` : ''}
                     </div>
 
                     ${skipped.length ? DOM.html`<div class="agents-report"><p class="agents-muted">Imported from ${a.source.app === 'sillybunny' ? 'SillyBunny' : 'another app'}. These parts didn't come across:</p><ul class="agents-report-list">${skipped.map(s => DOM.html`<li>${s}</li>`.toString())}</ul></div>` : ''}
@@ -532,6 +650,8 @@
                         <label class="agents-check"><input type="checkbox" id="agent-f-feed" ${a.helper.feedForward ? 'checked' : ''}> Feed its latest notes into the next replies</label>
                         <label class="agents-field agents-inline"><span class="agents-label">How many recent notes to feed</span>
                             <input type="number" id="agent-f-feed-count" class="agents-input agents-num" min="1" value="${String(a.helper.feedCount)}"></label>
+                        <label class="agents-check"><input type="checkbox" id="agent-f-feed-once" ${a.helper.feedOnce ? 'checked' : ''}> Use each note for one reply only</label>
+                        <span class="agents-hint">For surprises and one-off nudges. While a note is waiting to be used, the agent doesn't run again.</span>
                         ${!isNew ? DOM.html`<button class="agents-btn" data-action="agents-run-now" data-id="${a.id}">Run now on the last reply</button>` : ''}
                     </fieldset>
 
@@ -543,8 +663,8 @@
 
                     <div class="agents-actions">
                         <button class="agents-btn agents-btn-primary" data-action="agents-save">Save</button>
-                        ${!isNew ? DOM.html`<button class="agents-btn" data-action="agents-export-one" data-id="${a.id}">Export</button>
-                        <button class="agents-btn agents-btn-danger" data-action="agents-delete" data-id="${a.id}">Delete</button>` : ''}
+                        ${!isNew ? DOM.html`<button class="agents-btn" data-action="agents-export-one" data-id="${a.id}">Export</button>` : ''}
+                        ${!isNew && !a.builtin ? DOM.html`<button class="agents-btn agents-btn-danger" data-action="agents-delete" data-id="${a.id}">Delete</button>` : ''}
                     </div>
                 </div>`.toString();
             },
@@ -582,6 +702,7 @@
                         display: val('agent-f-display'),
                         feedForward: checked('agent-f-feed'),
                         feedCount: val('agent-f-feed-count'),
+                        feedOnce: checked('agent-f-feed-once'),
                         maxTokens: base.helper.maxTokens
                     },
                     brain: { model: val('agent-f-model') }
@@ -648,7 +769,7 @@
 
                 ActionHandler.register('agents-delete', async (ds) => {
                     const agent = AgentStore.get(ds.id);
-                    if (!agent) return;
+                    if (!agent || agent.builtin) return;
                     const ok = await UIManager.showConfirmationPromise(`Delete "${agent.name}" from the agent library? Every story loses it. Export it first if you might want it back.`);
                     if (!ok) return;
                     await AgentStore.remove(agent.id);
