@@ -942,7 +942,7 @@
                 if (!keyOrUrl) return null;
                 // Exclude current session blob URLs if they are not in cache (likely stale), but allow valid http/data
                 if (keyOrUrl.startsWith('data:')) return keyOrUrl;
-                // file: covers bundled images in the Electron build, which loads index.html from disk.
+                // file: covers bundled images when index.html is opened straight from disk.
                 if (keyOrUrl.startsWith('http') || keyOrUrl.startsWith('file:')) return keyOrUrl;
 
                 // Check Cache

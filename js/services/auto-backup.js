@@ -46,12 +46,7 @@
 
                     const payload = UTILITY.buildBackupPayload(stories, narratives, folders);
 
-                    // 1. Desktop Mode (Electron native file backup)
-                    if (window.electronBridge && window.electronBridge.backup && typeof window.electronBridge.backup.saveNative === 'function') {
-                        await window.electronBridge.backup.saveNative(payload);
-                    }
-
-                    // 2. Web Mode (localStorage lightweight backup)
+                    // localStorage lightweight backup
                     try {
                         const cleanPayload = UTILITY.sanitizeBackupForLocalStorage(payload, 2000000);
                         if (cleanPayload) {
@@ -68,16 +63,7 @@
             },
 
             async getLatestBackup() {
-                // 1. Check Electron Native File Backup
-                if (window.electronBridge && window.electronBridge.backup && typeof window.electronBridge.backup.loadNative === 'function') {
-                    const nativeRes = await window.electronBridge.backup.loadNative();
-                    if (nativeRes && nativeRes.success && nativeRes.data) {
-                        const validated = UTILITY.validateBackupData(nativeRes.data);
-                        if (validated.valid) return nativeRes.data;
-                    }
-                }
-
-                // 2. Check localStorage Emergency Backup
+                // Check localStorage Emergency Backup
                 try {
                     const raw = localStorage.getItem('ellipsis_emergency_backup');
                     if (raw) {

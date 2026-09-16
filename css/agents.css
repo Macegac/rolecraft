@@ -2,7 +2,7 @@
            AGENTS
            The Agents settings tab, note cards under replies, and the Agent notes panel
            (js/controllers/agents.js). Styled here rather than with utility classes because
-           electron/tailwind.css is prebuilt: utilities no existing markup uses are missing.
+           css/tailwind.css is prebuilt: utilities no existing markup uses are missing.
            ========================================================================== */
 
         .agents {

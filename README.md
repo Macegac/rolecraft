@@ -19,9 +19,6 @@ Add it to your home screen to use it like an app; it keeps working offline once 
 Serve the folder with any static web server (for example `python -m http.server`) and open `index.html`.
 Opening the file directly without a server also works in most browsers, but offline caching needs a server.
 
-### Desktop App
-The Electron version can download and run KoboldCPP for you. Build it with `npm install` then `npm run dist`.
-
 ---
 
 ## AI Story Architect
@@ -69,7 +66,7 @@ This hierarchy allows you to start multiple "runs" of the same scenario without 
 
 ### Organization
 - **Folders**: Manage large libraries by grouping stories into global folders. The UI includes full filtering, searching, and sorting capabilities to help you find specific characters or universes instantly.
-- **Discover Feature (Beta)**: Search and import characters directly from **Chub.ai** (works in-browser without Electron) or **Backyard.ai** (installed version), or import character/scenario links from **fictionlab.ai**.
+- **Discover Feature (Beta)**: Search and import characters directly from **Chub.ai** (works in the browser) or **Backyard.ai** (blocked by browser security, so usually unavailable), or import character/scenario links from **fictionlab.ai**.
 - **Export & Import**: Full support for standard **V2 Character Cards** (Tavern/SillyTavern) and **BYAF** cards. Automatic image cache hydration and story opening on import.
 - **Bulk Operations**: Automatically import every character card from a local folder in one go.
 - **Full Backups**: Export your entire library, settings, and histories as a single portable ZIP file.
@@ -256,7 +253,7 @@ is handled through a custom reactive store.
 `npm test` runs the unit tests and `tools/check-files.js`, which confirms every file in `js/` and `css/` is loaded by
 `index.html` exactly once and that no name is declared twice. The pre-commit hook runs the same check.
 
-The Electron wrapper is a lightweight shell that adds desktop-specific features like auto-updating and local process management for KoboldCPP.
+Styling uses a prebuilt Tailwind stylesheet (`css/tailwind.css`) plus the app's own stylesheets. After adding Tailwind classes that no existing markup uses, rebuild it with `npm run build:css`.
 
 ---
 

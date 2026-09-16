@@ -138,12 +138,6 @@
                 UIManager.initChatScrollListener(); // Manages the scroll-to-bottom button visibility
                 if (typeof CropController !== 'undefined') CropController.init();
 
-                // 5b. Hide Electron-specific UI if not in Electron
-                if (!window.electronBridge) {
-                    const maintenanceSection = document.getElementById('app-maintenance-section');
-                    if (maintenanceSection) maintenanceSection.style.display = 'none';
-                }
-
                 // 6. Initialize Reactive State
                 if (!state || Object.keys(state).length === 0) {
                     // Empty state fallback

@@ -605,7 +605,7 @@
                         });
                         if (!authRes.ok) {
                             if (authRes.status === 403) {
-                                throw new Error('Failed to authenticate anonymously with AI Dungeon (403 Forbidden). Browser CORS/Referrer security restrictions prevent direct imports. Please use the Rolecraft Desktop App to import AI Dungeon links seamlessly.');
+                                throw new Error('Failed to authenticate anonymously with AI Dungeon (403 Forbidden). Browser CORS/Referrer security restrictions prevent importing AI Dungeon links from a browser.');
                             }
                             throw new Error('Failed to authenticate anonymously with AI Dungeon Firebase');
                         }
@@ -1094,7 +1094,7 @@
                     }
                 } catch (e) {
                     console.error('[HubController] Failed to fetch Backyard.ai build ID', e);
-                    throw new Error('Backyard.ai search is currently restricted by browser CORS security. This feature works natively when running Rolecraft in Electron. If you are in a browser, searching Backyard.ai is not possible due to cross-origin security policies.');
+                    throw new Error('Backyard.ai search is currently restricted by browser CORS security. Searching Backyard.ai is not possible from a browser due to cross-origin security policies.');
                 }
                 return null;
             },
@@ -1260,7 +1260,7 @@
                             </p>
                             ${isCors ? `
                                 <div class="bg-indigo-500/10 border border-indigo-500/20 p-4 rounded-xl text-xs text-indigo-300 max-w-sm">
-                                    <strong>Recommendation:</strong> Use the <strong>Chub.ai</strong> source instead, or run Rolecraft in <strong>Electron</strong> to bypass browser security blocks.
+                                    <strong>Recommendation:</strong> Use the <strong>Chub.ai</strong> source instead; this source blocks requests from browsers.
                                 </div>
                             ` : ''}
                         </div>

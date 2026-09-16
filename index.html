@@ -5,7 +5,7 @@
     =================================================================================================
     This page holds the app's markup only. Styles live in css/ and code lives in js/, loaded below
     in order with plain <link> and <script> tags. There is no build step: the files are served
-    as-is (GitHub Pages, a local server, or Electron).
+    as-is (GitHub Pages or any static web server).
 
     The scripts are classic scripts, not modules, so they share one global scope. Order matters
     only in that a file must load before code that runs immediately uses it; everything else
@@ -20,7 +20,6 @@
     js/ui/            ModalManager, UIComponents (HTML renderers), UIManager (DOM orchestration)
     js/controllers/   app settings, story generation, hub, library, narrative (chat), swarm,
                       text mode, world map, inventory, crop/refine, action routing
-    js/electron/      desktop-only KoboldCPP controls
     js/boot.js        app bootstrap
     =================================================================================================
 -->
@@ -60,7 +59,7 @@
     </script>
 
     <!-- External Libraries -->
-    <link rel="stylesheet" href="electron/tailwind.css"
+    <link rel="stylesheet" href="css/tailwind.css"
         onerror="this.onerror=null;this.remove();const s=document.createElement('script');s.src='https://cdn.tailwindcss.com';document.head.appendChild(s);">
     <script src="https://cdn.jsdelivr.net/npm/jszip/dist/jszip.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -1868,56 +1867,10 @@
 
 
         <div id="settings-appearance-content" class="space-y-6">
-            <!-- Application Update Checker [MANUAL] -->
+            <!-- Tutorial & Setup -->
             <div id="app-maintenance-section" class="mb-6 animate-in fade-in slide-in-from-top-2 duration-500">
                 <div class="p-4 bg-indigo-500/10 rounded-xl border border-indigo-500/20 shadow-lg backdrop-blur-sm">
-                    <div class="flex items-center justify-between mb-3 border-b border-indigo-500/10 pb-2">
-                        <div class="flex items-center gap-2">
-                            <div class="p-1.5 bg-indigo-500/20 rounded-lg">
-                                <i class="fas fa-rocket text-indigo-400 text-xs"></i>
-                            </div>
-                            <div>
-                                <h4 class="text-xs font-bold text-gray-200 uppercase tracking-widest">App Maintenance
-                                </h4>
-                                <div id="app-current-version" class="text-[10px] text-gray-500 font-medium">Checking
-                                    version...</div>
-                            </div>
-                        </div>
-                        <button id="app-check-update-btn" onclick="window.electronCheckAppUpdate()"
-                            class="px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-400 text-[10px] font-bold rounded-lg border border-indigo-600/30 transition-all active:scale-95">
-                            Check for Updates
-                        </button>
-                    </div>
-
-                    <div id="app-update-status-container" class="flex flex-col gap-2">
-                        <div id="app-update-status" class="text-xs text-gray-400 leading-relaxed italic">Click the
-                            button above to manually check GitHub for new releases.</div>
-
-                        <!-- Progress Bar (Hidden by default) -->
-                        <div id="app-update-progress-container" class="hidden space-y-2 py-2">
-                            <div class="flex justify-between items-center px-1">
-                                <span class="text-[10px] text-gray-500 font-bold uppercase">Downloading assets...</span>
-                                <span id="app-update-percent" class="text-[10px] text-indigo-400 font-black">0%</span>
-                            </div>
-                            <div
-                                class="w-full bg-gray-800/50 rounded-full h-2 overflow-hidden border border-white/5 p-[1px]">
-                                <div id="app-update-bar"
-                                    class="bg-gradient-to-r from-indigo-600 to-violet-500 h-full rounded-full transition-all duration-300 shadow-[0_0_10px_rgba(99,102,241,0.4)]"
-                                    style="width: 0%"></div>
-                            </div>
-                        </div>
-
-                        <div id="app-update-action" class="hidden">
-                            <button id="app-install-btn" onclick="window.electronApplyAppUpdate()"
-                                class="w-full py-2.5 bg-green-600/30 hover:bg-green-600/40 text-green-400 text-[11px] font-black uppercase tracking-widest rounded-lg border border-green-600/40 transition-all shadow-md active:scale-[0.98]">
-                                Install <span id="app-new-version"
-                                    class="underline decoration-2 underline-offset-2"></span> & Reload
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- NEW: Re-run Onboarding -->
-                    <div class="mt-4 pt-4 border-t border-indigo-500/10 flex items-center justify-between">
+                    <div class="flex items-center justify-between">
                         <div>
                             <h4 class="text-xs font-bold text-gray-200 uppercase tracking-widest">Tutorial & Setup</h4>
                             <p class="text-[10px] text-gray-500 font-medium">Re-open the onboarding welcome screen.</p>
@@ -3188,74 +3141,6 @@
                 </div>
                 <p class="text-amber-400 text-sm mb-2 bg-amber-900/50 p-2 rounded-md">Ensure your local server is
                     running.</p>
-                <!-- Electron desktop: inline launch/stop controls with live status & progress -->
-                <div id="kobold-electron-controls" class="hidden mb-4">
-                    <div id="kobold-status-bar"
-                        class="flex flex-col gap-2 mb-3 p-3 rounded-lg bg-gray-800/50 text-sm border border-gray-700/50">
-                        <div class="flex items-center gap-2">
-                            <span id="kobold-status-dot"
-                                class="w-2.5 h-2.5 rounded-full bg-gray-500 flex-shrink-0"></span>
-                            <span id="kobold-status-text" class="text-gray-200 font-medium">KoboldCPP: Stopped</span>
-                        </div>
-
-                        <!-- Download Progress Bar -->
-                        <div id="kobold-download-container" class="hidden mt-1">
-                            <div class="flex justify-between text-[11px] text-gray-400 mb-1">
-                                <span id="kobold-download-label">Downloading core components...</span>
-                                <span id="kobold-download-percent">0%</span>
-                            </div>
-                            <div class="w-full bg-gray-900 rounded-full h-1.5 overflow-hidden">
-                                <div id="kobold-download-bar" class="bg-indigo-500 h-full transition-all duration-300"
-                                    style="width: 0%"></div>
-                            </div>
-                        </div>
-
-                        <!-- Error Message Display -->
-                        <div id="kobold-error-display"
-                            class="hidden mt-1 text-[11px] text-red-400 bg-red-900/20 p-2 rounded border border-red-800/30">
-                            <strong>Error:</strong> <span id="kobold-error-text">Unknown error</span>
-                        </div>
-                        <!-- Update Checker UI -->
-                        <div id="kobold-update-container" class="mt-2 pt-2 border-t border-gray-700/30">
-                            <div class="flex justify-between items-center">
-                                <span id="kobold-update-status" class="text-[11px] text-gray-400">Version:
-                                    Checking...</span>
-                                <button id="kobold-check-update-btn" onclick="window.electronCheckKoboldUpdate()"
-                                    class="text-[11px] text-indigo-400 hover:text-indigo-300 transition-colors">Check
-                                    for Updates</button>
-                            </div>
-                            <div id="kobold-update-action" class="hidden mt-2">
-                                <button onclick="window.electronUpdateKobold()"
-                                    class="w-full bg-green-600/20 hover:bg-green-600/30 text-green-400 text-[11px] font-bold py-1 px-2 rounded border border-green-600/30 transition-all">
-                                    Update to <span id="kobold-new-version"></span> Now
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <button id="kobold-electron-start-btn" onclick="window.electronLaunchKobold()"
-                        class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 px-4 rounded-lg transition-all shadow-lg flex justify-center items-center mb-2">
-                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z">
-                            </path>
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                        </svg>
-                        Launch KoboldCPP
-                    </button>
-                    <button id="kobold-electron-stop-btn" onclick="window.electronStopKobold()"
-                        class="w-full hidden bg-red-900/40 hover:bg-red-800/60 text-red-200 font-bold py-2 px-4 rounded-lg transition-all border border-red-700/30 flex justify-center items-center">
-                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <rect x="9" y="9" width="6" height="6" rx="1" fill="currentColor" stroke="none"></rect>
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                        </svg>
-                        Stop KoboldCPP
-                    </button>
-                </div>
-
-                <script src="js/electron/kobold-ui.js"></script>
                 <input type="text" id="koboldcpp-url-input" class="w-full rounded-lg p-2 mb-4"
                     placeholder="http://localhost:5001">
                 <div>
@@ -4648,7 +4533,7 @@
     <!-- Custom Floating Tooltip (dynamically placed at body level to prevent modal/overflow clipping) -->
     <div id="context-visualizer-tooltip" class="opacity-0 pointer-events-none"></div>
 
-    <!-- Reusable Input Prompt Modal to replace native window.prompt() (unsupported in Electron) -->
+    <!-- Reusable Input Prompt Modal to replace native window.prompt() -->
     <div id="input-prompt-modal"
         class="hidden fixed inset-0 bg-black/85 flex flex-col items-center justify-center backdrop-blur-sm"
         style="z-index: 99999;" onclick="if(event.target === this) UTILITY.closeCustomPrompt(null)">

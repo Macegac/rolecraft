@@ -1,66 +1,16 @@
 {
   "name": "rolecraft",
   "version": "1.1.0",
-  "description": "Rolecraft — private AI roleplay, self-hosted desktop edition.",
+  "description": "Rolecraft — private AI roleplay that runs in the browser.",
   "author": "Mario Cano",
-  "main": "electron/main.js",
   "scripts": {
-    "start": "electron .",
     "test": "node test.js && node tools/check-files.js",
-    "dist": "electron-builder --win --publish never",
-    "dist:mac": "electron-builder --mac --publish never",
+    "build:css": "tailwindcss -i tools/tailwind-input.css -o css/tailwind.css --minify",
     "prepare": "git config core.hooksPath .githooks || true"
   },
   "devDependencies": {
     "acorn": "^8.15.0",
-    "electron": "^30.5.1",
-    "electron-builder": "^24.13.3",
     "tailwindcss": "3.4"
-  },
-  "build": {
-    "appId": "com.rolecraft.app",
-    "productName": "Rolecraft",
-    "copyright": "Copyright © 2026 Mario Cano. Based on EllipsisLM (Apache-2.0).",
-    "win": {
-      "target": "nsis",
-      "icon": "electron/icon.ico",
-      "requestedExecutionLevel": "asInvoker"
-    },
-    "mac": {
-      "target": "dmg",
-      "icon": "logo.png",
-      "hardenedRuntime": false,
-      "gatekeeperAssess": false,
-      "entitlements": "electron/entitlements.mac.plist",
-      "entitlementsInherit": "electron/entitlements.mac.plist"
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "Rolecraft"
-    },
-    "extraResources": [
-      {
-        "from": ".",
-        "to": ".",
-        "filter": [
-          "koboldcpp.exe",
-          "koboldcpp-mac-arm64",
-          "koboldcpp-mac-x64"
-        ]
-      }
-    ],
-    "files": [
-      "electron/**",
-      "index.html",
-      "js/**",
-      "css/**"
-    ],
-    "directories": {
-      "output": "dist"
-    }
   },
   "dependencies": {
     "playwright": "^1.60.0"
