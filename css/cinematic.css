@@ -1,0 +1,606 @@
+        /* ==========================================================================
+           [SEC:CSS:CINEMATIC]
+           6. CINEMATIC MODE STYLES
+           ========================================================================== */
+        body[data-mode="cinematic_overlay"] #app-container {
+            background: transparent;
+            backdrop-filter: none;
+        }
+
+        body[data-mode="cinematic_overlay"] #cinematic-bg-1,
+        body[data-mode="cinematic_overlay"] #cinematic-bg-2 {
+            position: fixed;
+            inset: 0;
+            z-index: -1;
+            background-size: auto 100%;
+            background-position: center top;
+            transition: opacity 1s ease-in-out;
+            pointer-events: none;
+        }
+
+        /* Chat Window Container - Bottom 1/3 Position */
+        body[data-mode="cinematic_overlay"] #chat-window-container {
+            align-items: flex-end;
+            margin-top: auto !important;
+            /* Force bottom alignment, overriding vertical layout defaults */
+            background: linear-gradient(to top, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0.4) 70%, transparent 100%);
+            border: none;
+            border-radius: 0;
+            /* Flush edges look better in cinematic */
+            -webkit-mask-image: linear-gradient(to bottom, transparent, black 15%);
+            /* Fade out text at the very top */
+            mask-image: linear-gradient(to bottom, transparent, black 15%);
+        }
+
+        body[data-mode="cinematic_overlay"] #character-portrait-container {
+            display: none !important;
+        }
+
+        /* Internal Chat Alignment: Forces text to the bottom of the container */
+        body[data-mode="cinematic_overlay"] #chat-window {
+            width: 100% !important;
+            height: 33%;
+            display: flex;
+            flex-direction: column;
+            padding-bottom: 0.5rem;
+        }
+
+        /* This is the key trick: Auto margin on the first child pushes 
+           the whole stack of messages to the bottom of the flex container */
+        body[data-mode="cinematic_overlay"] #chat-window> :first-child {
+            margin-top: auto !important;
+        }
+
+        /* Bubble Styling for Cinematic Mode: Adds blur for readability against backgrounds */
+        body[data-mode="cinematic_overlay"] .bubble-body {
+            backdrop-filter: blur(6px);
+        }
+
+        /* Input Area Visibility: Ensures input remains visible and readable in cinematic mode */
+        body[data-mode="cinematic_overlay"] #chat-input-container {
+            background-color: #0f172a;
+            /* Solid dark color for readability */
+            border-top: 1px solid rgba(255, 255, 255, 0.15);
+            position: relative;
+            z-index: 20;
+            padding-bottom: 0;
+        }
+
+        /* ==========================================================================
+           VISUAL NOVEL MODE STYLES (Landscape Restricted)
+           ========================================================================== */
+        @media (orientation: landscape) {
+            body[data-mode="visual_novel"] #app-container {
+                background: transparent;
+                backdrop-filter: none;
+            }
+
+            body[data-mode="visual_novel"] #cinematic-bg-1,
+            body[data-mode="visual_novel"] #cinematic-bg-2 {
+                position: fixed;
+                inset: 0;
+                z-index: -1;
+                background-size: cover;
+                background-position: center;
+                transition: opacity 0.7s ease-in-out, filter 0.7s ease-in-out;
+                pointer-events: none;
+                display: block !important;
+            }
+
+            body[data-mode="visual_novel"] .vn-bg-active {
+                opacity: 1;
+                filter: blur(0px);
+            }
+
+            body[data-mode="visual_novel"] .vn-bg-inactive {
+                opacity: 0;
+                filter: blur(15px);
+            }
+
+            /* Hide standard UI elements */
+            body[data-mode="visual_novel"] #chat-window {
+                display: none !important;
+            }
+
+            body[data-mode="visual_novel"] #character-portrait-container {
+                display: none !important;
+            }
+
+            /* Show Visual Novel container — normal flow, filling the remaining space */
+            body[data-mode="visual_novel"] #vn-container {
+                display: flex !important;
+                flex-direction: column;
+                justify-content: flex-end;
+                /* Fill #chat-window-container completely */
+                position: absolute;
+                inset: 0;
+                z-index: 10;
+                pointer-events: none;
+                padding: 1.5rem;
+            }
+
+            /* Sprites: position:fixed, spanning from top to just above HUD+input.
+               align-items:center vertically centers portraits in that zone so
+               they appear as large, prominent standing/bust characters. */
+            body[data-mode="visual_novel"] #vn-sprites-container {
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                /* Reserve height for HUD (~7rem) + input (~4.5rem) + gaps (~1.5rem) */
+                bottom: 14rem;
+                display: flex;
+                justify-content: space-evenly;
+                align-items: center;
+                pointer-events: none;
+                padding: 1rem 3rem 0;
+                z-index: 5;
+            }
+
+            /* Sprite wrapper: each character gets an equal share of the stage.
+               Height fills the container so tall images use the full space. */
+            body[data-mode="visual_novel"] .vn-sprite-wrapper {
+                position: relative;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                flex: 1 1 0;
+                height: 100%;
+                max-width: 24rem;
+                transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1),
+                    opacity 0.4s ease-out,
+                    filter 0.4s ease-out;
+                pointer-events: none;
+            }
+
+            /* Sprite image: fills its wrapper naturally, max-width caps portrait width */
+            body[data-mode="visual_novel"] .vn-sprite {
+                max-height: 100%;
+                max-width: 100%;
+                width: auto;
+                height: auto;
+                object-fit: contain;
+                object-position: center bottom;
+                transition: filter 0.4s ease-out;
+                /* Drop shadow gives depth against the background */
+                filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.6));
+            }
+
+            /* Active vs Inactive NPC states */
+            body[data-mode="visual_novel"] .vn-sprite-wrapper.active {
+                opacity: 1;
+                transform: scale(1.04);
+                z-index: 15;
+            }
+
+            body[data-mode="visual_novel"] .vn-sprite-wrapper.inactive {
+                opacity: 0.45;
+                transform: scale(0.93) translateX(0);
+                filter: brightness(0.3) grayscale(0.6) drop-shadow(0 8px 24px rgba(0, 0, 0, 0.5));
+                z-index: 12;
+            }
+
+            /* Sentiment color tint presets (active sprite only — override base filter) */
+            body[data-mode="visual_novel"] .vn-sprite-wrapper.active.tint-happy .vn-sprite {
+                filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.5)) drop-shadow(0 0 18px rgba(244, 63, 94, 0.5)) sepia(0.15) saturate(1.3);
+            }
+
+            body[data-mode="visual_novel"] .vn-sprite-wrapper.active.tint-sad .vn-sprite {
+                filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.5)) drop-shadow(0 0 18px rgba(6, 182, 212, 0.45)) saturate(0.75) hue-rotate(180deg);
+            }
+
+            body[data-mode="visual_novel"] .vn-sprite-wrapper.active.tint-angry .vn-sprite {
+                filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.5)) drop-shadow(0 0 18px rgba(239, 68, 68, 0.55)) saturate(1.5) contrast(1.1) brightness(0.92);
+            }
+
+            body[data-mode="visual_novel"] .vn-sprite-wrapper.active.tint-fear .vn-sprite {
+                filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.5)) drop-shadow(0 0 18px rgba(107, 114, 128, 0.4)) grayscale(0.7) brightness(0.8);
+            }
+
+            /* Bottom Dialogue Box HUD — sits inside vn-container at the flex-end */
+            body[data-mode="visual_novel"] #vn-hud {
+                position: relative;
+                z-index: 20;
+                pointer-events: auto;
+                width: 100%;
+                max-width: 100%;
+                margin: 0 auto;
+                background: rgba(10, 15, 30, 0.82);
+                backdrop-filter: blur(16px);
+                -webkit-backdrop-filter: blur(16px);
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                border-radius: 0.75rem;
+                padding: 1.25rem 1.75rem;
+                min-height: 6.5rem;
+                box-shadow: 0 10px 40px -5px rgba(0, 0, 0, 0.7);
+                cursor: pointer;
+                user-select: none;
+            }
+
+            /* HUD Box Nameplate */
+            body[data-mode="visual_novel"] #vn-nameplate {
+                position: absolute;
+                top: -1.25rem;
+                left: 2rem;
+                background: var(--brand-color, #6366f1);
+                color: #ffffff;
+                font-weight: 700;
+                font-size: 0.875rem;
+                padding: 0.35rem 1.25rem;
+                border-radius: 9999px;
+                box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                letter-spacing: 0.03em;
+                cursor: pointer;
+                pointer-events: auto;
+                transition: transform 0.2s ease, background-color 0.2s ease;
+            }
+
+            body[data-mode="visual_novel"] #vn-nameplate:hover {
+                transform: scale(1.05);
+                background: var(--brand-color-hover, #4f46e5);
+            }
+
+            /* VN dialogue text styles */
+            body[data-mode="visual_novel"] #vn-dialogue {
+                font-size: calc(var(--chat-font-size, 16px) * 1.0625);
+                line-height: 1.8;
+                color: var(--chat-text-color);
+                font-family: var(--chat-font-family);
+                text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+            }
+
+            /* Action / stage directions: italic, muted amber */
+            body[data-mode="visual_novel"] #vn-dialogue em {
+                color: rgba(251, 191, 36, 0.85);
+                font-style: italic;
+                font-size: calc(var(--chat-font-size, 16px) * 0.9375);
+            }
+
+            /* VN dialogue controls */
+            body[data-mode="visual_novel"] #vn-hud .vn-controls {
+                position: absolute;
+                top: 0.75rem;
+                right: 1.25rem;
+                display: flex;
+                align-items: center;
+                gap: 1rem;
+                z-index: 30;
+                pointer-events: auto;
+            }
+
+            body[data-mode="visual_novel"] #vn-hud .vn-controls button {
+                color: rgba(255, 255, 255, 0.4);
+                transition: color 0.15s ease, transform 0.1s ease;
+                cursor: pointer;
+                background: none;
+                border: none;
+                padding: 0;
+            }
+
+            body[data-mode="visual_novel"] #vn-hud .vn-controls button:hover {
+                color: rgba(255, 255, 255, 0.9);
+                transform: scale(1.1);
+            }
+
+            /* Chat input in VN mode — centered and glassmorphic, matching the HUD */
+            body[data-mode="visual_novel"] #chat-input-container {
+                position: relative;
+                z-index: 20;
+                width: 100%;
+                max-width: 100%;
+                margin: 0.5rem auto 0 auto;
+                background: rgba(10, 15, 30, 0.82) !important;
+                backdrop-filter: blur(16px) !important;
+                -webkit-backdrop-filter: blur(16px) !important;
+                border: 1px solid rgba(255, 255, 255, 0.12) !important;
+                border-radius: 0.75rem !important;
+                box-shadow: 0 10px 40px -5px rgba(0, 0, 0, 0.7);
+            }
+
+            /* chat-window-container: transparent, overflow visible so fixed sprites show */
+            body[data-mode="visual_novel"] #chat-window-container {
+                background: transparent !important;
+                border: none !important;
+                box-shadow: none !important;
+                -webkit-mask-image: none !important;
+                mask-image: none !important;
+                overflow: visible !important;
+                padding: 0 !important;
+            }
+        }
+
+        /* Visual settings sliders */
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            height: 6px;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            background: var(--brand-color);
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: transform 0.1s;
+        }
+
+        input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+
+        /* Custom Radio Button: Robust Implementation using Sibling Pseudo-elements */
+        input[type="radio"].custom-radio {
+            /* FORCE Hide the actual input visually */
+            appearance: none !important;
+            -webkit-appearance: none !important;
+            width: 0 !important;
+            height: 0 !important;
+            opacity: 0 !important;
+            position: absolute !important;
+            margin: 0 !important;
+            pointer-events: none;
+        }
+
+        /* The text span acts as the visual container */
+        input[type="radio"].custom-radio+span {
+            position: relative;
+            padding-left: 1.75rem;
+            cursor: pointer;
+            -webkit-user-select: none;
+            user-select: none;
+            display: inline-flex;
+            align-items: center;
+            min-height: 1.5rem;
+        }
+
+        /* Outer Circle */
+        input[type="radio"].custom-radio+span::before {
+            content: "";
+            position: absolute;
+            left: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 1.25rem;
+            height: 1.25rem;
+            border: 2px solid #6b7280;
+            border-radius: 50%;
+            /* Explicit dark background to prevent "white fill" from underlying elements */
+            background-color: #1f2937;
+            transition: border-color var(--transition-fast), background-color var(--transition-fast);
+            box-sizing: border-box;
+        }
+
+        /* Inner Dot */
+        input[type="radio"].custom-radio+span::after {
+            content: "";
+            position: absolute;
+            left: 0.3125rem;
+            top: 50%;
+            transform: translateY(-50%) scale(0);
+            width: 0.625rem;
+            height: 0.625rem;
+        }
+
+        input[type="radio"].custom-radio:checked+span::after {
+            transform: translateY(-50%) scale(1);
+        }
+
+        /* 3. Gen Story Modal Inputs (Edit-Before-Commit) */
+        .gen-input {
+            background-color: rgba(0, 0, 0, 0.3);
+            border: 1px solid #4b5563;
+            color: white;
+            padding: 0.5rem;
+            border-radius: 0.5rem;
+            width: 100%;
+            transition: border-color 0.2s;
+        }
+
+        .gen-input:focus {
+            border-color: #6366f1;
+            outline: none;
+        }
+
+        /* Context Token Visualizer & Trim Gauge */
+        @keyframes pulse-crimson {
+
+            0%,
+            100% {
+                border-color: rgba(239, 68, 68, 0.4);
+                box-shadow: 0 0 4px rgba(239, 68, 68, 0.2);
+                background-color: rgba(127, 29, 29, 0.2);
+            }
+
+            50% {
+                border-color: rgba(239, 68, 68, 0.8);
+                box-shadow: 0 0 12px rgba(239, 68, 68, 0.5);
+                background-color: rgba(127, 29, 29, 0.4);
+            }
+        }
+
+        /* Visual Lore. Fixed tiles so rows stay aligned whether or not an item has a
+           picture, and so a tall photo cannot stretch the list. */
+        .visual-lore-thumb {
+            width: 40px;
+            height: 40px;
+            flex: 0 0 40px;
+            border-radius: 4px;
+            object-fit: cover;
+            background-color: rgba(0, 0, 0, 0.35);
+        }
+
+        .visual-lore-thumb-empty {
+            border: 1px dashed rgba(148, 163, 184, 0.35);
+        }
+
+        .visual-lore-preview {
+            width: 140px;
+            height: 140px;
+            flex: 0 0 140px;
+            border-radius: 6px;
+            object-fit: cover;
+            background-color: rgba(0, 0, 0, 0.35);
+        }
+
+        .animate-pulse-crimson {
+            animation: pulse-crimson 2s infinite ease-in-out;
+        }
+
+        /* Error dot: draws the eye briefly, then stops. It stays on screen until it is
+           read, but a dot that animated forever would be its own kind of nag. */
+        .error-dot-pulse {
+            animation: pulse-crimson 1s ease-in-out 2;
+        }
+
+        /* Sized here rather than with utility classes. tailwind.css in this repo is a
+           prebuilt stylesheet, not JIT, so a utility that no existing markup uses is
+           simply absent: h-7 resolves, w-7 does not, and the dot collapses to a sliver. */
+        #error-dot {
+            position: fixed;
+            top: 4.5rem;
+            right: 1rem;
+            z-index: 95;
+            width: 28px;
+            height: 28px;
+            min-width: 28px;
+            border-radius: 9999px;
+            background-color: rgba(220, 38, 38, 0.92);
+            border: 1px solid rgba(252, 165, 165, 0.4);
+            color: #fff;
+            font-size: 11px;
+            font-weight: 700;
+            line-height: 1;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+            cursor: pointer;
+        }
+
+        #error-dot.is-visible {
+            display: flex;
+        }
+
+        #error-log-panel {
+            position: fixed;
+            top: 4.5rem;
+            right: 1rem;
+            z-index: 96;
+            width: min(22rem, calc(100vw - 2rem));
+            max-height: 60vh;
+        }
+
+        #context-visualizer-tooltip {
+            position: fixed;
+            z-index: 10000;
+            background-color: rgba(15, 23, 42, 0.95);
+            border: 1px solid rgba(75, 85, 99, 0.4);
+            backdrop-filter: blur(8px);
+            padding: 8px 12px;
+            border-radius: 6px;
+            box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.5);
+            pointer-events: none;
+            transition: opacity 0.15s ease-out;
+            color: #f3f4f6;
+            font-size: 11px;
+            line-height: 1.4;
+            max-width: 250px;
+        }
+
+        #context-progress-bar-wrapper>div {
+            transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* Context Segment Style Overrides to avoid Tailwind Pruning bugs */
+        #bar-segment-system {
+            background: linear-gradient(90deg, #4f46e5, #6366f1) !important;
+        }
+
+        #bar-segment-system:hover {
+            background: linear-gradient(90deg, #6366f1, #818cf8) !important;
+        }
+
+        #bar-segment-context {
+            background: linear-gradient(90deg, #d97706, #f59e0b) !important;
+        }
+
+        #bar-segment-context:hover {
+            background: linear-gradient(90deg, #f59e0b, #fbbf24) !important;
+        }
+
+        #bar-segment-static-lore {
+            background: linear-gradient(90deg, #0d9488, #14b8a6) !important;
+        }
+
+        #bar-segment-static-lore:hover {
+            background: linear-gradient(90deg, #14b8a6, #2dd4bf) !important;
+        }
+
+        #bar-segment-persona {
+            background: linear-gradient(90deg, #059669, #10b981) !important;
+        }
+
+        #bar-segment-persona:hover {
+            background: linear-gradient(90deg, #10b981, #34d399) !important;
+        }
+
+        #bar-segment-history {
+            background: linear-gradient(90deg, #7c3aed, #8b5cf6) !important;
+        }
+
+        #bar-segment-history:hover {
+            background: linear-gradient(90deg, #8b5cf6, #a78bfa) !important;
+        }
+
+        #bar-segment-dynamic-lore {
+            background: linear-gradient(90deg, #0891b2, #06b6d4) !important;
+        }
+
+        #bar-segment-dynamic-lore:hover {
+            background: linear-gradient(90deg, #06b6d4, #22d3ee) !important;
+        }
+
+        #bar-segment-free {
+            background-color: #374151 !important;
+            background-image: none !important;
+        }
+
+        #bar-segment-free:hover {
+            background-color: #4b5563 !important;
+            background-image: none !important;
+        }
+
+        /* Legend Markers Style Overrides */
+        #legend-system-marker {
+            background-color: #6366f1 !important;
+        }
+
+        #legend-context-marker {
+            background-color: #f59e0b !important;
+        }
+
+        #legend-static-lore-marker {
+            background-color: #14b8a6 !important;
+        }
+
+        #legend-persona-marker {
+            background-color: #10b981 !important;
+        }
+
+        #legend-history-marker {
+            background-color: #8b5cf6 !important;
+        }
+
+        #legend-dynamic-lore-marker {
+            background-color: #06b6d4 !important;
+        }
+
+        #legend-free-marker {
+            background-color: #374151 !important;
+        }

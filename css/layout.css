@@ -1,0 +1,181 @@
+        /* ==========================================================================
+           [SEC:CSS:LAYOUT]
+           3. LAYOUT & RESPONSIVENESS
+           ========================================================================== */
+
+        #app-container {
+            padding-top: env(safe-area-inset-top);
+            padding-bottom: 0;
+            transition: backdrop-filter 0.3s ease;
+        }
+
+        #chat-input-container {
+            padding: 0.5rem;
+        }
+
+        /* --- Vertical Layout (Mobile) --- */
+        body.layout-vertical #desktop-header {
+            display: none;
+        }
+
+        body.layout-vertical #mobile-header {
+            display: flex;
+        }
+
+        body.layout-vertical #app-container {
+            padding: 0;
+        }
+
+        #main-header {
+            position: relative;
+            z-index: 10;
+        }
+
+        body.layout-vertical #main-header {
+            position: absolute;
+            top: env(safe-area-inset-top);
+            left: 0;
+            right: 0;
+            z-index: 60;
+            padding: 0.5rem;
+            pointer-events: none;
+        }
+
+        body.layout-vertical #hamburger-menu-button-container {
+            pointer-events: auto;
+            opacity: 0.6;
+            z-index: 51;
+            position: relative;
+        }
+
+        body.layout-vertical #hamburger-menu-button-container:hover {
+            opacity: 1;
+        }
+
+        body.layout-vertical #chat-window-container {
+            margin: 0 !important;
+            border-radius: 0;
+            width: 100%;
+        }
+
+        body.layout-vertical #character-portrait-container {
+            display: none;
+        }
+
+        body.layout-vertical #chat-input-container {
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 0.5rem;
+            background: rgba(17, 24, 39, 0.5);
+            -webkit-backdrop-filter: blur(10px);
+            backdrop-filter: blur(10px);
+            border-radius: var(--border-radius-md);
+            z-index: 30;
+        }
+
+        /* --- Horizontal Layout (Desktop) --- */
+        body.layout-horizontal #desktop-header {
+            display: flex;
+        }
+
+        body.layout-horizontal #mobile-header {
+            display: none;
+        }
+
+        body.layout-horizontal #app-container {
+            padding: .5rem;
+        }
+
+        body.layout-horizontal #chat-window-container {
+            background-color: rgba(0, 0, 0, 0.2);
+            border-radius: var(--border-radius-md);
+            justify-content: space-between;
+        }
+
+        body.layout-horizontal #chat-input-container {
+            background: rgba(17, 24, 39, 0.5);
+            -webkit-backdrop-filter: blur(10px);
+            backdrop-filter: blur(10px);
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: var(--border-radius-md);
+        }
+
+        /* CYOA Active Shrunk Chat Input Bar styling */
+        #chat-input-container.cyoa-shrunk {
+            height: auto !important;
+            min-height: unset !important;
+            padding-top: 0px !important;
+            padding-bottom: 0px !important;
+        }
+
+        #chat-input-container.cyoa-shrunk #chat-input {
+            height: 2.25rem !important;
+            /* Extremely compact single-line view */
+            min-height: unset !important;
+            padding-top: 0.35rem !important;
+            padding-bottom: 0.35rem !important;
+            overflow-y: hidden;
+        }
+
+        #chat-input-container.cyoa-shrunk #chat-control-cluster {
+            display: none !important;
+        }
+
+        #chat-input-container.cyoa-shrunk #bolt-btn {
+            display: none !important;
+        }
+
+        #chat-input-container.cyoa-shrunk #chat-resizer {
+            display: none !important;
+        }
+
+        #chat-input {
+            transition: height 0.2s cubic-bezier(0.4, 0, 0.2, 1), padding 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+
+        body.layout-horizontal #chat-window {
+            width: 65%;
+            margin: 0 auto;
+        }
+
+        body.layout-horizontal #character-portrait-container {
+            display: flex;
+            width: 35%;
+            height: 100%;
+            justify-content: center;
+            align-items: inherit;
+        }
+
+        body.layout-horizontal #title-trigger-area {
+            display: none;
+        }
+
+        /* FIX: Hide redundant close button in horizontal mode */
+        body.layout-horizontal .story-details-close-btn {
+            display: none;
+        }
+
+        #mobile-story-title-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            z-index: 50;
+            background: linear-gradient(to bottom, rgba(0, 0, 0, 0.8), transparent);
+            padding-top: calc(0.5rem + env(safe-area-inset-top));
+            padding-bottom: 1rem;
+            text-align: center;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+            border: none;
+            border-bottom: none;
+            color: var(--chat-text-color);
+            font-family: var(--chat-font-family);
+        }
+
+        #mobile-story-title-overlay:focus,
+        #mobile-story-title-overlay:hover {
+            opacity: 1 !important;
+            pointer-events: auto;
+        }

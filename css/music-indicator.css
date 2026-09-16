@@ -1,0 +1,332 @@
+        /* ==========================================================================
+           [SEC:CSS:MUSIC_INDICATOR]
+           Background Music Floating Indicator
+           ========================================================================== */
+
+        .music-indicator {
+            z-index: 60;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            gap: 0.35rem;
+            padding: 0.3rem 0.5rem;
+            border-radius: 0.5rem;
+            background: rgba(15, 15, 25, 0.75);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(99, 102, 241, 0.25);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4), 0 0 15px rgba(99, 102, 241, 0.1);
+            cursor: pointer;
+            transition: transform 0.2s ease, opacity 0.3s ease, box-shadow 0.2s ease;
+            user-select: none;
+            width: 100%;
+            font-size: 0.65rem;
+        }
+
+        .music-indicator:hover {
+            transform: scale(1.05);
+            box-shadow: 0 4px 25px rgba(0, 0, 0, 0.5), 0 0 20px rgba(99, 102, 241, 0.2);
+        }
+
+        .music-indicator.generating {
+            animation: music-pulse 1.8s ease-in-out infinite;
+        }
+
+        @keyframes music-pulse {
+
+            0%,
+            100% {
+                opacity: 0.8;
+            }
+
+            50% {
+                opacity: 1;
+                transform: scale(1.02);
+            }
+        }
+
+        /* Character Hub Detail View (Premium Immersive) */
+        .hub-detail-wrapper {
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #020617;
+            position: relative;
+        }
+
+        .hub-detail-wrapper {
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #020617;
+            position: relative;
+        }
+
+        .hub-detail-sidebar {
+            width: 100%;
+            height: 50vh;
+            flex-shrink: 0;
+            position: relative;
+            background-color: #0f172a;
+            overflow: hidden;
+            z-index: 10;
+        }
+
+        .hub-detail-content {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+            height: 100%;
+            overflow-y: auto;
+            position: relative;
+            background: #020617;
+            z-index: 20;
+            padding: 3rem 1.5rem;
+            margin-top: -3rem;
+            border-radius: 40px 40px 0 0;
+            box-shadow: 0 -20px 50px rgba(0, 0, 0, 0.6);
+        }
+
+        .landscape-only {
+            display: none;
+        }
+
+        .portrait-only {
+            display: block;
+        }
+
+        @media (min-width: 1024px) and (orientation: landscape) {
+            .landscape-only {
+                display: flex;
+            }
+
+            .portrait-only {
+                display: none;
+            }
+
+            .hub-detail-wrapper {
+                flex-direction: row;
+            }
+
+            .hub-detail-sidebar {
+                width: 450px;
+                height: 100%;
+            }
+
+            .hub-detail-content {
+                flex: 1;
+                overflow-y: hidden;
+                margin-top: 0;
+                border-radius: 0;
+                padding: 0;
+                box-shadow: none;
+                border-left: 1px solid rgba(255, 255, 255, 0.05);
+            }
+
+            .hub-detail-scroll-area {
+                flex-grow: 1;
+                overflow-y: auto;
+                padding: 3rem;
+                height: 100%;
+                scrollbar-gutter: stable;
+            }
+        }
+
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.02);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 32px;
+            padding: 2.5rem;
+        }
+
+        .custom-scroll::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .custom-scroll::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .custom-scroll::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+        }
+
+        .custom-scroll::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .data-header {
+            font-size: 0.6rem;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: 0.3em;
+            color: #6366f1;
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .data-header::after {
+            content: '';
+            height: 1px;
+            flex-grow: 1;
+            background: rgba(99, 102, 241, 0.2);
+        }
+
+        .long-text {
+            font-family: 'Spectral', serif;
+            font-size: 1.1rem;
+            line-height: 1.7;
+            color: rgba(255, 255, 255, 0.85);
+            margin-bottom: 2rem;
+        }
+
+        .import-btn-premium {
+            background: #6366f1;
+            color: #fff;
+            padding: 16px 32px;
+            border-radius: 20px;
+            font-weight: 800;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            box-shadow: 0 10px 30px rgba(99, 102, 241, 0.4);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .import-btn-premium:hover {
+            transform: scale(1.03) translateY(-2px);
+            box-shadow: 0 15px 40px rgba(99, 102, 241, 0.5);
+            background: #4f46e5;
+        }
+
+        .glass-badge {
+            background: rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 0.5px solid rgba(255, 255, 255, 0.2);
+            padding: 6px 12px;
+            border-radius: 10px;
+            font-size: 9px;
+            font-weight: 800;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: #fff;
+        }
+
+        .section-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 24px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .music-bars {
+            display: flex;
+            align-items: flex-end;
+            gap: 2px;
+            height: 14px;
+        }
+
+        .music-bars .bar {
+            width: 3px;
+            border-radius: 1px;
+            background: linear-gradient(to top, #818cf8, #a78bfa);
+            animation: music-bar-bounce 0.8s ease-in-out infinite;
+        }
+
+        .music-bars .bar:nth-child(1) {
+            height: 40%;
+            animation-delay: 0s;
+        }
+
+        .music-bars .bar:nth-child(2) {
+            height: 70%;
+            animation-delay: 0.15s;
+        }
+
+        .music-bars .bar:nth-child(3) {
+            height: 50%;
+            animation-delay: 0.3s;
+        }
+
+        .music-bars .bar:nth-child(4) {
+            height: 90%;
+            animation-delay: 0.1s;
+        }
+
+        @keyframes music-bar-bounce {
+
+            0%,
+            100% {
+                transform: scaleY(0.3);
+            }
+
+            50% {
+                transform: scaleY(1);
+            }
+        }
+
+        .music-indicator.paused .music-bars .bar {
+            animation-play-state: paused;
+            transform: scaleY(0.3);
+        }
+
+        .music-indicator .music-label {
+            font-size: 0.65rem;
+            font-weight: 600;
+            color: rgba(199, 210, 254, 0.8);
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            white-space: nowrap;
+        }
+
+        .music-indicator .music-vol-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.08);
+            border: none;
+            color: rgba(199, 210, 254, 0.6);
+            cursor: pointer;
+            transition: background 0.15s ease;
+            padding: 0;
+        }
+
+        .music-indicator .music-vol-btn:hover {
+            background: rgba(255, 255, 255, 0.18);
+            color: rgba(199, 210, 254, 1);
+        }
+
+        /* Music Backend Selector Buttons */
+        .music-backend-option {
+            background: rgba(0, 0, 0, 0.2);
+            border-color: rgba(75, 85, 99, 0.6);
+            color: #9ca3af;
+            cursor: pointer;
+        }
+
+        .music-backend-option:hover {
+            background: rgba(99, 102, 241, 0.1);
+            border-color: rgba(99, 102, 241, 0.4);
+            color: #c7d2fe;
+        }
+
+        .music-backend-option.active {
+            background: rgba(99, 102, 241, 0.2);
+            border-color: rgba(99, 102, 241, 0.7);
+            color: #e0e7ff;
+            box-shadow: 0 0 12px rgba(99, 102, 241, 0.15);
+        }

@@ -1,0 +1,263 @@
+        /* ==========================================================================
+           [SEC:CSS:STATS]
+           Character Stats HUD — Collapsible panel with animated bars.
+           ========================================================================== */
+
+        .stats-panel {
+            background: linear-gradient(135deg, rgba(17, 24, 39, 0.95) 0%, rgba(30, 41, 59, 0.85) 100%);
+            border: 1px solid rgba(99, 102, 241, 0.3);
+            border-radius: 0.75rem;
+            backdrop-filter: blur(12px);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+            animation: statsPopIn 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+        }
+
+        @keyframes statsPopIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .stats-panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid rgba(99, 102, 241, 0.2);
+            background-color: rgba(0, 0, 0, 0.2);
+        }
+
+        .stats-panel-title {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.75rem;
+            font-weight: 700;
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            color: rgba(165, 180, 252, 0.9);
+        }
+
+        .stats-panel-close {
+            color: rgba(165, 180, 252, 0.5);
+            cursor: pointer;
+            transition: color 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.25rem;
+            border-radius: 0.25rem;
+        }
+
+        .stats-panel-close:hover {
+            color: rgba(165, 180, 252, 1);
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+
+        .stats-panel-body {
+            padding: 0.75rem 1rem;
+            overflow-y: auto;
+            flex-grow: 1;
+        }
+
+        /* Container positions */
+        #stats-panel-container {
+            z-index: 60;
+        }
+
+        body.layout-horizontal #stats-panel-container:not(.hidden) {
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            width: 35%;
+            height: 100%;
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+            padding-bottom: 0.5rem;
+            pointer-events: none;
+            /* Let clicks pass when empty */
+        }
+
+        body.layout-horizontal #stats-panel-container>.stats-panel {
+            pointer-events: auto;
+            width: calc(100% - 1rem);
+            /* Slight margin from sides */
+            max-height: calc(100% - 1rem);
+        }
+
+        body.layout-vertical #stats-panel-container:not(.hidden) {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(4px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        body.layout-vertical #stats-panel-container>.stats-panel {
+            width: 90%;
+            max-width: 400px;
+            max-height: 80vh;
+        }
+
+        #inventory-panel-container {
+            z-index: 60;
+        }
+
+        body.layout-horizontal #inventory-panel-container:not(.hidden) {
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            width: 35%;
+            height: 100%;
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+            padding-bottom: 0.5rem;
+            pointer-events: none;
+        }
+
+        body.layout-horizontal #inventory-panel-container>.inventory-panel {
+            pointer-events: auto;
+            width: calc(100% - 1rem);
+            max-height: calc(100% - 1rem);
+        }
+
+        body.layout-vertical #inventory-panel-container:not(.hidden) {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(4px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        body.layout-vertical #inventory-panel-container>.inventory-panel {
+            width: 90%;
+            max-width: 400px;
+            max-height: 80vh;
+        }
+
+        .stats-char-group {
+            margin-bottom: 0.75rem;
+        }
+
+        .stats-char-group:last-child {
+            margin-bottom: 0;
+        }
+
+        .stats-char-name {
+            font-size: 0.7rem;
+            font-weight: 600;
+            color: rgba(209, 213, 219, 0.9);
+            margin-bottom: 0.4rem;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .stats-char-name .char-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .stat-row {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.3rem;
+        }
+
+        .stat-label {
+            font-size: 0.65rem;
+            color: rgba(156, 163, 175, 0.8);
+            min-width: 70px;
+            text-align: right;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .stat-bar-track {
+            flex-grow: 1;
+            height: 6px;
+            background: rgba(55, 65, 81, 0.6);
+            border-radius: 3px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .stat-bar-fill {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 0.6s cubic-bezier(0.25, 1, 0.5, 1), background-color 0.4s ease;
+            position: relative;
+        }
+
+        .stat-bar-fill.stat-low {
+            background: linear-gradient(90deg, #ef4444, #f87171);
+        }
+
+        .stat-bar-fill.stat-mid {
+            background: linear-gradient(90deg, #eab308, #facc15);
+        }
+
+        .stat-bar-fill.stat-high {
+            background: linear-gradient(90deg, #22c55e, #4ade80);
+        }
+
+        .stat-value {
+            font-size: 0.6rem;
+            font-weight: 700;
+            min-width: 22px;
+            text-align: right;
+            color: rgba(209, 213, 219, 0.7);
+            font-variant-numeric: tabular-nums;
+        }
+
+        .stat-delta {
+            font-size: 0.55rem;
+            font-weight: 700;
+            padding: 1px 4px;
+            border-radius: 4px;
+            animation: statDeltaIn 0.3s ease forwards;
+            white-space: nowrap;
+            flex-shrink: 0;
+            min-width: fit-content;
+        }
+
+        .stat-delta.positive {
+            color: #4ade80;
+            background: rgba(34, 197, 94, 0.15);
+        }
+
+        .stat-delta.negative {
+            color: #f87171;
+            background: rgba(239, 68, 68, 0.15);
+        }
+
+        @keyframes statDeltaIn {
+            0% {
+                opacity: 0;
+                transform: translateX(-4px);
+            }
+
+            100% {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }

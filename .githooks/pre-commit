@@ -1,0 +1,15 @@
+#!/bin/sh
+# Refuse a commit when index.html and the js/ + css/ folders disagree:
+# a file that is never loaded, a file that is loaded but missing, a
+# syntax error, or the same top-level name declared in two files.
+#
+# Activation: `git config core.hooksPath .githooks` (done automatically
+# by the `prepare` script in package.json on `npm install`).
+
+if ! node -e "require('./tools/check-files.js')" 2>/dev/null; then
+    echo "tools/check-files.js can't be loaded (missing file, syntax error,"
+    echo "or missing dependency). Run \`npm install\` and try again."
+    exit 1
+fi
+
+node tools/check-files.js

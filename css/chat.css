@@ -1,0 +1,477 @@
+        /* ==========================================================================
+           [SEC:CSS:CHAT]
+           5. CHAT WINDOW STYLING
+           ========================================================================== */
+        #chat-window {
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Vertical Mode Adjustment: Push top bubble down to prevent overlap with the header */
+        body.layout-vertical #chat-window {
+            padding-top: 4rem;
+        }
+
+        /* Scroll to Bottom Button */
+        #scroll-to-bottom-btn {
+            position: absolute;
+            bottom: 1rem;
+            right: 1.5rem;
+            z-index: 50;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+            pointer-events: none;
+            /* Only enable when visible */
+            opacity: 0;
+            transform: translateY(1rem);
+        }
+
+        #scroll-to-bottom-btn:hover {
+            transform: translateY(0) scale(1.1);
+            background-color: rgba(31, 41, 55, 0.8);
+            border-color: rgba(99, 102, 241, 0.5);
+        }
+
+        #scroll-to-bottom-btn:active {
+            transform: scale(0.95);
+        }
+
+        #scroll-to-bottom-btn.visible {
+            display: flex !important;
+            opacity: 0.7 !important;
+            transform: translateY(0);
+            pointer-events: auto;
+        }
+
+        #scroll-to-bottom-btn.visible:hover {
+            opacity: 1 !important;
+            transform: scale(1.1);
+        }
+
+        /* Markdown Styles */
+        /* Markdown Styles: Controlled via CSS Variables for theming support */
+        #chat-window h1 {
+            color: var(--md-h1-color, #818cf8);
+            font-family: var(--md-h1-font, var(--chat-font-family));
+            font-size: 1.5em;
+            font-weight: 700;
+            margin: 0.5em 0;
+        }
+
+        #chat-window h2 {
+            color: var(--md-h2-color, #a5b4fc);
+            font-family: var(--md-h2-font, var(--chat-font-family));
+            font-size: 1.25em;
+            font-weight: 600;
+            margin: 0.4em 0;
+        }
+
+        #chat-window h3 {
+            color: var(--md-h3-color, #c7d2fe);
+            font-family: var(--md-h3-font, var(--chat-font-family));
+            font-size: 1.1em;
+            font-weight: 600;
+            margin: 0.3em 0;
+        }
+
+        /* Bold Text: Uses the CSS variable for dynamic coloring */
+        #chat-window strong {
+            color: var(--md-bold-color, #ffffff);
+            font-family: var(--md-bold-font, var(--chat-font-family));
+            font-weight: 700;
+        }
+
+        #chat-window em {
+            color: var(--md-italic-color, #9ca3af);
+            font-family: var(--md-italic-font, var(--chat-font-family));
+        }
+
+        #chat-window blockquote {
+            border-left: 3px solid var(--brand-color);
+            padding-left: 1rem;
+            color: var(--md-quote-color, #9ca3af);
+            font-family: var(--md-quote-font, var(--chat-font-family));
+            font-style: italic;
+        }
+
+        /* Smart Quotation Formatting 
+           Uses dynamic variables to toggle between the default "Filtered" look 
+           and a specific "User Color" look. */
+        .dialogue-quote {
+            color: var(--active-quote-color, inherit);
+            filter: var(--active-quote-filter, saturate(175%) opacity(75%) drop-shadow(1px 1px 5px black));
+            font-family: var(--md-quote-font, inherit);
+            font-weight: 500;
+        }
+
+        /* =============================================
+           CURRENT SCENARIO BANNER
+           Inline introductory card for the "Current Scenario" static entry.
+           Displayed before the first chat message as an atmospheric scene-setter.
+           ============================================= */
+
+        /* Divider separating scenario text from the player character chip */
+        .scenario-banner-divider {
+            width: 100%;
+            height: 1px;
+            background: linear-gradient(to right, transparent, rgba(139, 92, 246, 0.3), transparent);
+            margin: 1.25rem 0;
+        }
+
+        /* Player character chip: square portrait + name + description */
+        .scenario-banner-player {
+            display: flex;
+            align-items: center;
+            gap: 0.875rem;
+            width: 100%;
+            text-align: left;
+            animation: scenarioBannerFadeIn 1.1s ease both;
+        }
+
+        .scenario-banner-player-avatar {
+            flex-shrink: 0;
+            width: 6.5rem;
+            height: 6.5rem;
+            border-radius: 0.5rem;
+            background-color: rgba(99, 102, 241, 0.15);
+            background-size: cover;
+            background-position: center top;
+            border: 1px solid rgba(139, 92, 246, 0.35);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        /* Silhouette icon shown when no portrait image is available */
+        .scenario-banner-player-avatar svg {
+            width: 60%;
+            height: 60%;
+            color: rgba(139, 92, 246, 0.5);
+        }
+
+        .scenario-banner-player-info {
+            display: flex;
+            flex-direction: column;
+            gap: 0.2rem;
+            min-width: 0;
+        }
+
+        .scenario-banner-player-role {
+            font-size: 0.6rem;
+            font-weight: 700;
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            color: rgba(167, 139, 250, 0.6);
+        }
+
+        .scenario-banner-player-name {
+            font-size: 0.95rem;
+            font-weight: 600;
+            font-style: normal;
+            color: rgba(221, 214, 254, 0.95);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .scenario-banner-player-desc {
+            font-size: 0.8rem;
+            font-style: italic;
+            color: rgba(156, 163, 175, 0.85);
+            white-space: normal;
+            line-height: 1.5;
+        }
+
+        .scenario-banner-card {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            margin: 1.5rem auto 2rem;
+            padding: 1.75rem 2rem;
+            max-width: 680px;
+            width: calc(100% - 2rem);
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.07) 0%, rgba(139, 92, 246, 0.09) 100%);
+            border: 1px solid rgba(139, 92, 246, 0.3);
+            border-radius: 1rem;
+            backdrop-filter: blur(8px);
+            box-shadow: 0 0 30px rgba(139, 92, 246, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+            animation: scenarioBannerFadeIn 0.8s ease both;
+        }
+
+        .scenario-banner-icon {
+            width: 2.5rem;
+            height: 2.5rem;
+            margin-bottom: 0.75rem;
+            color: rgba(167, 139, 250, 0.7);
+        }
+
+        .scenario-banner-icon svg {
+            width: 100%;
+            height: 100%;
+        }
+
+        .scenario-banner-label {
+            font-size: 0.65rem;
+            font-weight: 700;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            color: rgba(167, 139, 250, 0.6);
+            margin-bottom: 1rem;
+        }
+
+        .scenario-banner-story-title {
+            font-size: 1.85rem;
+            font-weight: 800;
+            color: rgba(224, 231, 255, 0.95);
+            margin-top: 0.25rem;
+            margin-bottom: 0.15rem;
+            letter-spacing: -0.02em;
+            text-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+        }
+
+        .scenario-banner-narrative-subtitle {
+            font-size: 1.2rem;
+            font-style: italic;
+            color: rgba(167, 139, 250, 0.8);
+            margin-bottom: 1.5rem;
+            font-weight: 500;
+        }
+
+        .scenario-banner-content {
+            font-size: 0.95rem;
+            line-height: 1.75;
+            color: rgba(209, 213, 219, 0.9);
+            font-style: italic;
+            text-align: left;
+        }
+
+        .scenario-banner-content p {
+            margin-bottom: 0.5rem;
+        }
+
+        .scenario-banner-content p:last-child {
+            margin-bottom: 0;
+        }
+
+        .scenario-banner-content strong {
+            color: rgba(221, 214, 254, 0.95);
+            font-style: normal;
+        }
+
+        .scenario-banner-content em {
+            color: rgba(196, 181, 253, 0.85);
+        }
+
+        @keyframes scenarioBannerFadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Bubble Container */
+        .chat-bubble-container {
+            width: 100%;
+            max-width: 900px;
+            margin: 0 auto 1rem auto;
+            animation: fadeIn var(--transition-medium);
+        }
+
+        /* Swarm Deliberation Summary Card */
+        .swarm-summary-card .swarm-summary-body {
+            display: none;
+        }
+
+        .swarm-summary-card.swarm-open .swarm-summary-body {
+            display: block;
+        }
+
+        .swarm-summary-card.swarm-open .swarm-chevron {
+            transform: rotate(180deg);
+        }
+
+        .bubble-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            padding: 0 0.5rem 0.25rem 0.5rem;
+            font-size: 0.85rem;
+        }
+
+        /* Timestamps: Hidden by default to reduce clutter, revealed on hover */
+        .bubble-header .timestamp {
+            opacity: 0;
+            transition: opacity var(--transition-fast);
+        }
+
+        .chat-bubble-container:hover .bubble-header .timestamp {
+            opacity: 1;
+        }
+
+        /* Bubble Styling: Sizing constraints and shadow effects */
+        .bubble-body {
+            font-size: var(--chat-font-size);
+            font-family: var(--chat-font-family);
+            position: relative;
+            border: none;
+            /* No outline */
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+
+            /* Shrink to fit text, but max out at page width */
+            width: fit-content;
+            min-width: 120px;
+            max-width: 100%;
+
+            display: flow-root;
+        }
+
+        .bubble-body .whitespace-pre-wrap {
+            /* This tells the browser: "If there is a newline character, show it." */
+            white-space: pre-wrap !important;
+            word-wrap: break-word;
+            /* Prevent long words from breaking layout */
+        }
+
+        .bubble-char-image {
+            float: left;
+            width: var(--bubble-image-size);
+
+            height: auto;
+            border-radius: 0.5rem;
+            margin-right: 1rem;
+            margin-bottom: 0.5rem;
+            shape-outside: margin-box;
+        }
+
+        /* Constraints for any in-line images (markdown or visual master) */
+        #chat-window img {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            /* Prevent baseline gaps */
+        }
+
+        /* Ensure code blocks don't break the bubble layout on mobile */
+        .bubble-body pre {
+            max-width: 100%;
+            overflow-x: auto;
+            background-color: #1e1e1e;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin: 0.5em 0;
+        }
+
+        /* Ensure markdown tables don't cause sideways scroll */
+        .bubble-body table {
+            display: block;
+            max-width: 100%;
+            overflow-x: auto;
+            border-collapse: collapse;
+        }
+
+        /* Restore natural spacing for Markdown elements inside bubbles */
+        .bubble-body p {
+            margin-bottom: 0.0rem;
+            /* Space between paragraphs */
+        }
+
+        .bubble-body p:last-child {
+            margin-bottom: 0;
+            /* No space after the last paragraph */
+        }
+
+        .bubble-body ul,
+        .bubble-body ol {
+            margin-bottom: 0.5rem;
+            padding-left: 1.5rem;
+            /* Indent lists */
+        }
+
+        .bubble-body li {
+            list-style-type: disc;
+            /* Restore bullet points */
+        }
+
+        .action-btn-group {
+            opacity: 0;
+            /* FIX: Add delay ONLY when hiding (mouse out) so cursor can bridge the gap */
+            transition: opacity 0.2s ease-in-out 0.4s;
+        }
+
+        .chat-bubble-container:hover .action-btn-group {
+            opacity: 1;
+            /* FIX: Instant show on hover */
+            transition-delay: 0s;
+        }
+
+        .message-dropdown-menu {
+            width: max-content;
+            min-width: max-content;
+        }
+
+        /* Touch devices never produce a reliable :hover, so the rule above never fires and
+           the whole bar sits at opacity 0 permanently — every per-message action is
+           unreachable on a phone. Reveal it there. The kebab is the entry point to the
+           full menu, so it has to be visible without hovering. */
+        @media (hover: none) {
+            .action-btn-group {
+                opacity: 1;
+                transition-delay: 0s;
+            }
+
+            .chat-bubble-container .action-btn-group button {
+                opacity: 0.6;
+            }
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes pulseOpacity {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.5;
+            }
+        }
+
+        .typing-bubble-pulse {
+            animation: pulseOpacity 1.5s infinite;
+        }
+
+        @keyframes flashOutline {
+            0% {
+                outline: 2px solid var(--chat-text-color);
+                outline-offset: -2px;
+            }
+
+            100% {
+                outline: 2px solid transparent;
+                outline-offset: -2px;
+            }
+        }
+
+        .flash-outline {
+            animation: flashOutline 0.4s ease-out;
+        }

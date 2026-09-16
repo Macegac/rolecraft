@@ -1,0 +1,270 @@
+        /* ==========================================================================
+           [SEC:CSS:TEXTMODE]
+           Text Mode. Restyles the normal chat bubbles as a phone conversation so that
+           every existing message tool (edit, delete, versions, regenerate) still works.
+           ========================================================================== */
+
+        #dm-bar {
+            display: none;
+            background: rgba(12, 12, 15, 0.92);
+            backdrop-filter: blur(14px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            /* Above #mobile-story-title-overlay (z-index 50), which is fixed to the top of the
+               viewport and would otherwise paint the story title across this bar. */
+            z-index: 60;
+            padding-top: calc(0.5rem + env(safe-area-inset-top));
+        }
+
+        /* The story title is meaningless inside a private thread, and its :hover rule flips it to
+           pointer-events: auto, which swallows clicks aimed at the back button. */
+        body[data-dm-mode="true"] #mobile-story-title-overlay,
+        body[data-dm-inbox="true"] #mobile-story-title-overlay {
+            display: none !important;
+        }
+
+        body[data-dm-mode="true"] #dm-bar {
+            display: flex;
+        }
+
+        #dm-bar-avatar {
+            background-color: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .dm-back-btn {
+            color: #e5e7eb;
+            background: rgba(255, 255, 255, 0.07);
+        }
+
+        .dm-back-btn:hover {
+            background: rgba(255, 255, 255, 0.16);
+        }
+
+        /* Push the thread clear of the floating header bar, and hold the conversation in a
+           narrow centred column. Texts are short, so the full chat width reads badly. */
+        body[data-dm-mode="true"] #chat-window {
+            padding-top: calc(3.5rem + env(safe-area-inset-top));
+            padding-left: max(0.75rem, calc((100% - 40rem) / 2));
+            padding-right: max(0.75rem, calc((100% - 40rem) / 2));
+        }
+
+        /* --- Bubble layout --- */
+        body[data-dm-mode="true"] .chat-bubble-container {
+            display: flex;
+            flex-direction: column;
+            max-width: 78%;
+            margin: 2px 0;
+            width: fit-content;
+        }
+
+        body[data-dm-mode="true"] .chat-bubble-container[data-dm-side="user"] {
+            margin-left: auto;
+            align-items: flex-end;
+        }
+
+        body[data-dm-mode="true"] .chat-bubble-container[data-dm-side="char"] {
+            margin-right: auto;
+            align-items: flex-start;
+        }
+
+        /* --- Header ---
+           Stays in normal flow and reserves its space exactly like the main chat, so nothing
+           shifts on hover. Only opacity animates. The name fades in the same way the timestamp
+           already does; the action buttons keep their existing ml-auto right alignment. */
+        body[data-dm-mode="true"] .bubble-header {
+            width: 100%;
+            font-size: 0.8rem;
+        }
+
+        body[data-dm-mode="true"] .bubble-header>p {
+            opacity: 0;
+            transition: opacity var(--transition-fast);
+        }
+
+        body[data-dm-mode="true"] .chat-bubble-container:hover .bubble-header>p {
+            opacity: 1;
+        }
+
+        /* --- The bubble itself. Inline styles set the narrative theme, so override hard. --- */
+        body[data-dm-mode="true"] .bubble-body {
+            padding: 7px 13px !important;
+            border-radius: 18px !important;
+            font-size: 14px;
+            line-height: 1.4;
+            backdrop-filter: none !important;
+            border: none !important;
+            box-shadow: none !important;
+            cursor: pointer;
+        }
+
+        body[data-dm-mode="true"] .chat-bubble-container[data-dm-side="char"] .bubble-body {
+            background: rgba(255, 255, 255, 0.12) !important;
+            border-bottom-left-radius: 5px !important;
+        }
+
+        body[data-dm-mode="true"] .chat-bubble-container[data-dm-side="user"] .bubble-body {
+            background: #4f46e5 !important;
+            border-bottom-right-radius: 5px !important;
+        }
+
+        body[data-dm-mode="true"] .chat-bubble-container[data-dm-side="user"] .bubble-body div[id^="message-content-"] {
+            color: #ffffff !important;
+        }
+
+        body[data-dm-mode="true"] .chat-bubble-container[data-dm-side="char"] .bubble-body div[id^="message-content-"] {
+            color: #e9e9ea !important;
+        }
+
+        /* --- Inbox --- */
+        #dm-inbox {
+            background: rgba(10, 10, 12, 0.96);
+            backdrop-filter: blur(14px);
+            z-index: 60;
+        }
+
+        #dm-inbox:not(.hidden) {
+            display: flex;
+        }
+
+        #dm-inbox-header {
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(255, 255, 255, 0.03);
+            padding-top: calc(0.5rem + env(safe-area-inset-top));
+        }
+
+        .dm-inbox-row {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            width: 100%;
+            padding: 0.6rem 0.75rem;
+            border-radius: 0.6rem;
+            text-align: left;
+            transition: background 0.15s ease;
+        }
+
+        .dm-inbox-row:hover {
+            background: rgba(255, 255, 255, 0.06);
+        }
+
+        .dm-inbox-avatar {
+            width: 2.75rem;
+            height: 2.75rem;
+            border-radius: 50%;
+            background-color: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            background-size: cover;
+            background-position: center;
+            flex-shrink: 0;
+        }
+
+        .dm-inbox-name {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #e9e9ea;
+        }
+
+        .dm-inbox-preview {
+            font-size: 0.75rem;
+            color: rgba(233, 233, 234, 0.45);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .dm-inbox-row.is-unread .dm-inbox-preview {
+            color: rgba(233, 233, 234, 0.85);
+            font-weight: 500;
+        }
+
+        .dm-inbox-time {
+            font-size: 0.65rem;
+            color: rgba(233, 233, 234, 0.35);
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        /* Unread is actionable, so it is the loud one.
+           .hidden must still win: this rule is declared after Tailwind's utility and has the
+           same specificity, so without the guard below the pill shows at a count of zero. */
+        .dm-unread-pill.hidden,
+        .dm-new-tag.hidden {
+            display: none;
+        }
+
+        .dm-unread-pill {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 1.15rem;
+            height: 1.15rem;
+            padding: 0 0.35rem;
+            border-radius: 999px;
+            background: #4f46e5;
+            color: #fff;
+            font-size: 0.65rem;
+            font-weight: 700;
+            line-height: 1;
+            flex-shrink: 0;
+        }
+
+        /* On the toolbar button the pill floats over the icon. */
+        #dm-inbox-btn .dm-unread-pill {
+            position: absolute;
+            top: 0.1rem;
+            right: 0.1rem;
+        }
+
+        .dm-experimental-tag {
+            display: inline-block;
+            margin-left: 0.35rem;
+            padding: 0.05rem 0.3rem;
+            border-radius: 0.25rem;
+            border: 1px solid rgba(245, 158, 11, 0.4);
+            color: rgba(245, 158, 11, 0.9);
+            font-size: 0.55rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            vertical-align: middle;
+        }
+
+        /* NEW is informational, so it stays quiet. */
+        .dm-new-tag {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.05rem 0.4rem;
+            border-radius: 0.25rem;
+            border: 1px solid rgba(233, 233, 234, 0.25);
+            color: rgba(233, 233, 234, 0.5);
+            font-size: 0.6rem;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            flex-shrink: 0;
+        }
+
+        .dm-inbox-section {
+            padding: 0.75rem 0.75rem 0.35rem;
+            font-size: 0.6rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: rgba(233, 233, 234, 0.3);
+        }
+
+        /* Timestamp divider inserted between messages with a real time gap. */
+        .dm-time-divider {
+            text-align: center;
+            font-size: 10px;
+            letter-spacing: 0.04em;
+            color: rgba(229, 231, 235, 0.4);
+            margin: 14px 0 8px;
+            text-transform: uppercase;
+            width: 100%;
+        }
+
+        /* Portraits and cinematic backdrops are noise in a text thread. */
+        body[data-dm-mode="true"] #character-portrait-container,
+        body[data-dm-mode="true"] #stats-panel-container {
+            display: none !important;
+        }
