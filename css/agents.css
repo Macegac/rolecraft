@@ -1,0 +1,409 @@
+        /* ==========================================================================
+           AGENTS
+           The Agents settings tab, note cards under replies, and the Agent notes panel
+           (js/controllers/agents.js). Styled here rather than with utility classes because
+           electron/tailwind.css is prebuilt: utilities no existing markup uses are missing.
+           ========================================================================== */
+
+        .agents {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            color: var(--text-primary);
+        }
+
+        .agents-title {
+            font-size: 1.125rem;
+            font-weight: 700;
+            color: #fff;
+            margin: 0;
+        }
+
+        .agents-sub,
+        .agents-muted,
+        .agents-hint {
+            font-size: 0.8125rem;
+            color: #9ca3af;
+            line-height: 1.45;
+        }
+
+        .agents-sub { margin: 0.35rem 0 0; }
+        .agents-sub strong { color: var(--text-primary); }
+        .agents-hint { display: block; margin-top: 0.25rem; font-size: 0.75rem; }
+
+        .agents-toolbar,
+        .agents-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
+        .agents-btn {
+            background: rgba(31, 41, 55, 0.8);
+            border: 1px solid var(--border-primary);
+            color: var(--text-primary);
+            border-radius: 0.5rem;
+            padding: 0.5rem 0.9rem;
+            font-size: 0.875rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background var(--transition-fast);
+        }
+
+        .agents-btn:hover:not(:disabled) { background: rgba(55, 65, 81, 0.9); }
+        .agents-btn:disabled { opacity: 0.45; cursor: default; }
+
+        .agents-btn-primary {
+            background: var(--brand-color);
+            border-color: var(--brand-color);
+            color: #fff;
+        }
+
+        .agents-btn-primary:hover:not(:disabled) { background: var(--brand-color-hover); }
+
+        .agents-btn-danger {
+            background: rgba(127, 29, 29, 0.5);
+            border-color: rgba(185, 28, 28, 0.7);
+            color: #fecaca;
+        }
+
+        .agents-btn-danger:hover:not(:disabled) { background: rgba(153, 27, 27, 0.8); }
+
+        .agents-report {
+            background: rgba(17, 24, 39, 0.5);
+            border: 1px solid var(--border-primary);
+            border-radius: var(--border-radius-md);
+            padding: 0.75rem 1rem;
+        }
+
+        .agents-report-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+            font-weight: 600;
+        }
+
+        .agents-report-list {
+            margin: 0.4rem 0 0;
+            padding-left: 1.1rem;
+            list-style: disc;
+            font-size: 0.8125rem;
+            color: #d1d5db;
+        }
+
+        .agents-report-list li + li { margin-top: 0.3rem; }
+
+        .agents-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .agents-row {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            background: rgba(17, 24, 39, 0.3);
+            border: 1px solid rgba(55, 65, 81, 0.5);
+            border-radius: var(--border-radius-md);
+            padding: 0.25rem 0.9rem 0.25rem 0.25rem;
+        }
+
+        .agents-row-main {
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.2rem;
+            text-align: left;
+            background: none;
+            border: 0;
+            color: inherit;
+            padding: 0.6rem 0.65rem;
+            border-radius: 0.6rem;
+            cursor: pointer;
+        }
+
+        .agents-row-main:hover { background: rgba(55, 65, 81, 0.35); }
+
+        .agents-row-top {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            max-width: 100%;
+        }
+
+        .agents-row-name {
+            font-weight: 600;
+            color: #fff;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .agents-row-desc { font-size: 0.8125rem; color: #d1d5db; }
+        .agents-row-meta { font-size: 0.75rem; color: #9ca3af; }
+
+        .agents-kind {
+            flex-shrink: 0;
+            font-size: 0.625rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            padding: 0.1rem 0.4rem;
+            border-radius: 0.3rem;
+        }
+
+        .agents-kind-note { background: rgba(13, 148, 136, 0.25); color: #5eead4; }
+        .agents-kind-helper { background: rgba(79, 70, 229, 0.3); color: #c7d2fe; }
+
+        .agents-switch {
+            position: relative;
+            flex-shrink: 0;
+            width: 2.75rem;
+            height: 1.5rem;
+            cursor: pointer;
+        }
+
+        .agents-switch input {
+            position: absolute;
+            opacity: 0;
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            cursor: pointer;
+        }
+
+        .agents-switch-track {
+            position: absolute;
+            inset: 0;
+            background: #4b5563;
+            border-radius: 999px;
+            transition: background var(--transition-fast);
+            pointer-events: none;
+        }
+
+        .agents-switch-track::after {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 1.25rem;
+            height: 1.25rem;
+            background: #fff;
+            border-radius: 999px;
+            transition: transform var(--transition-fast);
+        }
+
+        .agents-switch input:checked + .agents-switch-track { background: #4f46e5; }
+        .agents-switch input:checked + .agents-switch-track::after { transform: translateX(1.25rem); }
+        .agents-switch input:disabled + .agents-switch-track { opacity: 0.4; }
+
+        .agents-empty {
+            font-size: 0.875rem;
+            color: #9ca3af;
+            text-align: center;
+            padding: 1.5rem 0.5rem;
+        }
+
+        /* Editor */
+
+        .agents-editor-head {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .agents-field {
+            display: flex;
+            flex-direction: column;
+            gap: 0.3rem;
+        }
+
+        .agents-label {
+            font-size: 0.8125rem;
+            font-weight: 600;
+            color: #e5e7eb;
+        }
+
+        .agents-input {
+            width: 100%;
+            background: rgba(17, 24, 39, 0.7);
+            border: 1px solid var(--border-primary);
+            border-radius: 0.5rem;
+            color: var(--text-primary);
+            padding: 0.55rem 0.7rem;
+            font-size: 0.9375rem;
+        }
+
+        .agents-input:focus {
+            outline: none;
+            border-color: var(--text-accent);
+        }
+
+        .agents-textarea {
+            min-height: 12rem;
+            resize: vertical;
+            font-family: inherit;
+            line-height: 1.5;
+        }
+
+        .agents-num { max-width: 7rem; }
+
+        .agents-checks {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .agents-check {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.875rem;
+            color: #e5e7eb;
+            cursor: pointer;
+        }
+
+        .agents-check input { width: 1.05rem; height: 1.05rem; accent-color: var(--brand-color); }
+
+        .agents-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.85rem;
+            border: 1px solid rgba(55, 65, 81, 0.6);
+            border-radius: var(--border-radius-md);
+            padding: 0.9rem 1rem 1rem;
+            margin: 0;
+        }
+
+        .agents-legend {
+            font-size: 0.6875rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #9ca3af;
+            padding: 0 0.35rem;
+        }
+
+        .agents-editor[data-kind="note"] .agents-helper-only,
+        .agents-editor[data-kind="helper"] .agents-note-only {
+            display: none;
+        }
+
+        /* Note cards under a reply */
+
+        .agent-cards {
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+            margin: -0.25rem 0 0.75rem;
+        }
+
+        .agent-cards:empty { display: none; }
+
+        .agent-card {
+            background: rgba(17, 24, 39, 0.55);
+            border: 1px solid rgba(99, 102, 241, 0.35);
+            border-radius: var(--border-radius-md);
+            padding: 0.5rem 0.8rem;
+            font-size: 0.875rem;
+            color: var(--chat-text-color);
+        }
+
+        .agent-card-title {
+            cursor: pointer;
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: #c7d2fe;
+        }
+
+        .agent-card-body {
+            margin-top: 0.5rem;
+            line-height: 1.5;
+            overflow-wrap: anywhere;
+        }
+
+        .agent-card-body p + p { margin-top: 0.5rem; }
+
+        .agent-card-running {
+            font-size: 0.75rem;
+            color: #a5b4fc;
+            font-style: italic;
+        }
+
+        /* Agent notes panel */
+
+        .agents-notes-btn {
+            position: absolute;
+            right: 10.5rem;
+            bottom: 0.5rem;
+            z-index: 50;
+            opacity: 0.35;
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--chat-text-color);
+            background: none;
+            border: 0;
+            cursor: pointer;
+            transition: opacity var(--transition-fast);
+        }
+
+        .agents-notes-btn:hover { opacity: 1; }
+
+        .agents-notes-panel {
+            position: absolute;
+            right: 0.75rem;
+            bottom: 2.25rem;
+            z-index: 60;
+            width: min(26rem, calc(100% - 1.5rem));
+            max-height: 70%;
+            overflow-y: auto;
+            background: rgba(17, 24, 39, 0.95);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--border-primary);
+            border-radius: var(--border-radius-md);
+            padding: 0.9rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            color: var(--text-primary);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.45);
+        }
+
+        .agents-notes-panel.hidden,
+        .agents-notes-btn.hidden {
+            display: none;
+        }
+
+        .agents-panel-head,
+        .agents-panel-entry-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.5rem;
+        }
+
+        .agents-panel-title { font-weight: 700; }
+        .agents-panel-entry-name { font-weight: 600; color: #c7d2fe; }
+
+        .agents-panel-entry {
+            border-top: 1px solid rgba(55, 65, 81, 0.6);
+            padding-top: 0.75rem;
+        }
+
+        .agents-panel-entry-body {
+            margin-top: 0.4rem;
+            font-size: 0.875rem;
+            line-height: 1.5;
+            overflow-wrap: anywhere;
+        }

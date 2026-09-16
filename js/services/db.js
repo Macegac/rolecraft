@@ -16,11 +16,11 @@
 
             /**
              * Opens the IndexedDB connection.
-             * @param {number} [version=3] - The schema version.
+             * @param {number} [version=4] - The schema version.
              * @returns {Promise<boolean>} - True if successful, false otherwise.
              * @private
              */
-            _open(version = 3) {
+            _open(version = 4) {
                 return new Promise((resolve) => {
                     try {
                         if (this.db) return resolve(true);
@@ -62,6 +62,10 @@
                                 }
                                 if (!db.objectStoreNames.contains("folders")) {
                                     db.createObjectStore("folders", { keyPath: "id" });
+                                }
+                                // Version 4: the agent library, shared by every story.
+                                if (!db.objectStoreNames.contains("agents")) {
+                                    db.createObjectStore("agents", { keyPath: "id" });
                                 }
                             } catch (e) {
                                 console.warn("onupgradeneeded failed (fail-soft):", e);
@@ -138,7 +142,7 @@
              */
             async init() {
                 if (this.db) return;
-                await this._open(3);
+                await this._open(4);
             },
 
             /**
@@ -250,6 +254,10 @@
             async getAllFolders() { return this._getAll('folders'); },
             async saveFolder(folder) { return this._performWrite('folders', folder); },
             async deleteFolder(id) { return this._delete('folders', id); },
+
+            async getAllAgents() { return this._getAll('agents'); },
+            async saveAgent(agent) { return this._performWrite('agents', agent); },
+            async deleteAgent(id) { return this._delete('agents', id); },
 
             /**
              * Saves an image blob to the database.

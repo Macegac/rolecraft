@@ -85,6 +85,7 @@
     <link rel="stylesheet" href="css/motion.css">
     <link rel="stylesheet" href="css/stats.css">
     <link rel="stylesheet" href="css/cinematic.css">
+    <link rel="stylesheet" href="css/agents.css">
 
 
 
@@ -415,6 +416,10 @@
                     style="opacity: 0.35; font-size: 0.7rem; font-weight: bold; text-transform: uppercase; letter-spacing: 0.1em; color: var(--chat-text-color); cursor: pointer; pointer-events: auto;">
                     STATS
                 </button>
+
+                <!-- Agent Notes: panel for helper agents that show their notes there (AgentController) -->
+                <button id="agents-notes-btn" class="hidden agents-notes-btn" data-action="agents-panel-toggle">AGENTS</button>
+                <div id="agents-notes-panel" class="hidden agents-notes-panel"></div>
 
                 <!-- Inventory/Journal Toggle Button -->
                 <button id="inventory-toggle-btn" onclick="UIManager.toggleInventoryPanel()"
@@ -1496,6 +1501,8 @@
                             class="settings-tab-sidebar-btn active">Appearance</button>
                         <button id="settings-tab-sidebar-prompt" onclick="AppController.switchSettingsTab('prompt')"
                             class="settings-tab-sidebar-btn">Prompts</button>
+                        <button id="settings-tab-sidebar-agents" onclick="AppController.switchSettingsTab('agents')"
+                            class="settings-tab-sidebar-btn">Agents</button>
                         <button id="settings-tab-sidebar-model" onclick="AppController.switchSettingsTab('model')"
                             class="settings-tab-sidebar-btn">Model</button>
                         <button id="settings-tab-sidebar-image-gen"
@@ -1528,6 +1535,8 @@
                                 class="pb-2 font-semibold border-b-2 border-teal-500 text-white transition-colors flex-shrink-0">Appearance</button>
                             <button id="settings-tab-prompt" onclick="AppController.switchSettingsTab('prompt')"
                                 class="pb-2 font-semibold border-b-2 border-transparent text-gray-400 hover:text-white transition-colors flex-shrink-0">Prompts</button>
+                            <button id="settings-tab-agents" onclick="AppController.switchSettingsTab('agents')"
+                                class="pb-2 font-semibold border-b-2 border-transparent text-gray-400 hover:text-white transition-colors flex-shrink-0">Agents</button>
                             <button id="settings-tab-model" onclick="AppController.switchSettingsTab('model')"
                                 class="pb-2 font-semibold border-b-2 border-transparent text-gray-400 hover:text-white transition-colors flex-shrink-0">Model</button>
                             <button id="settings-tab-image-gen" onclick="AppController.switchSettingsTab('image-gen')"
@@ -2359,6 +2368,11 @@
                 <p id="build-info-display"
                     class="text-xs text-gray-600 font-mono uppercase tracking-widest opacity-75 select-all"></p>
             </div>
+        </div>
+
+        <!-- AGENTS: drawn by AgentController.renderSettings() into #agents-settings-root -->
+        <div id="settings-agents-content">
+            <div id="agents-settings-root"></div>
         </div>
 
         <div id="settings-prompt-content" class="space-y-6">
@@ -4220,10 +4234,12 @@
     <script src="js/services/music.js"></script>
     <script src="js/ui/modal-manager.js"></script>
     <script src="js/util/utility.js"></script>
+    <script src="js/util/agent-schema.js"></script>
     <script src="js/util/prompt-builder.js"></script>
     <script src="js/util/text-formatter.js"></script>
     <script src="js/util/image-processor.js"></script>
     <script src="js/services/import-export.js"></script>
+    <script src="js/services/agent-store.js"></script>
     <script src="js/state/reactive-store.js"></script>
     <script src="js/ui/ui-components.js"></script>
     <script src="js/ui/ui-manager.js"></script>
@@ -4240,6 +4256,7 @@
     <script src="js/controllers/refine-mask.js"></script>
     <script src="js/controllers/world.js"></script>
     <script src="js/controllers/inventory.js"></script>
+    <script src="js/controllers/agents.js"></script>
     <script src="js/controllers/action-dispatcher.js"></script>
     <script src="js/boot.js"></script>
     <!-- Onboarding Welcome Modal: Shown on first launch to guide new users -->

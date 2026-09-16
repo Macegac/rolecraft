@@ -1341,6 +1341,12 @@ Return ONLY the physical description. Write in the 3rd person. No preamble.`;
                     MusicService.checkTrigger();
                 }
 
+                // Helper agents (fire-and-forget): new replies, and a rerolled latest reply.
+                if (typeof AgentController !== 'undefined'
+                    && (targetMessageIndex === null || targetMessageIndex === state.chat_history.length - 1)) {
+                    AgentController.runHelpersAfterReply(newMessage);
+                }
+
                 // Check for Dynamic Entries (Revealed Lore)
                 if (typeof NarrativeController !== 'undefined') {
                     const structureChanged = NarrativeController.checkDynamicEntryTriggers();

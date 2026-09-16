@@ -299,6 +299,53 @@ JSON Schema:
             },
 
             /**
+             * Whether a history entry produces text in a reply prompt. Agent note depth counts only
+             * these, so "2 messages back" means two things the model actually sees.
+             * @param {Object} msg
+             * @returns {boolean}
+             * @private
+             */
+            _isPromptVisible(msg) {
+                if (!msg) return false;
+                if (msg.type === 'chat') return !msg.isHidden;
+                return msg.type === 'lore_reveal' || msg.type === 'system_event';
+            },
+
+            /**
+             * Returns the history with agent notes slotted in as `agent_note` entries at their depth.
+             * The original array is left alone, because image indexes are counted against it.
+             * @param {Array} history
+             * @param {Object|null} layout - AgentSchema.layoutNotes result
+             * @returns {Array}
+             * @private
+             */
+            _withAgentNotes(history, layout) {
+                if (!layout) return history;
+                const toEntry = note => ({ type: 'agent_note', role: note.role, content: note.text });
+                const out = [];
+                let visibleIndex = 0;
+                history.forEach(msg => {
+                    if (this._isPromptVisible(msg)) {
+                        (layout.beforeMessage[visibleIndex] || []).forEach(note => out.push(toEntry(note)));
+                        visibleIndex++;
+                    }
+                    out.push(msg);
+                });
+                layout.end.forEach(note => out.push(toEntry(note)));
+                return out;
+            },
+
+            /**
+             * Plain-text block for notes placed outside the conversation (before/top).
+             * @param {Object[]} notes
+             * @returns {string}
+             * @private
+             */
+            _agentNotesText(notes) {
+                return notes.map(note => `${AgentSchema.noteHeading(note.role)}\n${note.text}`).join('\n\n');
+            },
+
+            /**
              * Safe, read-only method to retrieve prompt components without mutating state.
              * @param {string} charToActId - The ID of the character acting.
              * @param {Array|null} [historyOverride=null] - Optional override for chat history.
@@ -437,6 +484,12 @@ JSON Schema:
                 const components = this.getPromptComponents(charToActId, historyOverride, customInstruction, isDirectMessage);
                 if (!components) return "";
                 components.isForUser = isForUser;
+
+                // Agents add to character replies only: not to text written for the user, and not to
+                // Text Mode threads, which have their own voice rules.
+                components.agent_notes = (!isForUser && !isDirectMessage && typeof AgentController !== 'undefined')
+                    ? AgentController.buildNoteLayout(charToAct, components.history.filter(m => this._isPromptVisible(m)).length)
+                    : null;
 
                 // Simple auto-consume logic for event master
                 if (state.event_master_prompt) {
@@ -651,7 +704,11 @@ JSON Schema:
              */
             buildDefaultPrompt(components, replacer) {
                 const state = StateManager.getState();
-                let p = components.system_prompt + "\n\n";
+                const agentNotes = components.agent_notes || null;
+                let p = "";
+                if (agentNotes && agentNotes.before.length) p += this._agentNotesText(agentNotes.before) + "\n\n";
+                p += components.system_prompt + "\n\n";
+                if (agentNotes && agentNotes.top.length) p += this._agentNotesText(agentNotes.top) + "\n\n";
                 if (components.location_context) p += "## LOCATION CONTEXT\n" + components.location_context + "\n\n";
                 if (components.stats_context) p += "## CHARACTER STATS\n" + components.stats_context + "\n\n";
 
@@ -685,7 +742,7 @@ JSON Schema:
                 p += "\n<|ELLIPSIS_CACHE_BREAK|>\n";
 
                 p += "## RECENT CONVERSATION & EVENTS\n";
-                components.history.forEach(msg => {
+                this._withAgentNotes(components.history, agentNotes).forEach(msg => {
                     // Safety Checks
                     if (!msg) return;
                     if (msg.type === 'chat' && msg.isHidden) return;
@@ -701,6 +758,8 @@ JSON Schema:
                             const detail = VisualLoreService.buildContextBlock(msg.item_ids);
                             if (detail) p += `${detail}\n\n`;
                         }
+                    } else if (msg.type === 'agent_note') {
+                        p += `${AgentSchema.noteHeading(msg.role)}\n${msg.content}\n\n`;
                     } else if (msg.type === 'lore_reveal') {
                         p += `### System Note:\n${replacer(UTILITY.stripThinking(msg.content || ''))}\n\n`;
                     } else if (msg.type === 'system_event') {
@@ -752,7 +811,11 @@ JSON Schema:
                 const template = state.koboldcpp_template || 'none';
 
                 // 1. Construct System/Context Block
+                const agentNotes = components.agent_notes || null;
+                const promptHistory = this._withAgentNotes(components.history, agentNotes);
                 let system = [components.system_prompt];
+                if (agentNotes && agentNotes.before.length) system.unshift(this._agentNotesText(agentNotes.before));
+                if (agentNotes && agentNotes.top.length) system.push(this._agentNotesText(agentNotes.top));
 
                 // Location
                 if (components.location_context) system.push("## LOCATION CONTEXT\n" + components.location_context);
@@ -810,6 +873,9 @@ JSON Schema:
 
                 // Helper for uniform system message formatting across templates
                 const formatSystemMsg = (msg) => {
+                    if (msg.type === 'agent_note') {
+                        return `${AgentSchema.noteHeading(msg.role)}\n${msg.content}`;
+                    }
                     if (msg.type === 'lore_reveal') {
                         return `### System Note:\n${replacer(UTILITY.stripThinking(msg.content || ''))}`;
                     } else if (msg.type === 'system_event') {
@@ -820,7 +886,7 @@ JSON Schema:
 
                 // --- LLAMA 3 ---
                 if (template === 'llama3') {
-                    const history_llama3 = components.history.map(msg => {
+                    const history_llama3 = promptHistory.map(msg => {
                         if (!msg || (msg.type === 'chat' && msg.isHidden)) return null;
                         let role = 'user';
                         let content = '';
@@ -842,7 +908,7 @@ JSON Schema:
 
                 // --- GEMMA (Google) ---
                 if (template === 'gemma') {
-                    const history_gemma = components.history.map(msg => {
+                    const history_gemma = promptHistory.map(msg => {
                         if (!msg || (msg.type === 'chat' && msg.isHidden)) return null;
                         let role = 'user';
                         let content = '';
@@ -866,7 +932,7 @@ JSON Schema:
 
                 // --- PHI-3 (Microsoft) ---
                 if (template === 'phi3') {
-                    const history_phi = components.history.map(msg => {
+                    const history_phi = promptHistory.map(msg => {
                         if (!msg || (msg.type === 'chat' && msg.isHidden)) return null;
                         let role = 'user';
                         let content = '';
@@ -888,7 +954,7 @@ JSON Schema:
 
                 // --- MISTRAL ---
                 if (template === 'mistral') {
-                    const history_str = components.history.map(msg => {
+                    const history_str = promptHistory.map(msg => {
                         if (!msg || (msg.type === 'chat' && msg.isHidden)) return null;
                         if (msg.type === 'chat') {
                             const char = ReactiveStore.getCharacter(msg.character_id);
@@ -904,7 +970,7 @@ JSON Schema:
 
                 // --- CHATML ---
                 if (template === 'chatml') {
-                    const history_chatml = components.history.map(msg => {
+                    const history_chatml = promptHistory.map(msg => {
                         if (!msg || (msg.type === 'chat' && msg.isHidden)) return null;
                         let role = 'system';
                         let content = '';
@@ -924,7 +990,7 @@ JSON Schema:
 
                 // --- ALPACA ---
                 if (template === 'alpaca') {
-                    const history_str = components.history.map(msg => {
+                    const history_str = promptHistory.map(msg => {
                         if (!msg || (msg.type === 'chat' && msg.isHidden)) return null;
                         if (msg.type === 'chat') {
                             const char = ReactiveStore.getCharacter(msg.character_id);
@@ -1555,8 +1621,16 @@ Write only the character's message.`;
 
                 const systemPrompt = char.model_instructions || state.systemPrompt || 'You are a creative roleplay AI.';
 
+                const historyArray = this._getSmartHistorySlice(state.chat_history || [], 2000, char.id).slice(-6);
+                const agentNotes = (typeof AgentController !== 'undefined')
+                    ? AgentController.buildNoteLayout(char, historyArray.length)
+                    : null;
+
                 // 1. SYSTEM INSTRUCTION
-                let prompt = "### SYSTEM INSTRUCTION\n" + systemPrompt + "\n\n";
+                let prompt = "";
+                if (agentNotes && agentNotes.before.length) prompt += this._agentNotesText(agentNotes.before) + "\n\n";
+                prompt += "### SYSTEM INSTRUCTION\n" + systemPrompt + "\n\n";
+                if (agentNotes && agentNotes.top.length) prompt += this._agentNotesText(agentNotes.top) + "\n\n";
 
                 // 2. DIRECTOR INSTRUCTION
                 prompt += "### SCENE DIRECTION\n" + directive + "\n\n";
@@ -1564,12 +1638,15 @@ Write only the character's message.`;
                 // 3. PERSONA
                 prompt += "### YOUR PERSONA\n" + descSource + "\n\n";
 
-                // 4. RECENT HISTORY
-                const historyArray = this._getSmartHistorySlice(state.chat_history || [], 2000, char.id).slice(-6);
-                const transcript = historyArray.map(msg => {
+                // 4. RECENT HISTORY (agent notes slot in by depth; every entry here is shown)
+                const transcriptParts = [];
+                historyArray.forEach((msg, i) => {
+                    if (agentNotes) (agentNotes.beforeMessage[i] || []).forEach(note => transcriptParts.push(this._agentNotesText([note])));
                     const speaker = ReactiveStore.getCharacter(msg.character_id);
-                    return `${speaker ? speaker.name : 'Unknown'}: ${msg.content}`;
-                }).join('\n\n');
+                    transcriptParts.push(`${speaker ? speaker.name : 'Unknown'}: ${msg.content}`);
+                });
+                if (agentNotes) agentNotes.end.forEach(note => transcriptParts.push(this._agentNotesText([note])));
+                const transcript = transcriptParts.join('\n\n');
                 prompt += "### RECENT HISTORY\n" + transcript + "\n\n";
 
                 // 5. PRIVATE THOUGHTS

@@ -2495,13 +2495,18 @@
                         </div>`.toString();
                 }
 
+                const showAgentCards = typeof AgentController !== 'undefined'
+                    && state.characterImageMode !== 'visual_novel'
+                    && !(typeof TextModeController !== 'undefined' && TextModeController.isActive());
                 chatWindow.innerHTML = scenarioBannerHTML + (state.chat_history || [])
                     .map((msg, index) => {
                         // Guard against undefined messages during array mutation (Undo/Splice)
                         if (!msg) return '';
-                        return UIComponents.MessageBubble(msg, index, state);
+                        const bubble = UIComponents.MessageBubble(msg, index, state);
+                        return showAgentCards && bubble ? bubble + AgentController.cardsHTML(msg) : bubble;
                     })
                     .join('');
+                if (typeof AgentController !== 'undefined') AgentController.refreshPanel();
 
                 // 5.5 Text Mode: insert time dividers, and keep the inbox badge current.
                 if (typeof TextModeController !== 'undefined') {

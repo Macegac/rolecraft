@@ -335,6 +335,7 @@
                         gameState: JSON.parse(JSON.stringify(currentState.gameState || null)),
                         gm_rules: JSON.parse(JSON.stringify(currentState.gm_rules || [])),
                         gm_ledger: JSON.parse(JSON.stringify(currentState.gm_ledger || [])),
+                        agent_notes: JSON.parse(JSON.stringify(currentState.agent_notes || [])),
 
                         // Rollback points for deletions. Each one carries a full world-map
                         // snapshot, so keeping every revision would grow this record without
@@ -399,6 +400,9 @@
                             // AI Logic Toggles
                             'enableAutoStaticKnowledge', 'enableAnalysis', 'enableResponseOptions', 'enableStats', 'enableLivingPersona', 'enableJournal',
                             'combineAsNarrator',
+
+                            // Agents: this story's own on/off switches (agent id -> boolean)
+                            'agent_switches',
                             'enableAutoBuildLocations', 'enableAutoGenerateLocationImages',
                             'enableTextMode', 'dmAllowEmoji', 'dmTimestampAwareness', 'dmTypingIndicator', 'dmUnpromptedTexts',
 
@@ -410,7 +414,12 @@
                         settingsKeys.forEach(key => {
                             // Only overwrite if the current state actually has a value (even if it's an empty string)
                             if (currentState[key] !== undefined) {
-                                freshStory[key] = currentState[key];
+                                const value = currentState[key];
+                                // Objects are round-tripped for the same reason as the narrative
+                                // fields above: a Proxy wrapper cannot be stored in IndexedDB.
+                                freshStory[key] = (value && typeof value === 'object')
+                                    ? JSON.parse(JSON.stringify(value))
+                                    : value;
                             }
                         });
 

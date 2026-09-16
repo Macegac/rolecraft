@@ -17,6 +17,7 @@
 
                 // 1. Initialize Core Services
                 try { await DBService.init(); } catch (e) { console.warn("DB init failed", e); }
+                await AgentStore.init();
 
                 // 2. Load Library
                 await StateManager.loadLibrary();
@@ -133,6 +134,7 @@
                 UIManager.setButtonToSendMode(); // Sets initial button state
                 ActionHandler.init();            // Starts listening for clicks
                 ActionDispatcher.init();         // Wires clicks to Controllers
+                AgentController.registerActions();
                 UIManager.initChatScrollListener(); // Manages the scroll-to-bottom button visibility
                 if (typeof CropController !== 'undefined') CropController.init();
 

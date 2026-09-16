@@ -797,7 +797,7 @@
              */
             switchSettingsTab(tabName) {
                 this.RUNTIME.activeSettingsTab = tabName;
-                const tabs = ['appearance', 'prompt', 'model', 'personas', 'image-gen', 'export', 'defaults'];
+                const tabs = ['appearance', 'prompt', 'agents', 'model', 'personas', 'image-gen', 'export', 'defaults'];
                 const container = document.getElementById('settings-content-container');
                 const template = document.getElementById(`settings-${tabName}-content`);
 
@@ -832,7 +832,9 @@
 
                 this.bindSettingsListeners();
 
-                if (tabName === 'personas') {
+                if (tabName === 'agents') {
+                    if (typeof AgentController !== 'undefined') AgentController.renderSettings();
+                } else if (tabName === 'personas') {
                     this.renderUserPersonaList();
                 } else if (tabName === 'prompt') {
                     this.renderTokenVisualizer();

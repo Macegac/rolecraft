@@ -277,9 +277,12 @@
 
                 // Vision Support Check & Graceful Failure
                 const provider = state.apiProvider;
-                const model = (provider === 'gemini' ? (state.geminiModel || StateManager.data.globalSettings.geminiModel) :
+                // options.model lets one call use a different model on the same provider (an agent's
+                // own model). KoboldCPP and WebLLM run whatever is loaded, so they ignore it.
+                const modelOverride = (options && typeof options.model === 'string' && options.model.trim()) || '';
+                const model = (modelOverride || (provider === 'gemini' ? (state.geminiModel || StateManager.data.globalSettings.geminiModel) :
                     provider === 'openrouter' ? state.openRouterModel :
-                        provider === 'koboldcpp' ? 'local' : 'unknown') || 'unknown';
+                        provider === 'koboldcpp' ? 'local' : 'unknown')) || 'unknown';
 
                 if (images.length > 0 && !this._supportsVision(provider, model)) {
                     // Vision Bridge ([SEC:JS:SRV:VB]): before telling the model it is blind, try
@@ -363,17 +366,17 @@
                 try {
                     let rawResult = null;
                     if (provider === 'gemini') {
-                        rawResult = await this.callGemini({ text, images }, activeSignal);
+                        rawResult = await this.callGemini({ text, images }, activeSignal, modelOverride);
                     } else if (provider === 'openrouter') {
-                        rawResult = await this.callOpenRouter({ text, images }, activeSignal);
+                        rawResult = await this.callOpenRouter({ text, images }, activeSignal, modelOverride);
                     } else if (provider === 'nanogpt') {
-                        rawResult = await this.callNanoGPT({ text, images }, activeSignal);
+                        rawResult = await this.callNanoGPT({ text, images }, activeSignal, modelOverride);
                     } else if (provider === 'webllm') {
                         rawResult = await this.callWebLLM(text, activeSignal);
                     } else if (provider === 'koboldcpp') {
                         rawResult = await this.callKoboldCPP({ text, images }, activeSignal, isJson);
                     } else if (provider === 'lmstudio') {
-                        rawResult = await this.callLMStudio({ text, images }, activeSignal, isJson);
+                        rawResult = await this.callLMStudio({ text, images }, activeSignal, isJson, modelOverride);
                     }
 
                     if (rawResult && typeof rawResult === 'object' && ('text' in rawResult || 'thinking' in rawResult)) {
@@ -506,7 +509,7 @@
              * @param {AbortSignal} signal - AbortSignal.
              * @returns {Promise<string>}
              */
-            async callGemini(prompt, signal) {
+            async callGemini(prompt, signal, modelOverride = '') {
                 const state = StateManager.getState();
                 const global = StateManager.data.globalSettings;
                 const apiKey = global.geminiApiKey || state.geminiApiKey;
@@ -516,7 +519,7 @@
                 // 1. Resolve Model Name
                 // State might hold "gemini-1.5-flash" OR "models/gemini-1.5-flash".
                 // Global setting might hold the fallback.
-                let rawModel = state.geminiModel || global.geminiModel || 'gemini-1.5-flash';
+                let rawModel = modelOverride || state.geminiModel || global.geminiModel || 'gemini-1.5-flash';
 
                 // Strip "models/" prefix if present to ensure clean base ID
                 if (rawModel.startsWith('models/')) {
@@ -590,11 +593,11 @@
              * @param {AbortSignal} signal - AbortSignal.
              * @returns {Promise<string>}
              */
-            async callOpenRouter(prompt, signal) {
+            async callOpenRouter(prompt, signal, modelOverride = '') {
                 const state = StateManager.getState();
                 const global = StateManager.data.globalSettings;
                 const apiKey = global.openRouterKey || state.openRouterKey;
-                const model = state.openRouterModel || global.openRouterModel;
+                const model = modelOverride || state.openRouterModel || global.openRouterModel;
                 if (!apiKey || !model) throw new Error("OpenRouter API key or model not set.");
 
                 let messagesPayload = [];
@@ -717,11 +720,11 @@
              * @param {AbortSignal} signal - AbortSignal.
              * @returns {Promise<string>}
              */
-            async callNanoGPT(prompt, signal) {
+            async callNanoGPT(prompt, signal, modelOverride = '') {
                 const state = StateManager.getState();
                 const global = StateManager.data.globalSettings;
                 const apiKey = global.nanoGPTKey || state.nanoGPTKey;
-                const model = state.nanoGPTModel || global.nanoGPTModel;
+                const model = modelOverride || state.nanoGPTModel || global.nanoGPTModel;
                 if (!apiKey || !model) throw new Error("NanoGPT API key or model not set.");
 
                 let cleanPrompt = typeof prompt === 'string' ? prompt : prompt.text;
@@ -1069,7 +1072,7 @@
              * @param {AbortSignal} signal - AbortSignal.
              * @returns {Promise<string>}
              */
-            async callLMStudio(prompt, signal, isJson = false) {
+            async callLMStudio(prompt, signal, isJson = false, modelOverride = '') {
                 const state = StateManager.getState();
                 if (!state.lmstudio_url) throw new Error("LM Studio URL not set.");
                 const baseUrl = state.lmstudio_url.replace(/\/+$/, '');
@@ -1093,7 +1096,7 @@
                 const messages = [{ role: 'user', content: contentPayload }];
 
                 const payload = {
-                    model: state.lmStudioModel || 'local-model',
+                    model: modelOverride || state.lmStudioModel || 'local-model',
                     messages: messages,
                     temperature: 0.7,
                     stream: false

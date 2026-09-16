@@ -1521,3 +1521,167 @@ test('appAssetUrl: resolved addresses start with http, so image code treats them
     });
     assert.ok(pageUtility.appAssetUrl('assets/demo/kael.png').startsWith('http'));
 });
+
+// ─── AgentSchema ─────────────────────────────────────────────────────────
+// Loaded whole from its own file; it is pure, so the sandbox needs no stubs.
+
+const AgentSchema = vm.runInNewContext(
+    fs.readFileSync(path.join(__dirname, 'js', 'util', 'agent-schema.js'), 'utf8') + '\nAgentSchema', {});
+
+test('AgentSchema.normalize: fills every field and clamps bad values', () => {
+    const a = AgentSchema.normalize({ name: '  ', kind: 'weird', trigger: { probability: 250, everyMessages: -3 }, placement: { depth: 'x', role: 'narrator' } });
+    assert.equal(a.name, 'Untitled agent');
+    assert.equal(a.kind, 'note');
+    assert.equal(a.trigger.probability, 100);
+    assert.equal(a.trigger.everyMessages, 0);
+    assert.equal(a.placement.depth, 4);
+    assert.equal(a.placement.role, 'system');
+    assert.equal(a.helper.display, 'card');
+    assert.equal(a.defaultOn, false);
+});
+
+test('AgentSchema.normalize: keywords accept a comma string or an array', () => {
+    deepEq(AgentSchema.normalize({ trigger: { keywords: 'kiss, fight ,' } }).trigger.keywords, ['kiss', 'fight']);
+    deepEq(AgentSchema.normalize({ trigger: { keywords: [' kiss', ''] } }).trigger.keywords, ['kiss']);
+});
+
+// Shapes taken from real SillyBunny 1.7.0 agent files.
+const SB_INLINE = {
+    id: 'sb-1', name: 'Friction Mode', description: 'Adds friction', execution: 'inline', phase: 'pre',
+    prompt: 'Make {{char}} push back on {{user}}.', enabled: true, modelOverride: '', connectionProfile: '',
+    injection: { position: 1, depth: 4, role: 0, order: 90, scan: false },
+    preProcess: { mode: 'inject' }, postProcess: { enabled: false, promptTransformEnabled: false },
+    conditions: { triggerKeywords: [], triggerProbability: 100 }, regexScripts: []
+};
+const SB_COMPANION = {
+    id: 'sb-2', name: 'Memory Shard', execution: 'companion', phase: 'post', prompt: 'Compress history.', enabled: false,
+    injection: { position: 0, depth: 4, role: 1, order: 100 },
+    companion: {
+        trigger: 'auto', displayMode: 'panel', contextMessages: 30, includeCharacterCard: false, includeWorldInfo: false,
+        includeHistory: true, historyDepth: 3, feedback: { enabled: true, depth: 1 }, batch: false, dependencies: []
+    },
+    preProcess: { mode: 'inject' }, postProcess: { enabled: false }, conditions: { triggerProbability: 100, triggerKeywords: [] }
+};
+
+test('AgentSchema.fromSillyBunny: an inline inject agent becomes a note agent with its placement', () => {
+    const a = AgentSchema.fromSillyBunny(SB_INLINE);
+    assert.equal(a.kind, 'note');
+    assert.equal(a.defaultOn, true);
+    deepEq(a.placement, { position: 'chat', depth: 4, role: 'system', order: 90 });
+    assert.equal(a.source.app, 'sillybunny');
+    deepEq(a.source.skipped, []);
+});
+
+test('AgentSchema.fromSillyBunny: a companion becomes a helper agent', () => {
+    const a = AgentSchema.fromSillyBunny(SB_COMPANION);
+    assert.equal(a.kind, 'helper');
+    assert.equal(a.helper.display, 'panel');
+    assert.equal(a.helper.contextMessages, 30);
+    assert.equal(a.helper.priorNotes, 3);
+    assert.equal(a.helper.feedForward, true);
+    assert.equal(a.helper.includeCharacters, false);
+    assert.equal(a.placement.position, 'top');
+    assert.equal(a.placement.role, 'user');
+});
+
+test('AgentSchema.fromSillyBunny: unsupported features are listed and intercepts arrive switched off', () => {
+    const a = AgentSchema.fromSillyBunny({ ...SB_INLINE, preProcess: { mode: 'intercept' }, regexScripts: [{}, {}], connectionProfile: 'GLM' });
+    assert.equal(a.defaultOn, false);
+    assert.equal(a.source.skipped.length, 3);
+    assert.ok(a.source.skipped.some(s => s.includes('2 regex')));
+});
+
+test('AgentSchema.parseImport: reads a SillyBunny pack, a single agent, and a Rolecraft bundle', () => {
+    const pack = AgentSchema.parseImport(JSON.stringify({ format: 'sillybunny-inchat-agents', version: 1, agents: [SB_INLINE, SB_COMPANION] }));
+    assert.equal(pack.agents.length, 2);
+    assert.ok(pack.agents.every(a => a.id === ''));
+
+    const single = AgentSchema.parseImport(JSON.stringify(SB_INLINE));
+    assert.equal(single.agents[0].name, 'Friction Mode');
+
+    const own = AgentSchema.buildExport([AgentSchema.normalize({ id: 'x', name: 'Mine', prompt: 'Hi', builtin: 'event_master' })]);
+    const back = AgentSchema.parseImport(JSON.stringify(own));
+    assert.equal(back.agents[0].name, 'Mine');
+    assert.equal(back.agents[0].builtin, '', 'an import can never claim to drive a built-in feature');
+});
+
+test('AgentSchema.parseImport: bad files explain themselves', () => {
+    assert.throws(() => AgentSchema.parseImport('not json'), /not valid JSON/);
+    assert.throws(() => AgentSchema.parseImport('{"hello": 1}'), /No agents found/);
+});
+
+test('AgentSchema.isOn: the story switch wins, otherwise the agent default', () => {
+    const a = { id: 'a1', defaultOn: true };
+    assert.equal(AgentSchema.isOn(a, {}), true);
+    assert.equal(AgentSchema.isOn(a, { a1: false }), false);
+    assert.equal(AgentSchema.isOn({ id: 'a2', defaultOn: false }, { a2: true }), true);
+});
+
+test('AgentSchema.shouldFire: schedule, keywords, then chance', () => {
+    const base = AgentSchema.normalize({});
+    assert.equal(AgentSchema.shouldFire(base, { messageCounter: 1, recentTexts: [], roll: 0.99 }), true);
+
+    const every6 = AgentSchema.normalize({ trigger: { everyMessages: 6 } });
+    assert.equal(AgentSchema.shouldFire(every6, { messageCounter: 5, recentTexts: [], roll: 0 }), false);
+    assert.equal(AgentSchema.shouldFire(every6, { messageCounter: 12, recentTexts: [], roll: 0 }), true);
+    assert.equal(AgentSchema.shouldFire(every6, { messageCounter: 0, recentTexts: [], roll: 0 }), false);
+
+    const kw = AgentSchema.normalize({ trigger: { keywords: ['Kiss'], keywordDepth: 2 } });
+    assert.equal(AgentSchema.shouldFire(kw, { recentTexts: ['a kiss', 'nothing', 'still nothing'], roll: 0 }), false);
+    assert.equal(AgentSchema.shouldFire(kw, { recentTexts: ['old', 'she leans in to KISS him', 'x'], roll: 0 }), true);
+
+    const chance = AgentSchema.normalize({ trigger: { probability: 25 } });
+    assert.equal(AgentSchema.shouldFire(chance, { roll: 0.24 }), true);
+    assert.equal(AgentSchema.shouldFire(chance, { roll: 0.25 }), false);
+    assert.equal(AgentSchema.shouldFire(AgentSchema.normalize({ trigger: { probability: 0 } }), { roll: 0 }), false);
+});
+
+test('AgentSchema.expandMacros: both placeholder styles and random picks', () => {
+    const ctx = { char: 'Cocoa', user: 'Mario', pick: () => 1 };
+    assert.equal(AgentSchema.expandMacros('{{char}} and {{user}}; {character} and {user}', ctx), 'Cocoa and Mario; Cocoa and Mario');
+    assert.equal(AgentSchema.expandMacros('{{random::rain::snow}}', ctx), 'snow');
+    assert.equal(AgentSchema.expandMacros('{{random:rain, snow}}', ctx), 'snow');
+});
+
+test('AgentSchema.layoutNotes: depth counts up from the newest message', () => {
+    const notes = [
+        { text: 'deep', position: 'chat', depth: 4, order: 100 },
+        { text: 'last', position: 'chat', depth: 0, order: 100 },
+        { text: 'first-in-order', position: 'chat', depth: 1, order: 10 },
+        { text: 'also-depth-1', position: 'chat', depth: 1, order: 50 },
+        { text: 'top', position: 'top', order: 100 },
+        { text: 'before', position: 'before', order: 100 },
+        { text: 'too-deep', position: 'chat', depth: 99, order: 100 },
+        { text: '', position: 'chat', depth: 1 }
+    ];
+    const layout = AgentSchema.layoutNotes(notes, 6);
+    deepEq(layout.end.map(n => n.text), ['last']);
+    deepEq(layout.beforeMessage[5].map(n => n.text), ['first-in-order', 'also-depth-1']);
+    deepEq(layout.beforeMessage[2].map(n => n.text), ['deep']);
+    deepEq(layout.beforeMessage[0].map(n => n.text), ['too-deep']);
+    deepEq(layout.top.map(n => n.text), ['top']);
+    deepEq(layout.before.map(n => n.text), ['before']);
+});
+
+test('AgentSchema.layoutNotes: with no messages every chat note goes to the end', () => {
+    const layout = AgentSchema.layoutNotes([{ text: 'x', position: 'chat', depth: 3 }], 0);
+    deepEq(layout.end.map(n => n.text), ['x']);
+});
+
+test('AgentSchema.shouldFire: waits until the chat reaches the minimum size', () => {
+    const shard = AgentSchema.normalize({ kind: 'helper', trigger: { minTokens: 30000 } });
+    assert.equal(AgentSchema.shouldFire(shard, { chatTokens: 29999, roll: 0 }), false);
+    assert.equal(AgentSchema.shouldFire(shard, { chatTokens: 30000, roll: 0 }), true);
+});
+
+test('AgentSchema.fromSillyBunny: a companion keeps its minimum context size; inline agents do not get one', () => {
+    const shard = AgentSchema.fromSillyBunny({ ...SB_COMPANION, companion: { ...SB_COMPANION.companion, minContextTokens: 30000 } });
+    assert.equal(shard.trigger.minTokens, 30000);
+    assert.equal(AgentSchema.fromSillyBunny({ ...SB_INLINE, companion: { minContextTokens: 500 } }).trigger.minTokens, 0);
+});
+
+test('AgentSchema.estimateTokens: about four characters per token', () => {
+    assert.equal(AgentSchema.estimateTokens(''), 0);
+    assert.equal(AgentSchema.estimateTokens('abcd'), 1);
+    assert.equal(AgentSchema.estimateTokens('abcde'), 2);
+});
