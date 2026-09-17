@@ -1,7 +1,9 @@
 #!/bin/sh
 # Refuse a commit when index.html and the js/ + css/ folders disagree:
 # a file that is never loaded, a file that is loaded but missing, a
-# syntax error, or the same top-level name declared in two files.
+# syntax error, the same top-level name declared in two files, or a
+# version stamp that no longer matches its file (fix those with
+# `node tools/stamp-versions.js`, then `git add index.html`).
 #
 # Activation: `git config core.hooksPath .githooks` (done automatically
 # by the `prepare` script in package.json on `npm install`).

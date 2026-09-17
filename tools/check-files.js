@@ -11,6 +11,9 @@
 //   2. A file index.html loads that does not exist (404 on the live site).
 //   3. The same top-level name declared in two files (a SyntaxError that
 //      stops every later script from running).
+//   4. A version stamp (?v=) that no longer matches the file. The service
+//      worker serves stamped files from the phone's cache without asking the
+//      network, so a stale stamp would keep an old file on every phone.
 //
 // It also parses every script, so a syntax error fails here instead of on a
 // phone.
@@ -22,6 +25,8 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const acorn = require('acorn');
+
+const { stamp } = require('./stamp-versions.js');
 
 const ROOT = path.resolve(__dirname, '..');
 
@@ -53,8 +58,13 @@ function check() {
     const problems = [];
     const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 
-    const loadedScripts = [...html.matchAll(/<script\s+src="(js\/[^"]+)"/g)].map(m => m[1]);
-    const loadedStyles = [...html.matchAll(/<link\s+rel="stylesheet"\s+href="(css\/[^"]+)"/g)].map(m => m[1]);
+    const loadedScripts = [...html.matchAll(/<script\s+src="(js\/[^"?]+)(?:\?v=[0-9a-f]*)?"/g)].map(m => m[1]);
+    const loadedStyles = [...html.matchAll(/<link\s+rel="stylesheet"\s+href="(css\/[^"?]+)(?:\?v=[0-9a-f]*)?"/g)].map(m => m[1]);
+
+    const stamps = stamp(html);
+    if (stamps.stale.length) {
+        problems.push(`version stamps out of date (run node tools/stamp-versions.js): ${stamps.stale.join(', ')}`);
+    }
 
     const pairs = [
         { kind: 'script', loaded: loadedScripts, onDisk: listFiles('js', '.js') },

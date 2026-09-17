@@ -251,7 +251,9 @@ the styles in `css/` and the code in `js/` directly, so the folder you edit is e
 is handled through a custom reactive store.
 
 `npm test` runs the unit tests and `tools/check-files.js`, which confirms every file in `js/` and `css/` is loaded by
-`index.html` exactly once and that no name is declared twice. The pre-commit hook runs the same check.
+`index.html` exactly once, that no name is declared twice, and that each file's version stamp is current. After changing
+any file in `js/` or `css/`, run `node tools/stamp-versions.js`. The stamp is what lets a phone open the app from its saved
+copy in one request while still picking up changed files. The pre-commit hook runs the same check.
 
 Styling uses a prebuilt Tailwind stylesheet (`css/tailwind.css`) plus the app's own stylesheets. After adding Tailwind classes that no existing markup uses, rebuild it with `npm run build:css`.
 
