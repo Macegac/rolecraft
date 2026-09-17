@@ -1,0 +1,86 @@
+        /* ==========================================================================
+           PROBLEM REPORT
+           "Copy problem report" controls in the error panel and Appearance settings, and the
+           fallback box shown when the browser blocks the clipboard
+           (js/controllers/diagnostics.js). Styled here because css/tailwind.css is prebuilt.
+           ========================================================================== */
+
+        .diag-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.5rem;
+        }
+
+        .diag-check {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            font-size: 0.75rem;
+            color: #9ca3af;
+            cursor: pointer;
+        }
+
+        .diag-check input {
+            accent-color: var(--brand-color);
+        }
+
+        .diag-copy-btn {
+            background: var(--brand-color);
+            color: #fff;
+            border: 0;
+            border-radius: 0.5rem;
+            padding: 0.35rem 0.75rem;
+            font-size: 0.75rem;
+            font-weight: 700;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        .diag-copy-btn:hover {
+            background: var(--brand-color-hover);
+        }
+
+        .diag-panel-footer {
+            border-top: 1px solid rgba(55, 65, 81, 0.7);
+            padding: 0.6rem 1rem;
+        }
+
+        .diag-report-box {
+            position: fixed;
+            inset: 1rem;
+            z-index: 120;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            padding: 0.75rem;
+            background: rgba(17, 24, 39, 0.97);
+            border: 1px solid var(--border-primary);
+            border-radius: var(--border-radius-md);
+            color: var(--text-primary);
+        }
+
+        .diag-report-box.hidden {
+            display: none;
+        }
+
+        .diag-report-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-weight: 700;
+        }
+
+        .diag-report-text {
+            flex: 1;
+            width: 100%;
+            background: rgba(0, 0, 0, 0.35);
+            color: var(--text-primary);
+            border: 1px solid var(--border-primary);
+            border-radius: 0.5rem;
+            padding: 0.5rem;
+            font-family: ui-monospace, Menlo, Consolas, monospace;
+            font-size: 0.7rem;
+            white-space: pre;
+        }

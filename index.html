@@ -86,6 +86,7 @@
     <link rel="stylesheet" href="css/cinematic.css?v=307cbe4af1">
     <link rel="stylesheet" href="css/agents.css?v=3e3df3752b">
     <link rel="stylesheet" href="css/history.css?v=1290727585">
+    <link rel="stylesheet" href="css/diagnostics.css?v=7068132bb0">
 
 
 
@@ -789,6 +790,11 @@
             </div>
         </div>
         <div id="error-log-list" class="overflow-y-auto px-4 py-2 space-y-2"></div>
+        <!-- Problem report (Diagnostics): copies the last 5 turns of app activity -->
+        <div class="diag-panel-footer diag-row shrink-0" data-diag-scope>
+            <label class="diag-check"><input type="checkbox" data-diag-include-text> Include story text</label>
+            <button class="diag-copy-btn" data-action="diag-copy-report">Copy problem report</button>
+        </div>
     </div>
 
     <!-- MODALS -->
@@ -1897,7 +1903,7 @@
 
 
         <div id="settings-appearance-content" class="space-y-6">
-            <!-- Tutorial & Setup -->
+            <!-- Tutorial & Setup, Problem Report -->
             <div id="app-maintenance-section" class="mb-6 animate-in fade-in slide-in-from-top-2 duration-500">
                 <div class="p-4 bg-indigo-500/10 rounded-xl border border-indigo-500/20 shadow-lg backdrop-blur-sm">
                     <div class="flex items-center justify-between">
@@ -1909,6 +1915,18 @@
                             class="px-3 py-1.5 bg-gray-700/50 hover:bg-gray-600/50 text-gray-300 text-[10px] font-bold rounded-lg border border-gray-600/30 transition-all active:scale-95">
                             Show Onboarding
                         </button>
+                    </div>
+
+                    <!-- Problem report (Diagnostics) -->
+                    <div class="mt-4 pt-4 border-t border-indigo-500/10" data-diag-scope>
+                        <div class="diag-row">
+                            <div>
+                                <h4 class="text-xs font-bold text-gray-200 uppercase tracking-widest">Problem Report</h4>
+                                <p class="text-[10px] text-gray-500 font-medium">Copies what the app did over the last 5 turns, to paste to Claude. API keys are never included.</p>
+                            </div>
+                            <button class="diag-copy-btn" data-action="diag-copy-report">Copy problem report</button>
+                        </div>
+                        <label class="diag-check mt-2"><input type="checkbox" data-diag-include-text> Include story text (messages, replies, agent notes)</label>
                     </div>
                 </div>
             </div>
@@ -4131,6 +4149,7 @@
     <script src="js/util/agent-schema.js?v=21a243728f"></script>
     <script src="js/util/agent-starters.js?v=aef1663875"></script>
     <script src="js/util/undo-stack.js?v=44e25af094"></script>
+    <script src="js/util/diag-log.js?v=9d2d9e5ba0"></script>
     <script src="js/util/prompt-builder.js?v=34c83bf623"></script>
     <script src="js/util/text-formatter.js?v=211f6d886e"></script>
     <script src="js/util/image-processor.js?v=ab91a76e63"></script>
@@ -4154,8 +4173,9 @@
     <script src="js/controllers/inventory.js?v=d60cd29afb"></script>
     <script src="js/controllers/agents.js?v=83f71f66ea"></script>
     <script src="js/controllers/history.js?v=6a353aed34"></script>
+    <script src="js/controllers/diagnostics.js?v=a510e27fa2"></script>
     <script src="js/controllers/action-dispatcher.js?v=32680e50d7"></script>
-    <script src="js/boot.js?v=a70bcea894"></script>
+    <script src="js/boot.js?v=c2d3cbcc39"></script>
     <!-- Onboarding Welcome Modal: Shown on first launch to guide new users -->
     <div id="onboarding-modal" class="hidden fixed inset-0 z-[90] flex items-center justify-center onboarding-backdrop">
         <div class="onboarding-container">

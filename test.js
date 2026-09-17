@@ -1841,3 +1841,57 @@ test('UndoStack: unchanged parts reuse the same stored text', () => {
     UndoStack.record(s, snap('[a,b]', '2', JSON.parse(JSON.stringify(lore))));
     assert.equal(s.current.static_entries, s.undo[0].static_entries);
 });
+
+// ─── DiagLog ─────────────────────────────────────────────────────────────
+
+const loadDiagLog = () => vm.runInNewContext(
+    fs.readFileSync(path.join(__dirname, 'js', 'util', 'diag-log.js'), 'utf8') + '\nDiagLog', { Date });
+
+test('DiagLog.redact: API keys and tokens never survive', () => {
+    const log = loadDiagLog();
+    log.setSecrets(['my-secret-openrouter-value']);
+    const dirty = 'key sk-or-v1-abcdef1234567890 and Bearer abc.def-123456 url https://x.test/v1?key=AIzaSyAAAAAAAAAAAAAAAAAAAAAA&alt=1 plus my-secret-openrouter-value and ghp_abcdefghijklmnopqrstuvwx';
+    const clean = log.redact(dirty);
+    assert.ok(!clean.includes('sk-or-v1-abcdef'));
+    assert.ok(!clean.includes('abc.def-123456'));
+    assert.ok(!clean.includes('AIzaSy'));
+    assert.ok(!clean.includes('my-secret-openrouter-value'));
+    assert.ok(!clean.includes('ghp_abcdef'));
+    assert.ok(clean.includes('&alt=1'), 'the rest of the line is kept');
+});
+
+test('DiagLog.add: secrets are scrubbed when written, not only when copied', () => {
+    const log = loadDiagLog();
+    log.add('ai', 'failed with Bearer sk-or-v1-zzzzzzzzzzzzzzzz', { text: 'prompt has sk-or-v1-yyyyyyyyyyyyyyyy' });
+    const e = log.entries[0];
+    assert.ok(!e.message.includes('zzzz'));
+    assert.ok(!e.text.includes('yyyy'));
+});
+
+test('DiagLog.beginTurn: keeps only the last 5 turns', () => {
+    const log = loadDiagLog();
+    for (let turn = 1; turn <= 7; turn++) {
+        log.beginTurn();
+        log.add('send', `turn ${turn}`);
+    }
+    deepEq(log.entries.map(e => e.message), ['turn 3', 'turn 4', 'turn 5', 'turn 6', 'turn 7']);
+});
+
+test('DiagLog.format: story text only appears when switched on', () => {
+    const log = loadDiagLog();
+    log.beginTurn();
+    log.add('reply', 'Cocoa replied (12 chars)', { textLabel: 'reply', text: 'SECRET STORY' });
+    const without = log.format({ App: 'test' }, false);
+    const withText = log.format({ App: 'test' }, true);
+    assert.ok(without.includes('Cocoa replied (12 chars)'));
+    assert.ok(!without.includes('SECRET STORY'));
+    assert.ok(withText.includes('reply: SECRET STORY'));
+    assert.ok(without.includes('Story text: not included'));
+});
+
+test('DiagLog: a runaway source cannot grow the diary without limit', () => {
+    const log = loadDiagLog();
+    for (let i = 0; i < 2000; i++) log.add('warn', `repeat ${i}`);
+    assert.equal(log.entries.length, log.maxEntries);
+    assert.equal(log.entries[log.entries.length - 1].message, 'repeat 1999');
+});

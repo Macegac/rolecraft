@@ -11,6 +11,7 @@
              * Sets up core services, loads library, hydrates images, and initializes the UI.
              */
             async init() {
+                Diagnostics.install();
                 if ('scrollRestoration' in history) {
                     history.scrollRestoration = 'manual';
                 }
@@ -137,6 +138,7 @@
                 ActionDispatcher.init();         // Wires clicks to Controllers
                 AgentController.registerActions();
                 HistoryController.init();
+                Diagnostics.registerActions();
                 UIManager.initChatScrollListener(); // Manages the scroll-to-bottom button visibility
                 if (typeof CropController !== 'undefined') CropController.init();
 
