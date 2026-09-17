@@ -136,6 +136,7 @@
                 ActionHandler.init();            // Starts listening for clicks
                 ActionDispatcher.init();         // Wires clicks to Controllers
                 AgentController.registerActions();
+                HistoryController.init();
                 UIManager.initChatScrollListener(); // Manages the scroll-to-bottom button visibility
                 if (typeof CropController !== 'undefined') CropController.init();
 
@@ -153,6 +154,7 @@
                     // Initialize Store
                     ReactiveStore.init(state);
                     await AgentController.migrateStory();
+                    HistoryController.reset();
 
                     // Initialize Runtime Variables
                     if (typeof WorldController !== 'undefined') {

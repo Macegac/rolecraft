@@ -85,6 +85,7 @@
     <link rel="stylesheet" href="css/stats.css?v=1d996b4921">
     <link rel="stylesheet" href="css/cinematic.css?v=307cbe4af1">
     <link rel="stylesheet" href="css/agents.css?v=3e3df3752b">
+    <link rel="stylesheet" href="css/history.css?v=1290727585">
 
 
 
@@ -416,6 +417,13 @@
                     STATS
                 </button>
 
+                <!-- Undo bar shown right after a delete (HistoryController.offerUndo) -->
+                <div id="undo-toast" class="undo-toast hidden" role="status">
+                    <span id="undo-toast-message">Message deleted</span>
+                    <button class="undo-toast-action" data-action="history-undo">Undo</button>
+                    <button class="undo-toast-close" data-action="history-toast-dismiss" title="Dismiss">&times;</button>
+                </div>
+
                 <!-- Agent Notes: panel for helper agents that show their notes there (AgentController) -->
                 <button id="agents-notes-btn" class="hidden agents-notes-btn" data-action="agents-panel-toggle">AGENTS</button>
                 <div id="agents-notes-panel" class="hidden agents-notes-panel"></div>
@@ -528,8 +536,30 @@
                         </div>
                     </div>
 
-                    <!-- Icon Button Cluster: 2x2 so a fourth button fits the fixed 7.5rem column -->
+                    <!-- Icon Button Cluster: two columns so buttons fit the fixed 7.5rem column -->
                     <div class="grid grid-cols-2 gap-1 justify-items-center mt-auto">
+                        <!-- Undo / Redo (HistoryController) -->
+                        <button id="history-undo-btn" data-action="history-undo" disabled
+                            class="history-btn p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                            title="Undo (Ctrl+Z)">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
+                                fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                stroke-linejoin="round" class="pointer-events-none">
+                                <path d="M9 14 4 9l5-5" />
+                                <path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11" />
+                            </svg>
+                        </button>
+                        <button id="history-redo-btn" data-action="history-redo" disabled
+                            class="history-btn p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                            title="Redo (Ctrl+Y)">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
+                                fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                stroke-linejoin="round" class="pointer-events-none">
+                                <path d="m15 14 5-5-5-5" />
+                                <path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5A5.5 5.5 0 0 0 9.5 20H13" />
+                            </svg>
+                        </button>
+
                         <!-- Primary Action -->
                         <button id="primary-action-btn"
                             class="p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
@@ -4092,7 +4122,7 @@
     <script src="js/services/image-generation.js?v=234457a6a8"></script>
     <script src="js/services/vision-bridge.js?v=e4ebf34fa1"></script>
     <script src="js/services/story.js?v=b5915f5003"></script>
-    <script src="js/state/state-manager.js?v=2da0fb80d8"></script>
+    <script src="js/state/state-manager.js?v=e8da4a913a"></script>
     <script src="js/services/api.js?v=f9a53a4e27"></script>
     <script src="js/services/tts.js?v=b5903b4d34"></script>
     <script src="js/services/music.js?v=b6714a64eb"></script>
@@ -4100,6 +4130,7 @@
     <script src="js/util/utility.js?v=53ce8ec98d"></script>
     <script src="js/util/agent-schema.js?v=21a243728f"></script>
     <script src="js/util/agent-starters.js?v=aef1663875"></script>
+    <script src="js/util/undo-stack.js?v=44e25af094"></script>
     <script src="js/util/prompt-builder.js?v=34c83bf623"></script>
     <script src="js/util/text-formatter.js?v=211f6d886e"></script>
     <script src="js/util/image-processor.js?v=ab91a76e63"></script>
@@ -4115,15 +4146,16 @@
     <script src="js/controllers/library.js?v=7c998223d6"></script>
     <script src="js/controllers/visual-master.js?v=e6dc521c75"></script>
     <script src="js/controllers/swarm.js?v=946e74d191"></script>
-    <script src="js/controllers/narrative.js?v=93825c1368"></script>
+    <script src="js/controllers/narrative.js?v=2417488395"></script>
     <script src="js/controllers/text-mode.js?v=473844d73c"></script>
     <script src="js/controllers/crop.js?v=a2d1f4d345"></script>
     <script src="js/controllers/refine-mask.js?v=0316ba63ff"></script>
     <script src="js/controllers/world.js?v=0f6f397115"></script>
     <script src="js/controllers/inventory.js?v=d60cd29afb"></script>
     <script src="js/controllers/agents.js?v=83f71f66ea"></script>
+    <script src="js/controllers/history.js?v=6a353aed34"></script>
     <script src="js/controllers/action-dispatcher.js?v=32680e50d7"></script>
-    <script src="js/boot.js?v=55515d1b71"></script>
+    <script src="js/boot.js?v=a70bcea894"></script>
     <!-- Onboarding Welcome Modal: Shown on first launch to guide new users -->
     <div id="onboarding-modal" class="hidden fixed inset-0 z-[90] flex items-center justify-center onboarding-backdrop">
         <div class="onboarding-container">

@@ -1777,3 +1777,67 @@ test('AgentStarters.list: note agents never sit last in the prompt, where instru
         assert.ok(a.placement.position !== 'chat' || a.placement.depth > 0, a.name);
     });
 });
+
+// ─── UndoStack ───────────────────────────────────────────────────────────
+
+const UndoStack = vm.runInNewContext(
+    fs.readFileSync(path.join(__dirname, 'js', 'util', 'undo-stack.js'), 'utf8') + '\nUndoStack', {});
+
+const snap = (chat, counter = '1', lore = '[]') => ({ chat_history: chat, messageCounter: counter, static_entries: lore });
+
+test('UndoStack.record: the first snapshot is the starting point, not a step', () => {
+    const s = UndoStack.create();
+    assert.equal(UndoStack.record(s, snap('[a]')), false);
+    assert.equal(s.undo.length, 0);
+});
+
+test('UndoStack: a chat change becomes a step that undo and redo move across', () => {
+    const s = UndoStack.create();
+    UndoStack.record(s, snap('[a,b]'));
+    assert.equal(UndoStack.record(s, snap('[a]', '0')), true, 'deleting b is a step');
+    const back = UndoStack.undo(s);
+    assert.equal(back.chat_history, '[a,b]');
+    assert.equal(UndoStack.undo(s), null, 'nothing further back');
+    assert.equal(UndoStack.redo(s).chat_history, '[a]');
+    assert.equal(UndoStack.redo(s), null);
+});
+
+test('UndoStack: a knowledge-only change is not a step, but undo still takes it back and redo keeps the latest', () => {
+    const s = UndoStack.create();
+    UndoStack.record(s, snap('[a]', '1', '[]'));
+    UndoStack.record(s, snap('[a,b]', '2', '[]'));
+    assert.equal(UndoStack.record(s, snap('[a,b]', '2', '[fact]')), false, 'background knowledge update');
+    assert.equal(s.undo.length, 1);
+    assert.equal(UndoStack.undo(s).static_entries, '[]');
+    assert.equal(UndoStack.redo(s).static_entries, '[fact]');
+});
+
+test('UndoStack: a new change after undoing clears redo', () => {
+    const s = UndoStack.create();
+    UndoStack.record(s, snap('[a]'));
+    UndoStack.record(s, snap('[a,b]', '2'));
+    UndoStack.undo(s);
+    UndoStack.record(s, snap('[a,c]', '2'));
+    assert.equal(s.redo.length, 0);
+    assert.equal(UndoStack.undo(s).chat_history, '[a]');
+});
+
+test('UndoStack: old steps are dropped past the step limit and the size limit', () => {
+    const s = UndoStack.create({ maxSteps: 3 });
+    ['[1]', '[2]', '[3]', '[4]', '[5]', '[6]'].forEach(c => UndoStack.record(s, snap(c)));
+    assert.equal(s.undo.length, 3);
+    assert.equal(s.undo[0].chat_history, '[3]');
+
+    const big = UndoStack.create({ maxChars: 50 });
+    ['x'.repeat(30), 'y'.repeat(30), 'z'.repeat(30), 'w'.repeat(30)].forEach(c => UndoStack.record(big, snap(c)));
+    assert.ok(big.undo.length >= 1 && big.undo.length < 3);
+    assert.equal(big.undo[big.undo.length - 1].chat_history, 'z'.repeat(30), 'the most recent step always survives');
+});
+
+test('UndoStack: unchanged parts reuse the same stored text', () => {
+    const s = UndoStack.create();
+    const lore = JSON.stringify({ big: 'x'.repeat(1000) });
+    UndoStack.record(s, snap('[a]', '1', lore));
+    UndoStack.record(s, snap('[a,b]', '2', JSON.parse(JSON.stringify(lore))));
+    assert.equal(s.current.static_entries, s.undo[0].static_entries);
+});

@@ -199,6 +199,9 @@
              * @returns {Promise<void>}
              */
             async saveState() {
+                // Every save is a chance to record an undo step (HistoryController).
+                if (typeof HistoryController !== 'undefined') HistoryController.observe();
+
                 // Destructure active_narrative_id to identify the correct stub to update.
                 const { active_story_id, active_narrative_id, stories } = this.data.library;
                 const currentState = this.data.activeNarrativeState;
