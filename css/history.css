@@ -1,58 +1,10 @@
         /* ==========================================================================
            UNDO / REDO
-           Buttons in the chat control cluster and the "Undo" bar shown after a delete
-           (js/controllers/history.js). Styled here because css/tailwind.css is prebuilt.
+           Buttons in the chat control cluster (js/controllers/history.js). Styled here because css/tailwind.css is prebuilt.
            ========================================================================== */
 
         .history-btn:disabled {
             opacity: 0.3;
             cursor: default;
             background: none;
-        }
-
-        .undo-toast {
-            position: fixed;
-            left: 50%;
-            bottom: calc(env(safe-area-inset-bottom, 0px) + 7.5rem);
-            transform: translateX(-50%);
-            z-index: 80;
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            max-width: calc(100vw - 2rem);
-            padding: 0.55rem 0.6rem 0.55rem 1rem;
-            background: rgba(17, 24, 39, 0.96);
-            border: 1px solid var(--border-primary);
-            border-radius: 999px;
-            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
-            color: var(--text-primary);
-            font-size: 0.875rem;
-        }
-
-        .undo-toast.hidden {
-            display: none;
-        }
-
-        .undo-toast-action {
-            background: var(--brand-color);
-            color: #fff;
-            border: 0;
-            border-radius: 999px;
-            padding: 0.35rem 0.9rem;
-            font-weight: 700;
-            cursor: pointer;
-        }
-
-        .undo-toast-action:hover {
-            background: var(--brand-color-hover);
-        }
-
-        .undo-toast-close {
-            background: none;
-            border: 0;
-            color: #9ca3af;
-            font-size: 1.1rem;
-            line-height: 1;
-            padding: 0.2rem 0.35rem;
-            cursor: pointer;
         }

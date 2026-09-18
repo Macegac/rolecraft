@@ -85,7 +85,7 @@
     <link rel="stylesheet" href="css/stats.css?v=1d996b4921">
     <link rel="stylesheet" href="css/cinematic.css?v=307cbe4af1">
     <link rel="stylesheet" href="css/agents.css?v=3e3df3752b">
-    <link rel="stylesheet" href="css/history.css?v=1290727585">
+    <link rel="stylesheet" href="css/history.css?v=e70592d647">
     <link rel="stylesheet" href="css/diagnostics.css?v=7068132bb0">
 
 
@@ -417,13 +417,6 @@
                     style="opacity: 0.35; font-size: 0.7rem; font-weight: bold; text-transform: uppercase; letter-spacing: 0.1em; color: var(--chat-text-color); cursor: pointer; pointer-events: auto;">
                     STATS
                 </button>
-
-                <!-- Undo bar shown right after a delete (HistoryController.offerUndo) -->
-                <div id="undo-toast" class="undo-toast hidden" role="status">
-                    <span id="undo-toast-message">Message deleted</span>
-                    <button class="undo-toast-action" data-action="history-undo">Undo</button>
-                    <button class="undo-toast-close" data-action="history-toast-dismiss" title="Dismiss">&times;</button>
-                </div>
 
                 <!-- Agent Notes: panel for helper agents that show their notes there (AgentController) -->
                 <button id="agents-notes-btn" class="hidden agents-notes-btn" data-action="agents-panel-toggle">AGENTS</button>
@@ -4165,14 +4158,14 @@
     <script src="js/controllers/library.js?v=7c998223d6"></script>
     <script src="js/controllers/visual-master.js?v=e6dc521c75"></script>
     <script src="js/controllers/swarm.js?v=946e74d191"></script>
-    <script src="js/controllers/narrative.js?v=2417488395"></script>
+    <script src="js/controllers/narrative.js?v=316aeadd47"></script>
     <script src="js/controllers/text-mode.js?v=473844d73c"></script>
     <script src="js/controllers/crop.js?v=a2d1f4d345"></script>
     <script src="js/controllers/refine-mask.js?v=0316ba63ff"></script>
     <script src="js/controllers/world.js?v=0f6f397115"></script>
     <script src="js/controllers/inventory.js?v=d60cd29afb"></script>
     <script src="js/controllers/agents.js?v=83f71f66ea"></script>
-    <script src="js/controllers/history.js?v=6a353aed34"></script>
+    <script src="js/controllers/history.js?v=c3b0b726c5"></script>
     <script src="js/controllers/diagnostics.js?v=a510e27fa2"></script>
     <script src="js/controllers/action-dispatcher.js?v=32680e50d7"></script>
     <script src="js/boot.js?v=c2d3cbcc39"></script>

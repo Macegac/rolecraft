@@ -19,7 +19,6 @@
 
             stack: null,
             narrativeId: null,
-            toastTimer: null,
             retryTimer: null,
 
             _state() {
@@ -115,7 +114,6 @@
                 const snapshot = direction === 'undo' ? UndoStack.undo(this.stack) : UndoStack.redo(this.stack);
                 if (!snapshot) return;
                 this._apply(snapshot);
-                this.hideToast();
                 UIManager.showNotification(direction === 'undo' ? 'Undone.' : 'Redone.', 'success');
             },
 
@@ -155,31 +153,9 @@
                 if (redoBtn) redoBtn.disabled = !this.canRedo();
             },
 
-            /**
-             * A short bar with an Undo button, shown right after something is deleted.
-             * @param {string} message
-             */
-            offerUndo(message) {
-                // Record the deletion now so the bar's Undo has a step to take back.
-                this.observe();
-                const toast = document.getElementById('undo-toast');
-                if (!toast) return;
-                document.getElementById('undo-toast-message').textContent = message;
-                toast.classList.remove('hidden');
-                clearTimeout(this.toastTimer);
-                this.toastTimer = setTimeout(() => this.hideToast(), 8000);
-            },
-
-            hideToast() {
-                clearTimeout(this.toastTimer);
-                const toast = document.getElementById('undo-toast');
-                if (toast) toast.classList.add('hidden');
-            },
-
             init() {
                 ActionHandler.register('history-undo', () => this.undo());
                 ActionHandler.register('history-redo', () => this.redo());
-                ActionHandler.register('history-toast-dismiss', () => this.hideToast());
 
                 // Ctrl+Z / Ctrl+Y (Cmd on Mac) when not typing in a text box.
                 document.addEventListener('keydown', (e) => {

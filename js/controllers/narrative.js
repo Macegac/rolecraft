@@ -2182,9 +2182,8 @@ Return ONLY the physical description. Write in the 3rd person. No preamble.`;
                 }
 
                 AppController.closeModal('confirmation-modal');
-                if (typeof HistoryController !== 'undefined') {
-                    HistoryController.offerUndo(mode === 'forward' ? 'Messages deleted' : 'Message deleted');
-                }
+                // Record the delete now, so Undo can take it back straight away.
+                if (typeof HistoryController !== 'undefined') HistoryController.observe();
             },
 
             /**
