@@ -1744,6 +1744,41 @@ test('AgentSchema.pickFeedNotes: feed-once skips notes already used', () => {
     deepEq(AgentSchema.pickFeedNotes([{ id: 'a', usedAt: 1 }], { feedOnce: true, feedCount: 1 }), []);
 });
 
+// Restoring a library replaces everything, so it has to be sure the file is really a library
+// backup before it clears anything. A single story's .zip is also a valid zip full of valid JSON,
+// and picking one by mistake used to empty the library and import nothing, silently.
+test('restoring a library refuses anything that is not a library backup', () => {
+    const story = fs.readFileSync(path.join(__dirname, 'js', 'services', 'story.js'), 'utf8');
+    const fn = story.slice(story.indexOf('async importLibraryFromZip('));
+    const body = fn.slice(0, fn.indexOf('\n            async ', 1));
+
+    const guardAt = body.indexOf('if (!storiesFile)');
+    const clearAt = body.indexOf('DBService.clearStore("stories")');
+    assert.notEqual(guardAt, -1, 'a missing data/stories.json must be refused');
+    assert.notEqual(clearAt, -1, 'expected the clear step to still be here');
+    assert.ok(guardAt < clearAt, 'the check must happen before anything is cleared');
+
+    assert.match(body, /if \(!Array\.isArray\(stories\)\)/, 'stories.json must be checked to be a list');
+    const emptyAt = body.indexOf('if (stories.length === 0)');
+    assert.notEqual(emptyAt, -1, 'an empty backup must be refused when there is something to lose');
+    assert.ok(emptyAt < clearAt, 'the empty-backup check must also happen before clearing');
+});
+
+// Parts of a story are filed under a character's id rather than holding it in a field. Everyone
+// gets a new id on import, so these have to be moved across with them or the story comes back with
+// its personas reset, its stat bars empty and its secrets gone — with nothing reporting a problem.
+test('importing a story carries character-keyed data across to the new ids', () => {
+    const ie = fs.readFileSync(path.join(__dirname, 'js', 'services', 'import-export.js'), 'utf8');
+    assert.match(ie, /const CHARACTER_KEYED = \[/, 'the character-keyed structures must be listed');
+    for (const key of ['evolved_characters', 'character_stats', 'livingPersonaCounters',
+        'last_stat_deltas', 'swarmSecrets', 'swarmLastIntents', 'swarmNarrativeCapital']) {
+        assert.ok(ie.includes(`'${key}'`), `${key} must be remapped on import`);
+    }
+    assert.match(ie, /remapCharacterKeyed\(n\.state\)/, 'every imported narrative must be remapped');
+    assert.match(ie, /entry\.characterId = charIdMap\[entry\.characterId\]/,
+        'journal entries that name a character must be remapped too');
+});
+
 // The story's own system prompt lives at state.system_prompt. A camelCase state.systemPrompt is a
 // key nothing ever writes, so reading it silently falls through to a generic fallback — which is
 // exactly what Swarm mode used to do with everyone's custom storyteller instructions.

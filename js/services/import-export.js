@@ -501,6 +501,39 @@
                     return ids.map(id => charIdMap[id] || id);
                 };
 
+                // Several parts of a story are filed under a character's id rather than holding it
+                // in a field: how that character has grown, their stats, their secrets. Everyone
+                // gets a new id on import, so without this the data arrives in the file but is
+                // filed under a character who no longer exists, and the story quietly comes back
+                // with its personas reset and its stat bars empty.
+                const CHARACTER_KEYED = [
+                    'evolved_characters', 'character_stats', 'livingPersonaCounters',
+                    'last_stat_deltas', 'swarmSecrets', 'swarmLastIntents', 'swarmNarrativeCapital'
+                ];
+                const remapCharacterKeyed = (state) => {
+                    if (!state || typeof state !== 'object') return;
+                    for (const key of CHARACTER_KEYED) {
+                        const original = state[key];
+                        if (!original || typeof original !== 'object' || Array.isArray(original)) continue;
+                        const moved = {};
+                        for (const [oldId, value] of Object.entries(original)) {
+                            moved[charIdMap[oldId] || oldId] = value;
+                        }
+                        state[key] = moved;
+                    }
+                    // Journal relationships and quests point at a character by id.
+                    const game = state.gameState;
+                    if (game && typeof game === 'object') {
+                        ['relationships', 'journal'].forEach(listName => {
+                            (Array.isArray(game[listName]) ? game[listName] : []).forEach(entry => {
+                                if (entry && entry.characterId && charIdMap[entry.characterId]) {
+                                    entry.characterId = charIdMap[entry.characterId];
+                                }
+                            });
+                        });
+                    }
+                };
+
                 // 1. Remap Scenarios
                 (story.scenarios || []).forEach(s => {
                     s.id = UTILITY.uuid();
@@ -519,6 +552,7 @@
                         if (n.state.static_entries) {
                             n.state.static_entries.forEach(e => e.id = UTILITY.uuid());
                         }
+                        remapCharacterKeyed(n.state);
                     }
                     if (n.active_character_ids) {
                         n.active_character_ids = remapActiveIds(n.active_character_ids);

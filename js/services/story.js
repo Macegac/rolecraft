@@ -991,12 +991,20 @@
                 let folders = [];
                 let globalSettings = null;
 
+                // This replaces the whole library, so it has to be certain the file really is a
+                // library backup before anything is cleared. A single-story .zip also contains
+                // valid JSON, and picking one of those by mistake used to empty the library and
+                // then import nothing, with no error at all.
                 const storiesFile = zip.file("data/stories.json");
-                if (storiesFile) {
-                    try {
-                        const str = await storiesFile.async("string");
-                        stories = JSON.parse(str);
-                    } catch (e) { throw new Error("Invalid 'stories.json' in backup file."); }
+                if (!storiesFile) {
+                    throw new Error("This is not a library backup — it has no data/stories.json inside. A backup is the file made by Export Library; a single story's .zip is imported from the library screen instead.");
+                }
+                try {
+                    const str = await storiesFile.async("string");
+                    stories = JSON.parse(str);
+                } catch (e) { throw new Error("Invalid 'stories.json' in backup file."); }
+                if (!Array.isArray(stories)) {
+                    throw new Error("This backup's 'stories.json' is not a list of stories, so it cannot be restored.");
                 }
 
                 const narrativesFile = zip.file("data/narratives.json");
@@ -1021,6 +1029,16 @@
                         const str = await globalSettingsFile.async("string");
                         globalSettings = JSON.parse(str);
                     } catch (e) { console.warn("Could not parse globalSettings.json", e); }
+                }
+
+                // A backup with no stories in it would empty the library and put nothing back.
+                // That is never what someone restoring a backup wants, so refuse unless the
+                // library is already empty and there is nothing to lose.
+                if (stories.length === 0) {
+                    const existing = await DBService.getAllStories();
+                    if (existing && existing.length > 0) {
+                        throw new Error(`This backup contains no stories, and restoring it would remove the ${existing.length} you already have. Nothing was changed.`);
+                    }
                 }
 
                 // 1. Clear existing data (Only after validation passes)
