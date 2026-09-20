@@ -2104,3 +2104,41 @@ test('the output ceiling leaves room for a model that thinks before it answers',
     assert.ok(Number(cap[1]) >= 4096, 'reasoning is billed against this budget too');
     assert.ok(!/max_tokens: 2048/.test(api), 'the old hardcoded 2048 ceiling is gone');
 });
+
+test('style guide: both halves exist and stay lean', () => {
+    const g = UTILITY.getStyleGuide();
+    assert.ok(g.rules.length > 800, 'the full rules are substantial');
+    assert.ok(g.rules.length < 3000,
+        'but stay lean - heavy micromanagement reportedly makes these models follow fewer rules, not more');
+    assert.ok(g.reminder.length < 250, 'the reminder is a one-liner, not a second copy of the rules');
+    assert.ok(/never the user/i.test(g.reminder), 'the rule that matters most is the one restated last');
+});
+
+test('style guide: off by default, and off means absent', () => {
+    const u = fs.readFileSync(path.join(__dirname, 'js', 'util', 'utility.js'), 'utf8');
+    assert.ok(/enableStyleGuide: globals\.default_enableStyleGuide !== undefined \? globals\.default_enableStyleGuide : false/.test(u),
+        'a new story does not get it unless asked');
+    const pb = fs.readFileSync(path.join(__dirname, 'js', 'util', 'prompt-builder.js'), 'utf8');
+    assert.ok(/state\.enableStyleGuide \? UTILITY\.getStyleGuide\(\) : null/.test(pb));
+    assert.ok(/if \(state\.enableStyleGuide\) p \+=/.test(pb));
+});
+
+test('style guide: layers onto the story prompt instead of replacing it', () => {
+    const pb = fs.readFileSync(path.join(__dirname, 'js', 'util', 'prompt-builder.js'), 'utf8');
+    assert.ok(/system_prompt: replacer\(modelInstructions\) \+ \(styleGuide \?/.test(pb),
+        'turning it off must restore exactly what the story had');
+});
+
+test('style guide: the reminder is the last instruction before the reply', () => {
+    const pb = fs.readFileSync(path.join(__dirname, 'js', 'util', 'prompt-builder.js'), 'utf8');
+    const reminderAt = pb.indexOf('UTILITY.getStyleGuide().reminder');
+    const anchorAt = pb.indexOf('+ components.charToAct.name + ":"', reminderAt);
+    assert.ok(reminderAt > -1 && anchorAt > reminderAt,
+        'it must sit between the other instructions and the name anchor');
+});
+
+test('style guide: the setting survives export and import', () => {
+    const story = fs.readFileSync(path.join(__dirname, 'js', 'services', 'story.js'), 'utf8');
+    assert.ok(/'enableStyleGuide'/.test(story),
+        'otherwise a shared story silently loses it');
+});

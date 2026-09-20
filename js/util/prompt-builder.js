@@ -436,8 +436,9 @@ JSON Schema:
                     return msg;
                 });
 
+                const styleGuide = state.enableStyleGuide ? UTILITY.getStyleGuide() : null;
                 return {
-                    system_prompt: replacer(modelInstructions),
+                    system_prompt: replacer(modelInstructions) + (styleGuide ? "\n\n" + styleGuide.rules : ""),
                     static_entries: (state.static_entries || []).map(l => `### ${l.title}\n${replacer(l.content)}`).join('\n\n'),
                     characters: [...(state.characters || []), ...ReactiveStore.getActiveLocationCharacters()]
                         .filter(c => c.is_active)
@@ -784,7 +785,11 @@ JSON Schema:
                     else if (responseLength === 'novel') p += " Continue writing a long-form addition to the text that builds on the current actions, describes the scene, and contributes to world-building. Include full sensory descriptions of the surroundings, characters, and events.";
                 }
 
-                p += " Do not repeat the character's name in the response itself.\n### " + components.charToAct.name + ":";
+                p += " Do not repeat the character's name in the response itself.";
+                // Last instruction before the reply anchor. A rule given once at the top of a
+                // long prompt is the one most often dropped, so the essentials are restated here.
+                if (state.enableStyleGuide) p += "\n\n" + UTILITY.getStyleGuide().reminder;
+                p += "\n### " + components.charToAct.name + ":";
 
                 // Extract images from history
                 const images = [];

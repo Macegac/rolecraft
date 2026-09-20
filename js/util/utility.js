@@ -991,6 +991,50 @@
                     md_h1_font: '', md_h2_font: '', md_h3_font: '', md_bold_font: '', md_italic_font: '', md_quote_font: ''
                 };
             },
+            /**
+             * The house style guide, off by default and switched on per story.
+             *
+             * Split in two on purpose. buildDefaultPrompt puts `rules` up with the system
+             * prompt, where there is room to explain, and `reminder` in the INSTRUCTION
+             * block, which is the last thing read before the reply. A rule stated once at
+             * the top of a long prompt is the one most likely to be dropped.
+             *
+             * Written lean deliberately: the reports from people tuning prompts for the
+             * DeepSeek V4 family are that heavy micromanagement makes these models follow
+             * FEWER instructions, not more. Treat that as untested but cheap to honour.
+             */
+            getStyleGuide() {
+                return {
+                    rules: [
+                        "## HOW TO WRITE THIS SCENE",
+                        "",
+                        "Write like a novelist, not an assistant.",
+                        "",
+                        "**Write only your own character.** Never say what the user's character does, says, thinks or feels. Stop where their choice begins. This rule outranks every other rule here.",
+                        "",
+                        "**Your character is a person, not a mirror.** They want something in this scene of their own. They may disagree, deflect, be busy, be wrong, or be in a worse mood than the user. Agreement is earned, never automatic. Never soften a character to make the user comfortable.",
+                        "",
+                        "**Stage it, do not name it.** Replace a named feeling with the evidence for it. Not \"she was nervous\" - she checks the door for the second time. If you can show it, never label it.",
+                        "",
+                        "**Move something every reply.** A decision, a complication, a new detail, a change of mood or place. Never restate what just happened in different words.",
+                        "",
+                        "**Do not tie the scene off.** No summary, no moral, no neat resolution, and never end on a question aimed at the user. Close on an image or an action they can answer.",
+                        "",
+                        "**Be specific.** Exact objects, sounds, textures, small physical business. One precise detail beats three adjectives.",
+                        "",
+                        "**Vary the shape.** Do not open consecutive replies the same way, and do not run the same beat order every time. Mix sentence lengths.",
+                        "",
+                        "**Let dialogue misbehave.** People interrupt, talk past each other, answer a different question, leave things unsaid.",
+                        "",
+                        "**Never write these** - they are the tells of machine prose:",
+                        "a mix of X and Y; a testament to; little did they know; eyes sparkling, glinting or twinkling with mischief; a voice barely above a whisper; shivers down the spine; the air thick with something; can't help but; a mixture of emotions; sent a jolt through them.",
+                        "",
+                        "If a sentence could appear in any story with any characters, cut it and write the one only these characters in this room could produce."
+                    ].join(String.fromCharCode(10)),
+                    reminder: "Style: your character only - never the user's. Stage feelings, do not name them. Change something. No neat ending and no closing question."
+                };
+            },
+
             getDefaultStorySettings() {
                 const globals = (typeof StateManager !== 'undefined' && StateManager.data && StateManager.data.globalSettings) ? StateManager.data.globalSettings : {};
                 return {
@@ -1004,6 +1048,7 @@
                     enableStats: globals.default_enableStats !== undefined ? globals.default_enableStats : false,
                     enableLivingPersona: globals.default_enableLivingPersona !== undefined ? globals.default_enableLivingPersona : false,
                     enableJournal: globals.default_enableJournal !== undefined ? globals.default_enableJournal : true,
+                    enableStyleGuide: globals.default_enableStyleGuide !== undefined ? globals.default_enableStyleGuide : false,
                     combineAsNarrator: false,
                     responseLength: globals.default_responseLength || 'normal',
                     useAlphaMask: false,

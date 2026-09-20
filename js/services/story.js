@@ -399,6 +399,7 @@
 
                             // AI Logic Toggles
                             'enableAutoStaticKnowledge', 'enableAnalysis', 'enableResponseOptions', 'enableStats', 'enableLivingPersona', 'enableJournal',
+                            'enableStyleGuide',
                             'combineAsNarrator',
 
                             // Agents: this story's own on/off switches (agent id -> boolean),

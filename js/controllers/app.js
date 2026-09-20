@@ -1676,6 +1676,16 @@
                     });
                 }
 
+                // House Style Guide Toggle
+                const styleGuideToggle = document.getElementById('enable-style-guide-toggle');
+                if (styleGuideToggle) {
+                    styleGuideToggle.checked = state.enableStyleGuide === true; // Default off
+                    styleGuideToggle.addEventListener('change', (e) => {
+                        state.enableStyleGuide = e.target.checked;
+                        if (typeof ReactiveStore.forceSave === 'function') ReactiveStore.forceSave();
+                    });
+                }
+
                 // Response Options Toggle
                 const respOptToggle = document.getElementById('enable-response-options-toggle');
                 if (respOptToggle) {
