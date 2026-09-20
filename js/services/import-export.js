@@ -1018,13 +1018,32 @@
                 story.name = v2Data.name || "Imported Character";
                 story.tags = v2Data.tags || [];
                 const userChar = UTILITY.getDefaultUserCharacter();
+                const charName = v2Data.name || "Imported Character";
+                const asPersona = t => String(t || "").replace(/{{char}}/g, charName).replace(/{{user}}/g, "{user}");
+
+                // A card's "personality" is part of who the character is, and belongs with the
+                // description — the same place SillyTavern puts it. It used to be dropped, so a
+                // character arrived with half of themselves missing and nothing said so.
+                const persona = [asPersona(v2Data.description), asPersona(v2Data.personality)]
+                    .map(t => t.trim()).filter(Boolean).join('\n\n');
+
+                let instructions = String(v2Data.system_prompt || "Write the next response for {character}. Be descriptive and engaging.")
+                    .replace(/{{char}}/g, "{character}").replace(/{{user}}/g, "{user}");
+                // A card's post-history instructions are its rules for how to write. Rolecraft has
+                // no separate slot for them after the conversation, so they ride along with the
+                // rest of the instructions rather than being thrown away.
+                const postHistory = String(v2Data.post_history_instructions || "").trim();
+                if (postHistory) {
+                    instructions += `\n\n### Author's Rules\n${postHistory.replace(/{{char}}/g, "{character}").replace(/{{user}}/g, "{user}")}`;
+                }
+
                 const aiChar = {
                     id: UTILITY.uuid(),
-                    name: v2Data.name || "Imported Character",
+                    name: charName,
                     ...UTILITY.getDefaultStorySettings(),
-                    description: (v2Data.description || "").replace(/{{char}}/g, v2Data.name || "Imported Character").replace(/{{user}}/g, "{user}"),
-                    short_description: UTILITY.truncateShortDescription((v2Data.description || "").replace(/{{char}}/g, v2Data.name || "Imported Character").replace(/{{user}}/g, "{user}")),
-                    model_instructions: (v2Data.system_prompt || "Write the next response for {character}. Be descriptive and engaging.").replace(/{{char}}/g, "{character}").replace(/{{user}}/g, "{user}"),
+                    description: persona,
+                    short_description: UTILITY.truncateShortDescription(persona),
+                    model_instructions: instructions,
                     image_url: '',
                     extra_portraits: [],
                     tags: v2Data.tags || [],
@@ -1032,6 +1051,11 @@
                     is_active: true,
                     is_narrator: false
                 };
+
+                // Who made the card, kept with the story rather than lost on the way in.
+                if (v2Data.creator) story.card_creator = String(v2Data.creator);
+                if (v2Data.character_version) story.card_version = String(v2Data.character_version);
+                if (v2Data.creator_notes) story.creator_notes = String(v2Data.creator_notes);
                 story.characters = [userChar, aiChar];
                 const activeIDs = [userChar.id, aiChar.id];
                 if (v2Data.character_book && v2Data.character_book.entries) {
@@ -1155,9 +1179,15 @@
                 const bookEntries = [];
                 let insertionCounter = 0;
                 (story.dynamic_entries || []).forEach(entry => {
+                    // Lore text lives in content_fields, a list of stages. This used to read
+                    // entry.content, a field these never have, so every exported card carried a
+                    // lorebook of correctly-named entries with nothing written in them.
+                    const text = Array.isArray(entry.content_fields)
+                        ? entry.content_fields.filter(Boolean).join('\n\n')
+                        : (entry.content || "");
                     bookEntries.push({
                         keys: (entry.triggers || entry.title || "").split(',').map(t => t.trim()).filter(Boolean),
-                        content: entry.content || "",
+                        content: text,
                         enabled: true, insertion_order: insertionCounter++, extensions: {}, case_sensitive: false,
                     });
                 });
@@ -1207,15 +1237,21 @@
                     scenario: replacePlaceholdersV2(scenarioText),
                     first_mes: firstMes,
                     mes_example: mesExample,
-                    creator_notes: "",
+                    creator_notes: story.creator_notes || "",
                     system_prompt: replacePlaceholdersV2(primaryChar.model_instructions || ""),
                     post_history_instructions: "",
-                    alternate_greetings: [],
+                    // The story's other openings. A card importer offers these as alternative
+                    // first messages; this used to always send an empty list, so every extra
+                    // opening a story had was left behind when the card was shared.
+                    alternate_greetings: (story.scenarios || [])
+                        .map(s => s && s.message)
+                        .filter(m => typeof m === 'string' && m.trim() && replacePlaceholdersV2(m) !== firstMes)
+                        .map(m => replacePlaceholdersV2(m)),
                     character_book: {
                         name: "", description: "", scan_depth: 100, token_budget: 2048, recursive_scanning: false, extensions: {}, entries: bookEntries
                     },
                     tags: primaryChar.tags || [],
-                    creator: "", character_version: "", extensions: {}
+                    creator: story.card_creator || "", character_version: story.card_version || "", extensions: {}
                 };
                 return { spec: 'chara_card_v2', spec_version: '2.0', data: v2Data };
             },

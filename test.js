@@ -1744,6 +1744,30 @@ test('AgentSchema.pickFeedNotes: feed-once skips notes already used', () => {
     deepEq(AgentSchema.pickFeedNotes([{ id: 'a', usedAt: 1 }], { feedOnce: true, feedCount: 1 }), []);
 });
 
+// A character card carries more than a description. Anything the converter does not read is gone
+// the moment the card is imported, and nothing reports it — the character just arrives incomplete.
+test('importing a character card keeps who the character is', () => {
+    const ie = fs.readFileSync(path.join(__dirname, 'js', 'services', 'import-export.js'), 'utf8');
+    assert.match(ie, /asPersona\(v2Data\.personality\)/,
+        "a card's personality belongs with its description, not dropped");
+    assert.match(ie, /v2Data\.post_history_instructions/,
+        "a card's post-history instructions must reach the model somewhere");
+    assert.match(ie, /story\.card_creator = String\(v2Data\.creator\)/,
+        'who made the card should survive the import');
+});
+
+// Exporting a card is how a story gets shared. Anything the exporter writes blank is missing for
+// whoever opens it, and for you if you ever import your own card back.
+test('exporting a character card carries the lore and the extra openings', () => {
+    const ie = fs.readFileSync(path.join(__dirname, 'js', 'services', 'import-export.js'), 'utf8');
+    assert.match(ie, /Array\.isArray\(entry\.content_fields\)/,
+        'lore text lives in content_fields; reading entry.content exports empty entries');
+    assert.doesNotMatch(ie, /alternate_greetings: \[\],/,
+        'alternate_greetings must be built from the story, not hardcoded empty');
+    assert.match(ie, /alternate_greetings: \(story\.scenarios \|\| \[\]\)/,
+        "a story's other openings must be exported");
+});
+
 // Restoring a library replaces everything, so it has to be sure the file is really a library
 // backup before it clears anything. A single story's .zip is also a valid zip full of valid JSON,
 // and picking one by mistake used to empty the library and import nothing, silently.
