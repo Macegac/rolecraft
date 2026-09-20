@@ -1920,6 +1920,7 @@
                             <button class="diag-copy-btn" data-action="diag-copy-report">Copy problem report</button>
                         </div>
                         <label class="diag-check mt-2"><input type="checkbox" data-diag-include-text> Include story text (messages, replies, agent notes)</label>
+                        <label class="diag-check mt-2"><input type="checkbox" data-diag-console data-action="diag-console-toggle"> Print every prompt to the browser console (slower, uses memory)</label>
                     </div>
                 </div>
             </div>
@@ -3313,10 +3314,10 @@
                     <div>
                         <label class="text-sm font-semibold text-gray-400 block mb-2">TTS Backend</label>
                         <div id="tts-backend-selector" class="grid grid-cols-2 gap-2">
-                            <button data-action="select-tts-backend" data-action-val="gemini"
+                            <button data-action-val="gemini"
                                 class="tts-backend-option active px-3 py-2 rounded-lg border text-sm font-medium transition-all duration-200 text-center">
                                 Gemini</button>
-                            <button data-action="select-tts-backend" data-action-val="nanogpt"
+                            <button data-action-val="nanogpt"
                                 class="tts-backend-option px-3 py-2 rounded-lg border text-sm font-medium transition-all duration-200 text-center">
                                 NanoGPT</button>
                         </div>
@@ -3388,13 +3389,13 @@
                     <div>
                         <label class="text-sm font-semibold text-gray-400 block mb-2">Music Backend</label>
                         <div id="music-backend-selector" class="grid grid-cols-4 gap-2">
-                            <button data-action="select-music-backend" data-action-val="off"
+                            <button data-action-val="off"
                                 class="music-backend-option active px-3 py-2.5 rounded-lg border text-sm font-medium transition-all duration-200 text-center">Off</button>
-                            <button data-action="select-music-backend" data-action-val="gemini"
+                            <button data-action-val="gemini"
                                 class="music-backend-option px-3 py-2.5 rounded-lg border text-sm font-medium transition-all duration-200 text-center">Gemini</button>
-                            <button data-action="select-music-backend" data-action-val="openrouter"
+                            <button data-action-val="openrouter"
                                 class="music-backend-option px-3 py-2.5 rounded-lg border text-sm font-medium transition-all duration-200 text-center">OpenRouter</button>
-                            <button data-action="select-music-backend" data-action-val="nanogpt"
+                            <button data-action-val="nanogpt"
                                 class="music-backend-option px-3 py-2.5 rounded-lg border text-sm font-medium transition-all duration-200 text-center">NanoGPT</button>
                         </div>
                         <p class="text-xs text-gray-500 mt-2">AI-generated instrumental music that adapts to the current
@@ -4123,51 +4124,51 @@
 
     <!-- [SEC:JS:CORE] -->
     <!-- Application Logic -->
-    <script src="js/core/build-info.js?v=130e4a7438"></script>
+    <script src="js/core/build-info.js?v=e254a3ed6e"></script>
     <script src="js/core/dom.js?v=63eb132604"></script>
     <script src="js/core/action-handler.js?v=04c5d70639"></script>
     <script src="js/core/debounce.js?v=dce774dcea"></script>
-    <script src="js/services/db.js?v=08aabde37c"></script>
+    <script src="js/services/db.js?v=3378a69e50"></script>
     <script src="js/services/visual-lore.js?v=0f65ddfa8a"></script>
     <script src="js/services/auto-backup.js?v=593d50d062"></script>
     <script src="js/services/image-generation.js?v=234457a6a8"></script>
     <script src="js/services/vision-bridge.js?v=e4ebf34fa1"></script>
     <script src="js/services/story.js?v=b5915f5003"></script>
-    <script src="js/state/state-manager.js?v=e8da4a913a"></script>
+    <script src="js/state/state-manager.js?v=0b36cabf32"></script>
     <script src="js/services/api.js?v=f9a53a4e27"></script>
     <script src="js/services/tts.js?v=b5903b4d34"></script>
-    <script src="js/services/music.js?v=b6714a64eb"></script>
+    <script src="js/services/music.js?v=6de37ebcdc"></script>
     <script src="js/ui/modal-manager.js?v=eedc205bd3"></script>
     <script src="js/util/utility.js?v=53ce8ec98d"></script>
     <script src="js/util/agent-schema.js?v=21a243728f"></script>
     <script src="js/util/agent-starters.js?v=aef1663875"></script>
     <script src="js/util/undo-stack.js?v=44e25af094"></script>
-    <script src="js/util/diag-log.js?v=9d2d9e5ba0"></script>
-    <script src="js/util/prompt-builder.js?v=34c83bf623"></script>
+    <script src="js/util/diag-log.js?v=2a43613d07"></script>
+    <script src="js/util/prompt-builder.js?v=3950bf3e9c"></script>
     <script src="js/util/text-formatter.js?v=211f6d886e"></script>
     <script src="js/util/image-processor.js?v=ab91a76e63"></script>
     <script src="js/services/import-export.js?v=7c6929c810"></script>
     <script src="js/services/agent-store.js?v=c42bea0f14"></script>
     <script src="js/state/reactive-store.js?v=15c3ac99a8"></script>
-    <script src="js/ui/ui-components.js?v=c45106a071"></script>
-    <script src="js/ui/ui-manager.js?v=d84d75f826"></script>
-    <script src="js/controllers/app.js?v=2901765393"></script>
+    <script src="js/ui/ui-components.js?v=dc91210157"></script>
+    <script src="js/ui/ui-manager.js?v=442efe0b10"></script>
+    <script src="js/controllers/app.js?v=83cd58f587"></script>
     <script src="js/controllers/story-generation.js?v=0327e295bc"></script>
     <script src="js/controllers/in-story-generation.js?v=7adf398b93"></script>
-    <script src="js/controllers/hub.js?v=1469043b55"></script>
-    <script src="js/controllers/library.js?v=7c998223d6"></script>
-    <script src="js/controllers/visual-master.js?v=e6dc521c75"></script>
-    <script src="js/controllers/swarm.js?v=946e74d191"></script>
-    <script src="js/controllers/narrative.js?v=316aeadd47"></script>
+    <script src="js/controllers/hub.js?v=580ef37402"></script>
+    <script src="js/controllers/library.js?v=bd4af906df"></script>
+    <script src="js/controllers/visual-master.js?v=2bbbb9cb42"></script>
+    <script src="js/controllers/swarm.js?v=678c428aa7"></script>
+    <script src="js/controllers/narrative.js?v=8d85d476c9"></script>
     <script src="js/controllers/text-mode.js?v=473844d73c"></script>
     <script src="js/controllers/crop.js?v=a2d1f4d345"></script>
     <script src="js/controllers/refine-mask.js?v=0316ba63ff"></script>
     <script src="js/controllers/world.js?v=0f6f397115"></script>
     <script src="js/controllers/inventory.js?v=d60cd29afb"></script>
     <script src="js/controllers/agents.js?v=83f71f66ea"></script>
-    <script src="js/controllers/history.js?v=c3b0b726c5"></script>
-    <script src="js/controllers/diagnostics.js?v=a510e27fa2"></script>
-    <script src="js/controllers/action-dispatcher.js?v=32680e50d7"></script>
+    <script src="js/controllers/history.js?v=ef41f00c31"></script>
+    <script src="js/controllers/diagnostics.js?v=d3792e043a"></script>
+    <script src="js/controllers/action-dispatcher.js?v=159b644ded"></script>
     <script src="js/boot.js?v=c2d3cbcc39"></script>
     <!-- Onboarding Welcome Modal: Shown on first launch to guide new users -->
     <div id="onboarding-modal" class="hidden fixed inset-0 z-[90] flex items-center justify-center onboarding-backdrop">

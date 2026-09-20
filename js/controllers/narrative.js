@@ -1480,6 +1480,11 @@ Return ONLY the physical description. Write in the 3rd person. No preamble.`;
                     UIManager.setButtonToStopMode();
                     this.RUNTIME.activeRequestAbortController = new AbortController();
 
+                    // Declared out here because the catch below restores the bubble with them; a
+                    // let inside the try is not in scope there.
+                    let targetIdx = null;
+                    let originalContent = null;
+
                     try {
                         // Reconstruct winner objects from the cached last intents
                         const allAiChars = [...(state.characters || []), ...ReactiveStore.getActiveLocationCharacters()]
@@ -1508,11 +1513,10 @@ Return ONLY the physical description. Write in the 3rd person. No preamble.`;
                         if (!primarySpeaker) throw new Error('No speaker found to regenerate.');
 
                         // Find the last AI bubble index to overwrite
-                        let targetIdx = state.chat_history.indexOf(lastAiMsg);
+                        targetIdx = state.chat_history.indexOf(lastAiMsg);
                         if (targetIdx === -1) targetIdx = null;
 
                         // UI IMPROVEMENT: Instead of detached typing indicator, update existing bubble to "thinking" state
-                        let originalContent = null;
                         if (targetIdx !== null) {
                             originalContent = lastAiMsg.content;
                             const msgEl = document.getElementById(`message-content-${targetIdx}`);
@@ -1558,7 +1562,7 @@ Return ONLY the physical description. Write in the 3rd person. No preamble.`;
                         }
                         if (targetIdx !== null && originalContent !== null) {
                             state.chat_history[targetIdx].content = originalContent;
-                            UIManager.renderChatHistory(state.chat_history);
+                            UIManager.renderChat();
                         }
                     } finally {
                         UIManager.setButtonToSendMode();
@@ -1994,51 +1998,40 @@ Return ONLY the physical description. Write in the 3rd person. No preamble.`;
                 const evolvedText = (state.evolved_characters && state.evolved_characters[charId]) ? state.evolved_characters[charId] : null;
 
                 if (!evolvedText) {
-                    Swal.fire({
-                        title: 'No Changes Yet',
-                        text: `${char.name} has not evolved enough to produce a distinct narrative persona.`,
-                        icon: 'info',
-                        background: '#1e293b',
-                        color: '#f8fafc'
-                    });
+                    UIManager.showNotification(`${char.name} has not evolved enough to produce a distinct narrative persona.`, 'info');
                     return;
                 }
 
-                Swal.fire({
-                    title: `${char.name}'s Narrative Persona`,
-                    html: `
-                        <div class="text-left text-sm text-gray-300 max-h-96 overflow-y-auto w-full whitespace-pre-wrap font-sans custom-scrollbar leading-relaxed">
-                            ${UTILITY.escapeHTML(evolvedText)}
+                const existing = document.getElementById('evolved-persona-modal');
+                if (existing) existing.remove();
+
+                const modal = document.createElement('div');
+                modal.id = 'evolved-persona-modal';
+                modal.className = 'fixed inset-0 z-[95] flex items-center justify-center';
+                modal.innerHTML = DOM.html`
+                    <div class="modal-overlay absolute inset-0 bg-black/60"></div>
+                    <div class="bg-gray-800/95 backdrop-blur-md rounded-lg shadow-xl w-11/12 max-w-2xl relative flex flex-col max-h-[85vh]">
+                        <div class="p-4 border-b border-gray-700">
+                            <h3 class="text-xl font-bold">${char.name}'s Narrative Persona</h3>
                         </div>
-                    `,
-                    width: '600px',
-                    background: '#1e293b',
-                    color: '#f8fafc',
-                    showCloseButton: true,
-                    showDenyButton: true,
-                    denyButtonText: 'Reset to Base',
-                    denyButtonColor: '#ef4444',
-                    confirmButtonText: 'Close',
-                    confirmButtonColor: '#6366f1'
-                }).then((result) => {
-                    if (result.isDenied) {
-                        Swal.fire({
-                            title: 'Are you sure?',
-                            text: `This will permanently reset ${char.name}'s persona back to the base description.`,
-                            icon: 'warning',
-                            showCancelButton: true,
-                            confirmButtonText: 'Yes, Reset',
-                            cancelButtonText: 'Cancel',
-                            background: '#1e293b',
-                            color: '#f8fafc',
-                            confirmButtonColor: '#ef4444',
-                            cancelButtonColor: '#475569'
-                        }).then((resetResult) => {
-                            if (resetResult.isConfirmed) {
-                                NarrativeController.resetEvolvedPersona(charId);
-                            }
-                        });
-                    }
+                        <div class="p-5 overflow-y-auto custom-scrollbar">
+                            <p class="text-left text-sm text-gray-300 whitespace-pre-wrap font-sans leading-relaxed">${evolvedText}</p>
+                        </div>
+                        <div class="p-4 bg-black/20 border-t border-gray-700 flex justify-end space-x-4">
+                            <button id="evolved-persona-reset" class="bg-red-600 hover:bg-red-700 font-bold py-2 px-4 rounded-lg">Reset to Base</button>
+                            <button id="evolved-persona-close" class="bg-gray-600 hover:bg-gray-700 font-bold py-2 px-4 rounded-lg">Close</button>
+                        </div>
+                    </div>
+                `.toString();
+                document.body.appendChild(modal);
+
+                const close = () => modal.remove();
+                modal.querySelector('.modal-overlay').addEventListener('click', close);
+                modal.querySelector('#evolved-persona-close').addEventListener('click', close);
+                modal.querySelector('#evolved-persona-reset').addEventListener('click', async () => {
+                    close();
+                    const proceed = await UIManager.showConfirmationPromise(`This will permanently reset ${char.name}'s persona back to the base description.`);
+                    if (proceed) this.resetEvolvedPersona(charId);
                 });
             },
 
@@ -2431,7 +2424,7 @@ Return ONLY the physical description. Write in the 3rd person. No preamble.`;
                     : (msg.thinking || '');
 
                 if (!thinkingText || !thinkingText.trim()) {
-                    AppController.showNotification("No thinking data recorded for this message.", "info");
+                    UIManager.showNotification("No thinking data recorded for this message.", "info");
                     return;
                 }
 
@@ -2466,7 +2459,7 @@ Return ONLY the physical description. Write in the 3rd person. No preamble.`;
                 const text = contentEl ? contentEl.textContent : '';
                 if (!text) return;
                 navigator.clipboard.writeText(text).then(() => {
-                    AppController.showNotification("Thinking copied to clipboard!", "info");
+                    UIManager.showNotification("Thinking copied to clipboard!", "info");
                 }).catch(err => {
                     console.error("Failed to copy thinking: ", err);
                     alert("Failed to copy thinking to clipboard.");
@@ -3036,7 +3029,7 @@ Return ONLY the physical description. Write in the 3rd person. No preamble.`;
                     }
                     if (targetMessageIndex !== null && originalContent !== null) {
                         state.chat_history[targetMessageIndex].content = originalContent;
-                        UIManager.renderChatHistory(state.chat_history);
+                        UIManager.renderChat();
                     }
                     UIManager.hideTypingIndicator(true);
                 } finally {
@@ -3146,11 +3139,11 @@ Rules:
 4. Do NOT select "${userCharName}".
 5. Prefer a character who did not just speak in the most recent turn (unless the context strongly demands a back-to-back response from the same character).`;
 
-                    console.log("[Scriptwriter Prompt]:", prompt);
+                    DiagLog.trace("[Scriptwriter Prompt]:", prompt);
 
                     // 3. Call AI
                     const response = await APIService.callAI(prompt, false);
-                    console.log("[Scriptwriter Response]:", response);
+                    DiagLog.trace("[Scriptwriter Response]:", response);
 
                     // 4. Parse Selection
                     let selection = null;
@@ -3311,9 +3304,9 @@ Rules:
 
                 try {
                     const prompt = PromptBuilder.buildSwarmCastingPrompt(pool, narrators, userAction, state);
-                    console.log("[Swarm Casting Prompt]:", prompt);
+                    DiagLog.trace("[Swarm Casting Prompt]:", prompt);
                     const response = await APIService.callAI(prompt, false);
-                    console.log("[Swarm Casting Response]:", response);
+                    DiagLog.trace("[Swarm Casting Response]:", response);
 
                     // 4. Parse Selection
                     let candidatesNames = [];
@@ -3514,9 +3507,9 @@ ${formatRequirements.join('\n\n')}
 ### Text
 "${text}"`;
 
-                    console.log('[AnalyzeTurn Prompt]:', prompt);
+                    DiagLog.trace('[AnalyzeTurn Prompt]:', prompt);
                     const res = await APIService.callAI(prompt, false);
-                    console.log('[AnalyzeTurn Response]:', res);
+                    DiagLog.trace('[AnalyzeTurn Response]:', res);
 
                     const data = UTILITY.extractStructuredHeadings(res, ['Emotion', 'Location', 'Stats', 'Inventory', 'Quests', 'Relationships']);
                     let emotionRaw = typeof data['Emotion'] === 'string' ? data['Emotion'].toLowerCase().trim() : 'neutral';

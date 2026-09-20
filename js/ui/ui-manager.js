@@ -1591,18 +1591,6 @@
                 if (visualContent && tabName !== 'visual') visualContent.classList.remove('flex');
             },
 
-            switchKnowledgeTab(tabName) {
-                // Helper to switch tabs without calling Controller directly
-                if (typeof AppController !== 'undefined') AppController.activeKnowledgeTab = tabName;
-                this.renderKnowledgeModalTabs();
-            },
-
-            switchWorldMapTab(tabName) {
-                // Helper for World Map
-                if (typeof WorldController !== 'undefined') WorldController.RUNTIME.activeWorldMapTab = tabName;
-                this.renderWorldMapModal();
-            },
-
             /**
              * Renders the list of static lore entries.
              */

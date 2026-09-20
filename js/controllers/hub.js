@@ -1632,6 +1632,9 @@
                         await this._saveImportedStory(newStory);
                     } else if (source === 'fictionlab') {
                         if (!char.rawScenarioData) throw new Error('Scenario data is missing.');
+                        // Declared here on purpose: without it the assignment below quietly became
+                        // a window-level global shared by every import.
+                        let newStory = null;
                         const sourceData = char.rawScenarioData;
 
                         const storyName = sourceData.displayName || "Imported FictionLab Character";

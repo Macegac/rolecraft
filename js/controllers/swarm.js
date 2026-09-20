@@ -26,13 +26,13 @@
              */
             async _runAgentScratchpad(char, userAction, state, signal, objectiveDescription = "") {
                 const prompt = PromptBuilder.buildSwarmScratchpadPrompt(char, userAction, state, objectiveDescription);
-                console.log(`[Swarm Thinking Prompt for ${char.name}]:`, prompt);
+                DiagLog.trace(`[Swarm Thinking Prompt for ${char.name}]:`, prompt);
 
                 try {
                     console.log(`%c[Swarm Thinking] Calling Scratchpad for ${char.name}...`, "color: #94a3b8; font-style: italic;");
                     const rawResponse = await APIService.callAI(prompt, false, signal);
                     if (!rawResponse) throw new Error('Empty scratchpad response.');
-                    console.log(`%c[Swarm Thinking] ${char.name} Raw:`, "color: #64748b; font-size: 10px;", rawResponse);
+                    DiagLog.trace(`%c[Swarm Thinking] ${char.name} Raw:`, "color: #64748b; font-size: 10px;", rawResponse);
 
                     // Split off an optional private text before the monologue is handed to the
                     // Director, so the decision never leaks into the spoken scene.
@@ -82,7 +82,7 @@
                 const agentPromises = activeAiChars.map(char =>
                     this._runAgentScratchpad(char, userAction, state, signal, objectiveDescription)
                         .then(result => {
-                            console.log(`%c[Swarm Thinking] ${char.name} (Result):`, "color: #10b981; font-weight: bold;", result);
+                            DiagLog.trace(`%c[Swarm Thinking] ${char.name} (Result):`, "color: #10b981; font-weight: bold;", result);
                             return { char, result };
                         })
                         .catch(err => {
@@ -118,19 +118,19 @@
                 const prompt = PromptBuilder.buildSwarmDirectorPrompt(userAction, agentResults, state, objectiveDescription);
                 state.swarmPrimarySpeaker = null; // cleanup
 
-                console.groupCollapsed("%c[Swarm Director] Prompt Details", "color: #818cf8; font-weight: bold;");
-                console.log(prompt);
-                console.groupEnd();
+                DiagLog.traceGroup("%c[Swarm Director] Prompt Details", "color: #818cf8; font-weight: bold;");
+                DiagLog.trace(prompt);
+                DiagLog.traceGroupEnd();
 
                 const raw = await APIService.callAI(prompt, false, signal);
                 if (!raw || !raw.trim()) throw new Error('Director returned empty response.');
-                console.log("%c[Swarm Director] Raw Response:", "color: #64748b; font-size: 10px;", raw);
+                DiagLog.trace("%c[Swarm Director] Raw Response:", "color: #64748b; font-size: 10px;", raw);
 
                 try {
                     const parsed = UTILITY.extractAndParseJSON(raw);
                     if (parsed && parsed.directive) {
                         if (parsed.reasoning) {
-                            console.log("%c[Swarm Director Reasoning]:", "color: #818cf8; font-weight: bold; font-size: 11px;", parsed.reasoning);
+                            DiagLog.trace("%c[Swarm Director Reasoning]:", "color: #818cf8; font-weight: bold; font-size: 11px;", parsed.reasoning);
                         }
                         return parsed.directive;
                     }
@@ -163,10 +163,10 @@
                     NarrativeController.RUNTIME.lastPromptDetails = promptDetails;
                 }
 
-                console.groupCollapsed(`%c[Swarm Phase 4] Character Response: ${char.name}`, "color: #ec4899; font-weight: bold;");
-                console.log("%cDirective:", "color: #f472b6; font-weight: bold;", directive);
-                console.log("%cFull Prompt:", "color: #94a3b8; font-size: 10px;", prompt);
-                console.groupEnd();
+                DiagLog.traceGroup(`%c[Swarm Phase 4] Character Response: ${char.name}`, "color: #ec4899; font-weight: bold;");
+                DiagLog.trace("%cDirective:", "color: #f472b6; font-weight: bold;", directive);
+                DiagLog.trace("%cFull Prompt:", "color: #94a3b8; font-size: 10px;", prompt);
+                DiagLog.traceGroupEnd();
 
                 const genResult = await APIService.callAI(prompt, false, signal, { returnMeta: true });
                 const rawText = (typeof genResult === 'object' && genResult !== null) ? genResult.text : genResult;
@@ -250,11 +250,11 @@
                     console.log("%c[Swarm Phase 0.2] Generating Objective Analysis...", "color: #6366f1; font-weight: bold;");
                     if (typeof UIManager !== 'undefined') UIManager.showTypingIndicator(primarySpeaker.id, 'analyzing scene facts...');
                     const objPrompt = PromptBuilder.buildObjectivityDescriptionPrompt(primarySpeaker.id, userAction);
-                    console.log("[Swarm Objectivity Prompt]:", objPrompt);
+                    DiagLog.trace("[Swarm Objectivity Prompt]:", objPrompt);
                     objectiveDescription = await APIService.callAI(objPrompt, false, signal);
 
                     if (objectiveDescription) {
-                        console.log("%c[Swarm Objective Reality]:", "color: #64748b; font-size: 10px; font-style: italic;", objectiveDescription);
+                        DiagLog.trace("%c[Swarm Objective Reality]:", "color: #64748b; font-size: 10px; font-style: italic;", objectiveDescription);
                     } else {
                         console.warn('[Swarm] Objective Analysis returned empty. Using fallback.');
                         objectiveDescription = "The scene continues naturally from the recent history.";
@@ -268,7 +268,7 @@
                 if (!objectiveDescription.includes("The scene continues naturally")) {
                     // Already logged above if successful
                 } else {
-                    console.log("%c[Swarm Objective Reality (Fallback)]:", "color: #94a3b8; font-size: 10px;", objectiveDescription);
+                    DiagLog.trace("%c[Swarm Objective Reality (Fallback)]:", "color: #94a3b8; font-size: 10px;", objectiveDescription);
                 }
 
                 // ── Phase 0.5: Narrator Bypass ──────────────────────────────────────────────

@@ -319,7 +319,29 @@
                 return !!(box && box.checked);
             },
 
+            /**
+             * Console tracing prints every prompt the app builds, story and all. It stays off
+             * unless asked for, and the answer is remembered between sessions.
+             * @param {boolean} on
+             */
+            setConsoleTracing(on) {
+                DiagLog.verbose = !!on;
+                const settings = StateManager.data && StateManager.data.globalSettings;
+                if (settings && settings.debug_console !== !!on) {
+                    settings.debug_console = !!on;
+                    StateManager.saveGlobalSettings();
+                }
+                document.querySelectorAll('input[data-diag-console]').forEach(box => { box.checked = !!on; });
+            },
+
             registerActions() {
+                const settings = StateManager.data && StateManager.data.globalSettings;
+                this.setConsoleTracing(!!(settings && settings.debug_console));
+
+                ActionHandler.register('diag-console-toggle', (ds, val, e) => {
+                    const box = (e && e.target && e.target.closest) ? e.target.closest('input[data-diag-console]') : null;
+                    this.setConsoleTracing(box ? box.checked : !DiagLog.verbose);
+                });
                 ActionHandler.register('diag-copy-report', (ds, val, e) => {
                     this.copyReport(this._includeTextFrom(e && e.target));
                 });

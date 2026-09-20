@@ -726,7 +726,7 @@
                         if (UIManager.RUNTIME.viewingStoryId === storyId) {
                             UIManager.openStoryDetails(storyId);
                         } else {
-                            UIManager.renderStoryLibrary();
+                            UIManager.renderLibraryInterface();
                         }
                     }
                 } catch (e) { console.error("Failed to add story tag", e); }
@@ -746,7 +746,7 @@
                     if (UIManager.RUNTIME.viewingStoryId === storyId) {
                         UIManager.openStoryDetails(storyId);
                     } else {
-                        UIManager.renderStoryLibrary();
+                        UIManager.renderLibraryInterface();
                     }
                 } catch (e) { console.error("Failed to remove story tag", e); }
             },
@@ -1209,100 +1209,6 @@
             },
 
             /**
-             * Creates a new folder.
-             */
-            async createFolder(name, parentId = null) {
-                const folder = {
-                    id: UTILITY.uuid(),
-                    name: name,
-                    parent_id: parentId,
-                    created_at: new Date().toISOString()
-                };
-
-                try {
-                    await DBService.saveFolder(folder);
-                    const library = StateManager.getLibrary();
-                    library.folders.push(folder);
-                    UIManager.renderLibraryInterface();
-                } catch (e) {
-                    console.error("Failed to create folder:", e);
-                    alert("Error creating folder.");
-                }
-            },
-
-            /**
-             * Renames a folder.
-             */
-            async renameFolder(folderId, currentName) {
-                const newName = await UTILITY.customPrompt("Enter new folder name:", currentName, "Folder Name");
-                if (!newName || !newName.trim() || newName === currentName) return;
-
-                try {
-                    const library = StateManager.getLibrary();
-                    const folder = library.folders.find(f => f.id === folderId);
-                    if (!folder) return;
-
-                    folder.name = newName.trim();
-
-                    // Save to DB
-                    await DBService.saveFolder(folder);
-                    UIManager.renderLibraryInterface();
-                } catch (e) {
-                    console.error("Failed to rename folder:", e);
-                    alert("Error renaming folder.");
-                }
-            },
-
-            /**
-             * Deletes a folder and unfiles its stories.
-             */
-            async deleteFolder(folderId) {
-                const proceed = await UIManager.showConfirmationPromise("Delete this folder? Stories inside will be moved to the root library.");
-                if (!proceed) return;
-
-                try {
-                    const library = StateManager.getLibrary();
-
-                    // 1. Identify affected stories
-                    const storiesInFolder = library.stories.filter(s => s.folder_ids && s.folder_ids.includes(folderId));
-
-                    // 2. Update stories in DB (remove folderId)
-                    await Promise.all(storiesInFolder.map(async (storyStub) => {
-                        try {
-                            const fullStory = await DBService.getStory(storyStub.id);
-                            if (fullStory) {
-                                fullStory.folder_ids = (fullStory.folder_ids || []).filter(id => id !== folderId);
-                                fullStory.last_modified = new Date().toISOString();
-                                await DBService.saveStory(fullStory);
-
-                                // Update Memory Stub
-                                storyStub.folder_ids = fullStory.folder_ids;
-                                storyStub.last_modified = fullStory.last_modified;
-                            }
-                        } catch (err) {
-                            console.error(`Failed to unfile story ${storyStub.id}`, err);
-                        }
-                    }));
-
-                    // 3. Delete folder
-                    await DBService.deleteFolder(folderId);
-
-                    // 4. Update Memory
-                    library.folders = library.folders.filter(f => f.id !== folderId);
-
-                    // 5. Refresh UI
-                    if (UIManager.RUNTIME.currentLibraryFolder === folderId) {
-                        UIManager.RUNTIME.currentLibraryFolder = null;
-                    }
-                    UIManager.renderLibraryInterface();
-
-                } catch (e) {
-                    console.error("Failed to delete folder:", e);
-                    alert("Error deleting folder.");
-                }
-            },
-
-            /**
              * Promotes a narrative to a scenario, saving its current state as a template.
              * @param {string} storyId - The ID of the story.
              * @param {string} narrativeId - The ID of the narrative.
@@ -1393,18 +1299,24 @@
             },
 
             /**
-             * Renames a folder.
-             * @param {string} folderId 
-             * @param {string} newName 
+             * Renames a folder. The Rename button hands over the name the folder already has, so
+             * a name that matches the current one means "ask me for a new one".
+             * @param {string} folderId
+             * @param {string} [newName] - The new name, or the current one to be asked instead.
              */
             async renameFolder(folderId, newName) {
-                if (!newName || !newName.trim()) return;
                 try {
                     const library = StateManager.getLibrary();
                     const folder = library.folders.find(f => f.id === folderId);
                     if (!folder) return;
 
-                    folder.name = newName.trim();
+                    let name = newName;
+                    if (!name || !name.trim() || name.trim() === folder.name) {
+                        name = await UTILITY.customPrompt("Enter new folder name:", folder.name, "Folder Name");
+                    }
+                    if (!name || !name.trim() || name.trim() === folder.name) return;
+
+                    folder.name = name.trim();
                     await DBService.saveFolder(folder);
                     UIManager.renderLibraryInterface();
                 } catch (e) {
@@ -1438,6 +1350,11 @@
                     });
 
                     await Promise.all(updates);
+
+                    // Don't leave the library looking inside a folder that is now gone.
+                    if (UIManager.RUNTIME.currentLibraryFolder === folderId) {
+                        UIManager.RUNTIME.currentLibraryFolder = null;
+                    }
                     UIManager.renderLibraryInterface();
 
                 } catch (e) {

@@ -233,23 +233,11 @@
             },
 
             // --- Specific Accessors ---
-
-            async getAllStories() { return this._getAll('stories'); },
-            async getStory(id) { return this._get('stories', id); },
-            async saveStory(story) {
-                const res = await this._performWrite('stories', story);
-                if (res && typeof AutoBackupService !== 'undefined') AutoBackupService.scheduleBackup();
-                return res;
-            },
-            async deleteStory(id) { return this._delete('stories', id); },
-
-            async getNarrative(id) { return this._get('narratives', id); },
-            async saveNarrative(narrative) {
-                const res = await this._performWrite('narratives', narrative);
-                if (res && typeof AutoBackupService !== 'undefined') AutoBackupService.scheduleBackup();
-                return res;
-            },
-            async deleteNarrative(id) { return this._delete('narratives', id); },
+            //
+            // Stories and narratives are defined further down, beside the rest of their helpers.
+            // They used to be declared here too, and because both copies sat in the same object
+            // the later ones silently replaced these — taking the auto-backup with them. One
+            // definition per name.
 
             async getAllFolders() { return this._getAll('folders'); },
             async saveFolder(folder) { return this._performWrite('folders', folder); },
@@ -305,8 +293,10 @@
                         req.onsuccess = () => {
                             resolve(true);
                             if (window.UIManager && typeof UIManager.applyAlphaMasksToAllCharacters === 'function') {
-                                const story = ReactiveStore.getActiveStory();
-                                if (story && story.settings && story.settings.useAlphaMask) {
+                                // state.useAlphaMask is where the rest of the app keeps this. The
+                                // old ReactiveStore.getActiveStory() does not exist, so this threw
+                                // inside the IndexedDB callback and masks never regenerated.
+                                if (ReactiveStore.state && ReactiveStore.state.useAlphaMask) {
                                     setTimeout(() => {
                                         UIManager.applyAlphaMasksToAllCharacters()
                                             .then(() => UIManager.renderChat())
@@ -427,7 +417,9 @@
              */
             async saveStory(story) {
                 UTILITY.normalizeStoryShape(story);
-                return this._performWrite("stories", story);
+                const res = await this._performWrite("stories", story);
+                if (res && typeof AutoBackupService !== 'undefined') AutoBackupService.scheduleBackup();
+                return res;
             },
 
             /**
@@ -489,7 +481,9 @@
              * @returns {Promise<boolean>} - True if saved successfully.
              */
             async saveNarrative(narrative) {
-                return this._performWrite("narratives", narrative);
+                const res = await this._performWrite("narratives", narrative);
+                if (res && typeof AutoBackupService !== 'undefined') AutoBackupService.scheduleBackup();
+                return res;
             },
 
             /**

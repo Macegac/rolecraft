@@ -205,6 +205,18 @@
                 } catch (err) {
                     console.error("Visual Event Error:", err);
                     UIManager.showNotification("Visual generation failed: " + err.message, "error");
+
+                    // Take the "Painting the scene..." placeholder back out. This catch does not
+                    // rethrow, so the caller's own cleanup never ran: a failed generation left a
+                    // message stuck on isLoading forever, which also kept Undo switched off.
+                    if (typeof atIndexOrTempId === 'string') {
+                        const stuck = state.chat_history.findIndex(m => m._tempId === atIndexOrTempId);
+                        if (stuck !== -1 && state.chat_history[stuck].isLoading) {
+                            state.chat_history.splice(stuck, 1);
+                            ReactiveStore.forceSave();
+                            UIManager.renderChat();
+                        }
+                    }
                 } finally {
                     if (btnElement) {
                         btnElement.innerHTML = originalIcon;

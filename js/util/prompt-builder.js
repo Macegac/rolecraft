@@ -1446,16 +1446,7 @@ Write only the character's message.`;
                     }).join('\n');
 
                 // 4. WORLD LORE
-                let worldLore = "";
-                if (state.active_story_id) {
-                    const lore = ReactiveStore.getTriggeredDynamicLore(char.id) || [];
-                    if (lore.length > 0) {
-                        worldLore = lore.map(l => l.content).join('\n\n');
-                    }
-                }
-                if (!worldLore) {
-                    worldLore = (state.static_entries || []).map(l => `### ${l.title}\n${replacer(l.content)}`).join('\n\n');
-                }
+                let worldLore = (state.static_entries || []).map(l => `### ${l.title}\n${replacer(l.content)}`).join('\n\n');
 
                 // 5. CHARACTER SECRETS
                 const secrets = (state.swarmSecrets || {})[char.id] || 'No special secrets defined.';
@@ -1542,16 +1533,7 @@ Write only the character's message.`;
                     }).join('\n\n');
 
                 // 6. WORLD LORE
-                let worldLore = "";
-                if (state.active_story_id) {
-                    const lore = ReactiveStore.getTriggeredDynamicLore(null) || [];
-                    if (lore.length > 0) {
-                        worldLore = lore.map(l => l.content).join('\n\n');
-                    }
-                }
-                if (!worldLore) {
-                    worldLore = (state.static_entries || []).map(l => `### ${l.title}\n${replacer(l.content)}`).join('\n\n');
-                }
+                let worldLore = (state.static_entries || []).map(l => `### ${l.title}\n${replacer(l.content)}`).join('\n\n');
 
                 // 7. CHARACTER SECRETS
                 const secrets = (state.swarmSecrets || {})[primary?.id] || "No specific secrets.";
@@ -1630,16 +1612,7 @@ Write only the character's message.`;
                 prompt += "### OTHER CHARACTERS PRESENT\n" + otherCharsContext + "\n\n";
 
                 // 7. WORLD LORE
-                let worldLore = "";
-                if (state.active_story_id) {
-                    const lore = ReactiveStore.getTriggeredDynamicLore(char.id) || [];
-                    if (lore.length > 0) {
-                        worldLore = lore.map(l => l.content).join('\n\n');
-                    }
-                }
-                if (!worldLore) {
-                    worldLore = (state.static_entries || []).map(l => `### ${l.title}\n${this._getReplacer(char)(l.content)}`).join('\n\n');
-                }
+                let worldLore = (state.static_entries || []).map(l => `### ${l.title}\n${this._getReplacer(char)(l.content)}`).join('\n\n');
                 if (worldLore) {
                     prompt += "### ADDITIONAL INSTRUCTIONS\n" + worldLore + "\n\n";
                 }

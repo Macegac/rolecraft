@@ -103,13 +103,13 @@ Example output: "Atmospheric dark ambient instrumental, 70 BPM, deep synthesizer
                     const backend = StateManager.data.globalSettings.musicBackend || 'gemini';
                     let audioBuffer;
                     if (backend === 'openrouter') {
-                        console.log('🎵 MusicService: Generating music via OpenRouter...', musicPrompt.substring(0, 100));
+                        console.log('🎵 MusicService: Generating music via OpenRouter...');
                         audioBuffer = await this.callOpenRouterAudio(musicPrompt);
                     } else if (backend === 'nanogpt') {
-                        console.log('🎵 MusicService: Generating music via NanoGPT...', musicPrompt.substring(0, 100));
+                        console.log('🎵 MusicService: Generating music via NanoGPT...');
                         audioBuffer = await this.callNanoGPTAudio(musicPrompt);
                     } else {
-                        console.log('🎵 MusicService: Generating music via Lyria (Direct)...', musicPrompt.substring(0, 100));
+                        console.log('🎵 MusicService: Generating music via Lyria (Direct)...');
                         audioBuffer = await this.callLyria(musicPrompt);
                     }
 

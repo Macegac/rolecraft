@@ -1,15 +1,20 @@
 {
   "name": "rolecraft",
   "version": "1.1.0",
-  "description": "Rolecraft — private AI roleplay that runs in the browser.",
+  "description": "Rolecraft \u2014 private AI roleplay that runs in the browser.",
   "author": "Mario Cano",
   "scripts": {
-    "test": "node test.js && node tools/check-files.js",
+    "test": "node test.js && node tools/check-files.js && npm run lint:errors",
+    "lint": "eslint .",
+    "lint:errors": "eslint . --quiet",
+    "stamp": "node tools/stamp-versions.js",
     "build:css": "tailwindcss -i tools/tailwind-input.css -o css/tailwind.css --minify",
     "prepare": "git config core.hooksPath .githooks || true"
   },
   "devDependencies": {
     "acorn": "^8.15.0",
+    "eslint": "^10.11.0",
+    "globals": "^17.12.0",
     "tailwindcss": "3.4"
   },
   "dependencies": {

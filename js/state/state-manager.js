@@ -97,16 +97,6 @@
                             koboldcpp_url: this.data.globalSettings.koboldcpp_url,
                             lmstudio_url: this.data.globalSettings.lmstudio_url,
 
-                            characters: hydratedCharacters,
-
-                            // FORCE GLOBALS: Critical API settings must come from Global Settings
-                            // This ensures that stale provider/key data in Stories doesn't override user preference.
-                            apiProvider: this.data.globalSettings.apiProvider,
-                            geminiApiKey: this.data.globalSettings.geminiApiKey,
-                            openRouterKey: this.data.globalSettings.openRouterKey,
-                            koboldcpp_url: this.data.globalSettings.koboldcpp_url,
-                            lmstudio_url: this.data.globalSettings.lmstudio_url,
-
                             // Also enforce Model Selections from Global
                             openRouterModel: this.data.globalSettings.openRouterModel,
                             geminiModel: this.data.globalSettings.geminiModel,

@@ -1036,9 +1036,27 @@
             /**
              * Renders the TTS settings interface.
              */
+            /**
+             * Puts the TTS Backend buttons and the provider panel below them in step with the
+             * saved setting.
+             */
+            syncTTSBackendUI() {
+                const selector = document.getElementById('tts-backend-selector');
+                if (!selector) return;
+                const backend = StateManager.data.globalSettings.ttsBackend || 'gemini';
+                selector.querySelectorAll('.tts-backend-option').forEach(b => {
+                    b.classList.toggle('active', b.getAttribute('data-action-val') === backend);
+                });
+                const geminiPanel = document.getElementById('tts-gemini-panel');
+                const nanoPanel = document.getElementById('tts-nanogpt-panel');
+                if (geminiPanel) geminiPanel.classList.toggle('hidden', backend !== 'gemini');
+                if (nanoPanel) nanoPanel.classList.toggle('hidden', backend !== 'nanogpt');
+            },
+
             renderTTSSettings() {
                 const selector = document.getElementById('tts-voice-selector');
                 if (!selector) return;
+                this.syncTTSBackendUI();
 
                 const globalSettings = StateManager.data.globalSettings;
                 const currentVoice = globalSettings.ttsVoice || 'Puck';
@@ -1392,6 +1410,21 @@
                         StateManager.saveGlobalSettings();
                     });
                 }
+
+                // TTS backend button group (Gemini / NanoGPT). The buttons carry a data-action
+                // attribute that nothing ever registered, so until this listener existed the
+                // selector did nothing at all and NanoGPT TTS could never be turned on.
+                const ttsBackendSelector = document.getElementById('tts-backend-selector');
+                if (ttsBackendSelector) {
+                    ttsBackendSelector.addEventListener('click', (e) => {
+                        const btn = e.target.closest('.tts-backend-option');
+                        if (!btn) return;
+                        globalSettings.ttsBackend = btn.getAttribute('data-action-val') || 'gemini';
+                        StateManager.saveGlobalSettings();
+                        this.syncTTSBackendUI();
+                    });
+                }
+                this.syncTTSBackendUI();
 
                 // Save music NanoGPT model when manually typed
                 const musicNanoModelInput = document.getElementById('music-nanogpt-model-input');
@@ -1920,17 +1953,17 @@
                 ReactiveStore.state.characterImageMode = mode;
 
                 if (mode === 'visual_novel') {
-                    const story = ReactiveStore.getActiveStory();
-                    if (story) {
-                        story.settings = story.settings || {};
-                        story.settings.useAlphaMask = true;
-                        ReactiveStore.forceSave();
+                    // Cut-out portraits are a story setting on the open narrative (state.useAlphaMask),
+                    // which is where every other reader looks for it. This used to call a
+                    // ReactiveStore.getActiveStory() that does not exist, so switching to Visual
+                    // Novel threw here and never turned the masks on.
+                    ReactiveStore.state.useAlphaMask = true;
+                    ReactiveStore.forceSave();
 
-                        // Fire-and-forget background mask generation
-                        UIManager.applyAlphaMasksToAllCharacters().then(() => {
-                            UIManager.renderChat();
-                        }).catch(e => console.error("Auto-masking failed in VN mode switch:", e));
-                    }
+                    // Fire-and-forget background mask generation
+                    UIManager.applyAlphaMasksToAllCharacters().then(() => {
+                        UIManager.renderChat();
+                    }).catch(e => console.error("Auto-masking failed in VN mode switch:", e));
                 }
 
                 // Keep the button toggle state visual representation in sync

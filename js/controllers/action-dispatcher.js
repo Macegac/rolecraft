@@ -78,7 +78,21 @@
                 ActionHandler.register('onboarding-import-png', () => {
                     localStorage.setItem('onboarding_dismissed', 'true');
                     AppController.closeModal('onboarding-modal');
-                    document.getElementById('onboarding-file-input').click();
+                    // "Import Character Card" on the last onboarding step used to click an
+                    // #onboarding-file-input that is not in the page, so the card closed the
+                    // welcome screen and then did nothing. The library's own file picker only
+                    // exists once the library has been drawn, which has not happened yet during
+                    // onboarding, so bring one along and hand the file to the same importer.
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = '.png,.byaf,.zip,.json';
+                    input.className = 'hidden';
+                    input.addEventListener('change', (e) => {
+                        LibraryController.handleFileUpload(e);
+                        input.remove();
+                    });
+                    document.body.appendChild(input);
+                    input.click();
                 });
                 ActionHandler.register('onboarding-explore-demo', () => {
                     localStorage.setItem('onboarding_dismissed', 'true');

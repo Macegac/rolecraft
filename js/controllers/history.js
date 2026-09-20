@@ -20,6 +20,8 @@
             stack: null,
             narrativeId: null,
             retryTimer: null,
+            retriesLeft: 0,
+            MAX_RETRIES: 12,
 
             _state() {
                 return (typeof ReactiveStore !== 'undefined' && ReactiveStore.state) || null;
@@ -32,6 +34,7 @@
                 const state = this._state();
                 this.stack = UndoStack.create();
                 this.narrativeId = state ? state.narrativeId : null;
+                this.retriesLeft = this.MAX_RETRIES;
                 if (state && state.chat_history) UndoStack.record(this.stack, this._capture(state));
                 this.refreshButtons();
             },
@@ -79,12 +82,16 @@
                 }
                 if (this.isBusy()) {
                     // Look again once the reply lands, so the finished reply is its own step even if
-                    // nothing else triggers a save before the next change.
-                    if (!this.retryTimer) {
+                    // nothing else triggers a save before the next change. Bounded: something that
+                    // never finishes (a placeholder left behind by a failed job) must not leave a
+                    // timer re-arming itself for the rest of the session. The next save re-arms it.
+                    if (!this.retryTimer && this.retriesLeft > 0) {
+                        this.retriesLeft--;
                         this.retryTimer = setTimeout(() => { this.retryTimer = null; this.observe(); }, 700);
                     }
                     return;
                 }
+                this.retriesLeft = this.MAX_RETRIES;
                 if (UndoStack.record(this.stack, this._capture(state))) this.refreshButtons();
             },
 

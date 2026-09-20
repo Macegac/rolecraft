@@ -20,6 +20,26 @@
             maxText: 4000,
             secrets: [],
 
+            // Developer tracing to the browser console. Off by default: the prompts the app
+            // builds run to tens of thousands of characters and carry the whole story, and the
+            // console keeps every line it is handed for as long as the tab is open, which on a
+            // phone costs memory for the entire session. Switched on in Settings → Appearance.
+            verbose: false,
+
+            /** console.log, but only when console tracing is switched on. */
+            trace(...args) {
+                if (this.verbose) console.log(...args);
+            },
+
+            /** console.groupCollapsed, paired with traceGroupEnd. */
+            traceGroup(...args) {
+                if (this.verbose) console.groupCollapsed(...args);
+            },
+
+            traceGroupEnd() {
+                if (this.verbose) console.groupEnd();
+            },
+
             /**
              * Values that must never appear in the diary, such as API keys from settings.
              * @param {string[]} values
