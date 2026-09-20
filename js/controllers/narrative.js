@@ -5172,8 +5172,9 @@ Return ONLY the physical description. Write in the 3rd person. No preamble.`;
                     return;
                 }
 
-                // 2. Build the prompt string using the shared logic
-                const promptObj = PromptBuilder.buildPrompt(charId);
+                // 2. Build the prompt string using the shared logic. This one is only read, never
+                // sent, so it must not spend a waiting Event Master surprise.
+                const promptObj = PromptBuilder.buildPrompt(charId, false, null, null, false, { preview: true });
                 const promptText = UTILITY.resolvePromptText(promptObj);
                 const images = (typeof promptObj === 'object' && promptObj && Array.isArray(promptObj.images)) ? promptObj.images : [];
 

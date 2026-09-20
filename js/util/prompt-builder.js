@@ -474,7 +474,7 @@ JSON Schema:
              * @param {Array|null} [historyOverride=null] - Optional override for chat history (e.g. for regeneration).
              * @returns {string} - The constructed prompt.
              */
-            buildPrompt(charToActId, isForUser = false, historyOverride = null, customInstruction = null, isDirectMessage = false) {
+            buildPrompt(charToActId, isForUser = false, historyOverride = null, customInstruction = null, isDirectMessage = false, options = {}) {
                 const state = StateManager.getState();
                 const charToAct = ReactiveStore.getCharacter(charToActId);
                 if (!charToAct) return "";
@@ -486,8 +486,10 @@ JSON Schema:
 
                 // Agents add to character replies only: not to text written for the user, and not to
                 // Text Mode threads, which have their own voice rules.
+                // options.preview means this prompt is only being looked at, never sent, so a
+                // one-shot note (an Event Master surprise) must not be counted as delivered.
                 components.agent_notes = (!isForUser && !isDirectMessage && typeof AgentController !== 'undefined')
-                    ? AgentController.buildNoteLayout(charToAct, components.history.filter(m => this._isPromptVisible(m)).length)
+                    ? AgentController.buildNoteLayout(charToAct, components.history.filter(m => this._isPromptVisible(m)).length, { preview: options.preview === true })
                     : null;
 
                 let result;

@@ -1744,6 +1744,27 @@ test('AgentSchema.pickFeedNotes: feed-once skips notes already used', () => {
     deepEq(AgentSchema.pickFeedNotes([{ id: 'a', usedAt: 1 }], { feedOnce: true, feedCount: 1 }), []);
 });
 
+// A one-shot note is spent when a reply prompt carries it. Looking at the prompt preview builds a
+// prompt that is never sent, so it has to leave the note pending — otherwise the reply the Event
+// Master planned a surprise for silently arrives without one.
+test('a preview prompt does not spend a feed-once note', () => {
+    const controller = fs.readFileSync(path.join(__dirname, 'js', 'controllers', 'agents.js'), 'utf8');
+    assert.match(controller, /buildNoteLayout\(charToAct, messageCount, options = \{\}\)/,
+        'buildNoteLayout must take an options argument');
+    assert.match(controller, /if \(usedIds\.size && options\.preview !== true\)/,
+        'a feed-once note may only be marked used when the prompt is really being sent');
+
+    const builder = fs.readFileSync(path.join(__dirname, 'js', 'util', 'prompt-builder.js'), 'utf8');
+    assert.match(builder, /buildPrompt\([^)]*options = \{\}\)/,
+        'buildPrompt must take an options argument');
+    assert.match(builder, /buildNoteLayout\([\s\S]{0,200}?\{ preview: options\.preview === true \}\)/,
+        'buildPrompt must pass its preview flag through to the agents');
+
+    const narrative = fs.readFileSync(path.join(__dirname, 'js', 'controllers', 'narrative.js'), 'utf8');
+    assert.match(narrative, /PromptBuilder\.buildPrompt\(charId, false, null, null, false, \{ preview: true \}\)/,
+        'the prompt preview screen must ask for a preview build');
+});
+
 test('AgentSchema.legacyEventMasterSwitch: the old chance slider maps to on, off, or untouched', () => {
     assert.equal(AgentSchema.legacyEventMasterSwitch(20), true);
     assert.equal(AgentSchema.legacyEventMasterSwitch('15'), true);

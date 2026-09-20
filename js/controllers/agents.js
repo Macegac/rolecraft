@@ -224,9 +224,11 @@
              * Everything agents add to one character reply prompt.
              * @param {Object} charToAct - The character about to speak.
              * @param {number} messageCount - Messages that will be shown in the prompt.
+             * @param {{preview?: boolean}} [options] - preview builds the same notes without
+             *        counting a feed-once note as delivered, for a prompt that is only looked at.
              * @returns {Object|null} AgentSchema.layoutNotes result, or null when nothing applies.
              */
-            buildNoteLayout(charToAct, messageCount) {
+            buildNoteLayout(charToAct, messageCount, options = {}) {
                 if (typeof AgentStore === 'undefined' || !AgentStore.loaded) return null;
                 const state = StateManager.getState();
                 if (!state) return null;
@@ -265,8 +267,10 @@
                 });
 
                 // A feed-once note is spent the moment a reply prompt carries it, rerolls included,
-                // the same way the old Event Master instruction was consumed.
-                if (usedIds.size) {
+                // the same way the old Event Master instruction was consumed. Looking at the prompt
+                // preview is not carrying it: that used to quietly eat a waiting surprise, so the
+                // reply it was meant for never got one.
+                if (usedIds.size && options.preview !== true) {
                     const all = JSON.parse(JSON.stringify(state.agent_notes || []));
                     all.forEach(n => { if (usedIds.has(n.id)) n.usedAt = Date.now(); });
                     ReactiveStore.state.agent_notes = all;
