@@ -4,4 +4,4 @@
          * is taken from the contents of every script and stylesheet, so two people seeing the
          * same number are running exactly the same app.
          */
-        const APP_BUILD_TIMESTAMP = "Rolecraft 1.1.0 (build 52f6a229)";
+        const APP_BUILD_TIMESTAMP = "Rolecraft 1.1.0 (build 87b5be44)";

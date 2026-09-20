@@ -1768,6 +1768,27 @@ test('exporting a character card carries the lore and the extra openings', () =>
         "a story's other openings must be exported");
 });
 
+// Both card exporters had the same trap: lore text is in content_fields, and reading entry.content
+// writes an entry with the right name and nothing in it.
+test('both card exporters read lore text from where it is actually kept', () => {
+    const ie = fs.readFileSync(path.join(__dirname, 'js', 'services', 'import-export.js'), 'utf8');
+    // Only dynamic entries keep their text in content_fields; static and world-map entries
+    // really do use .content, so this checks the two dynamic-entry exporters specifically.
+    const reads = ie.match(/Array\.isArray\(entry\.content_fields\)/g) || [];
+    assert.equal(reads.length, 2, 'the V2 and BYAF exporters must both read content_fields');
+    assert.doesNotMatch(ie, /\n\s*value: entry\.content \|\| "",/, 'BYAF lore must not read entry.content alone');
+});
+
+// Example turns arrive in one of two places depending on the format, so an exporter that only
+// knows one of them sends the character out with its example dialogue missing.
+test('card exporters find example turns wherever the import filed them', () => {
+    const ie = fs.readFileSync(path.join(__dirname, 'js', 'services', 'import-export.js'), 'utf8');
+    assert.match(ie, /_exampleTurns\(story, narrative\) \{/, 'the shared helper must exist');
+    assert.match(ie, /scenario\.example_dialogue : \[\]/, 'it must fall back to the scenario example dialogue');
+    const uses = ie.match(/this\._exampleTurns\(story, narrative\)/g) || [];
+    assert.equal(uses.length, 2, 'both the V2 and BYAF exporters must use it');
+});
+
 // Restoring a library replaces everything, so it has to be sure the file is really a library
 // backup before it clears anything. A single story's .zip is also a valid zip full of valid JSON,
 // and picking one by mistake used to empty the library and import nothing, silently.

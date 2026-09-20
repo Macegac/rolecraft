@@ -1219,7 +1219,7 @@
                     processed = processed.replace(/\{\{user\}\}/gi, '{{user}}');
                     return processed;
                 }
-                const mesExample = (narrative.state.chat_history || []).filter(m => m.isHidden && m.type === 'chat').map(m => {
+                const mesExample = this._exampleTurns(story, narrative).map(m => {
                     const speaker = story.characters.find(c => c.id === m.character_id);
                     if (speaker) {
                         const prefix = speaker.is_user ? '{{user}}:' : '{{char}}:';
@@ -1275,6 +1275,24 @@
              * @private
              */
             /**
+             * The story's example turns. Imports file these in one of two places depending on the
+             * format they arrived in — hidden messages in the chat, or the scenario's own example
+             * dialogue — so an exporter that only reads one of them sends a character out with its
+             * examples missing.
+             * @param {Object} story
+             * @param {Object} narrative
+             * @returns {Array} chat turns, oldest first
+             * @private
+             */
+            _exampleTurns(story, narrative) {
+                const fromChat = ((narrative && narrative.state && narrative.state.chat_history) || [])
+                    .filter(m => m && m.isHidden && m.type === 'chat');
+                if (fromChat.length) return fromChat;
+                const scenario = ((story && story.scenarios) || []).find(s => s && Array.isArray(s.example_dialogue) && s.example_dialogue.length);
+                return scenario ? scenario.example_dialogue : [];
+            },
+
+            /**
              * Converts an Ellipsis story object to the BYAF (Backyard AI Format) structure.
              * @param {Object} story - The story object.
              * @param {Object} narrative - The narrative object.
@@ -1296,7 +1314,13 @@
                     id: entry.id || UTILITY.uuid(),
                     order: Math.random().toString(36).substring(2, 12),
                     key: entry.triggers || entry.title || `Imported Lore ${index + 1}`,
-                    value: entry.content || "",
+                    // The same trap as the V2 exporter: a story's lore text is in content_fields,
+                    // and reading entry.content alone gave every exported entry the right name and
+                    // no text at all. The world-map entries built just above do use .content, so
+                    // read both.
+                    value: (Array.isArray(entry.content_fields)
+                        ? entry.content_fields.filter(Boolean).join('\n\n')
+                        : "") || entry.content || "",
                     createdAt: entry.created_date || now,
                     updatedAt: entry.last_modified || now
                 }));
@@ -1308,7 +1332,7 @@
                 };
                 const firstMessageEntry = (narrative.state.chat_history || []).find(m => !m.isHidden && m.type === 'chat');
                 const firstMessageText = firstMessageEntry ? firstMessageEntry.content : `The story of ${primaryChar.name} begins.`;
-                const exampleMessages = (narrative.state.chat_history || []).filter(m => m.isHidden && m.type === 'chat').map(m => {
+                const exampleMessages = this._exampleTurns(story, narrative).map(m => {
                     const speaker = story.characters.find(c => c.id === m.character_id);
                     let byafFormattedText = m.content || "";
                     let msgCharId = null;
