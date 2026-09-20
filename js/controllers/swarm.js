@@ -168,7 +168,7 @@
                 DiagLog.trace("%cFull Prompt:", "color: #94a3b8; font-size: 10px;", prompt);
                 DiagLog.traceGroupEnd();
 
-                const genResult = await APIService.callAI(prompt, false, signal, { returnMeta: true });
+                const genResult = await APIService.callAI(prompt, false, signal, false, { returnMeta: true });
                 const rawText = (typeof genResult === 'object' && genResult !== null) ? genResult.text : genResult;
                 const thinking = (typeof genResult === 'object' && genResult !== null) ? genResult.thinking : (APIService.getLastThinking() || null);
 
@@ -285,7 +285,7 @@
                     if (typeof NarrativeController !== 'undefined' && NarrativeController.RUNTIME) {
                         NarrativeController.RUNTIME.lastPromptDetails = promptDetails;
                     }
-                    const genResult = await APIService.callAI(prompt, false, signal, { returnMeta: true });
+                    const genResult = await APIService.callAI(prompt, false, signal, false, { returnMeta: true });
                     const raw = (typeof genResult === 'object' && genResult !== null) ? genResult.text : genResult;
                     const thinking = (typeof genResult === 'object' && genResult !== null) ? genResult.thinking : (APIService.getLastThinking() || null);
                     if (!raw || !raw.trim()) throw new Error('Narrator returned empty response.');

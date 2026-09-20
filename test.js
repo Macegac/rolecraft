@@ -2067,3 +2067,40 @@ test('automatic post-turn chores are all marked silent', () => {
             `${builder} runs unasked every few messages; its failure must not interrupt the scene`);
     }
 });
+
+test('an empty reply is never committed as a blank message bubble', () => {
+    const nar = fs.readFileSync(path.join(__dirname, 'js', 'controllers', 'narrative.js'), 'utf8');
+    const at = nar.indexOf('const genResult = await textGenPromise;');
+    assert.ok(at > -1);
+    const after = nar.slice(at, at + 2000);
+    const guardAt = after.indexOf('if (!responseText || !responseText.trim())');
+    const streamAt = after.indexOf('this.startStreamingResponse(');
+    assert.ok(guardAt > -1, 'the empty reply must be caught');
+    assert.ok(streamAt === -1 || guardAt < streamAt,
+        'and caught before it reaches the screen, not after');
+});
+
+test('an empty reply says whether the model ran out of room', () => {
+    const nar = fs.readFileSync(path.join(__dirname, 'js', 'controllers', 'narrative.js'), 'utf8');
+    assert.ok(/finishReason === 'length'/.test(nar),
+        'a reply cut off by the token cap reads differently from one the model declined');
+    assert.ok(/emptyError\.reported = true/.test(nar),
+        'marked reported so the catch below does not raise a second banner for it');
+});
+
+test('finish_reason is carried out of every OpenAI-compatible provider', () => {
+    const api = fs.readFileSync(path.join(__dirname, 'js', 'services', 'api.js'), 'utf8');
+    assert.equal((api.match(/finish_reason \|\| choice\.native_finish_reason/g) || []).length, 3,
+        'OpenRouter, NanoGPT and LM Studio each read it');
+    assert.equal((api.match(/thinking: thinking\.trim\(\), finishReason \}/g) || []).length, 3);
+    assert.ok(/return \{ text: cleanProse, thinking: this\.lastThinking, finishReason \}/.test(api),
+        'and callAI passes it to the caller');
+});
+
+test('the output ceiling leaves room for a model that thinks before it answers', () => {
+    const api = fs.readFileSync(path.join(__dirname, 'js', 'services', 'api.js'), 'utf8');
+    const cap = api.match(/MAX_OUTPUT_TOKENS:\s*(\d+)/);
+    assert.ok(cap, 'the ceiling is a named constant');
+    assert.ok(Number(cap[1]) >= 4096, 'reasoning is billed against this budget too');
+    assert.ok(!/max_tokens: 2048/.test(api), 'the old hardcoded 2048 ceiling is gone');
+});

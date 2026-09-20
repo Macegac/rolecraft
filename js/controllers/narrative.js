@@ -2868,12 +2868,38 @@ Return ONLY the physical description. Write in the 3rd person. No preamble.`;
                         timestamp: new Date().toISOString()
                     };
 
-                    const textGenPromise = APIService.callAI(prompt, false, this.RUNTIME.activeRequestAbortController.signal, { returnMeta: true });
+                    const textGenPromise = APIService.callAI(prompt, false, this.RUNTIME.activeRequestAbortController.signal, false, { returnMeta: true });
 
                     // Await Text Generation First
                     const genResult = await textGenPromise;
                     let responseText = (typeof genResult === 'object' && genResult !== null) ? genResult.text : genResult;
                     const thinkingText = (typeof genResult === 'object' && genResult !== null) ? genResult.thinking : (APIService.getLastThinking() || null);
+                    const finishReason = (typeof genResult === 'object' && genResult !== null) ? (genResult.finishReason || '') : '';
+
+                    // An empty reply used to be committed as a message, so the scene gained a
+                    // blank bubble with no hint of what went wrong - and, when the model had
+                    // reasoned itself out of room, one that had been paid for in full. Say
+                    // what happened and leave the story untouched instead.
+                    if (!responseText || !responseText.trim()) {
+                        const ranOutOfRoom = finishReason === 'length';
+                        const thoughtOnly = !!(thinkingText && thinkingText.trim());
+                        let why;
+                        if (ranOutOfRoom && thoughtOnly) {
+                            why = 'The model used its whole reply on thinking and never got to the words. Try again, or pick a model that thinks less.';
+                        } else if (ranOutOfRoom) {
+                            why = 'The reply hit the length limit before any text came through. Try again.';
+                        } else if (thoughtOnly) {
+                            why = 'The model thought about its reply but returned no words. Try again.';
+                        } else {
+                            why = 'The model returned an empty reply. It may have declined this one. Try again, or rephrase.';
+                        }
+                        const emptyError = new Error(why);
+                        emptyError.reported = true;
+                        if (typeof UIManager !== 'undefined' && UIManager.showNotification) {
+                            UIManager.showNotification(why, 'error');
+                        }
+                        throw emptyError;
+                    }
 
                     // Clean up leaked Event Master instructions if the model hallucinated them
                     const leakMatch = responseText.match(/(?:---|###|\[|\n)?\s*SECRET EVENT MASTER INSTRUCTION/i);

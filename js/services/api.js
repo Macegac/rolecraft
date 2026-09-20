@@ -17,6 +17,10 @@
             CALL_TIMEOUT_MS: 180000,
             CALL_TIMEOUT_LABEL: '3 minutes',
 
+            // Ceiling on one reply. On a model that reasons this covers the thinking as well
+            // as the visible text, so it needs headroom for both or the reply comes back empty.
+            MAX_OUTPUT_TOKENS: 4096,
+
             getLastThinking() {
                 return this.lastThinking || "";
             },
@@ -407,9 +411,11 @@
                         rawResult = await this.callLMStudio({ text, images }, activeSignal, isJson, modelOverride);
                     }
 
+                    let finishReason = "";
                     if (rawResult && typeof rawResult === 'object' && ('text' in rawResult || 'thinking' in rawResult)) {
                         responseText = rawResult.text ?? "";
                         this.lastThinking = rawResult.thinking ?? "";
+                        finishReason = rawResult.finishReason || "";
                     } else {
                         responseText = rawResult;
                     }
@@ -437,7 +443,7 @@
 
                     const cleanProse = responseText.trim();
                     if (options && options.returnMeta) {
-                        return { text: cleanProse, thinking: this.lastThinking };
+                        return { text: cleanProse, thinking: this.lastThinking, finishReason };
                     }
                     return cleanProse;
 
@@ -704,9 +710,13 @@
                     body: JSON.stringify({
                         model: model,
                         messages: messagesPayload,
-                        // Generous, but bounded. A turn never legitimately needs this much,
-                        // and it means a failure costs seconds rather than minutes.
-                        max_tokens: 2048,
+                        // Generous, but bounded, so a failure costs seconds rather than minutes.
+                        //
+                        // This budget covers reasoning as well as the visible reply. A model
+                        // that thinks before it answers can spend the whole of it thinking and
+                        // return nothing - billed in full - which reached the user as an empty
+                        // message bubble. 2048 left no room for both.
+                        max_tokens: APIService.MAX_OUTPUT_TOKENS,
                         temperature: 1.0,
                         top_p: 1.0,
                         // Deliberately mild. Roleplay reuses names and pronouns constantly,
@@ -729,7 +739,9 @@
                     throw new Error(`API Error: ${errorDetails}`);
                 }
                 const data = await res.json();
-                const msg = data.choices?.[0]?.message || {};
+                const choice = data.choices?.[0] || {};
+                const finishReason = choice.finish_reason || choice.native_finish_reason || "";
+                const msg = choice.message || {};
                 let thinking = msg.reasoning || msg.reasoning_content || "";
                 let content = msg.content || "";
 
@@ -740,7 +752,7 @@
                     content = extracted.content;
                 }
 
-                return { text: content.trim(), thinking: thinking.trim() };
+                return { text: content.trim(), thinking: thinking.trim(), finishReason };
             },
 
             /**
@@ -797,7 +809,9 @@
                     throw new Error(`NanoGPT API Error: ${errorDetails}`);
                 }
                 const data = await res.json();
-                const msg = data.choices?.[0]?.message || {};
+                const choice = data.choices?.[0] || {};
+                const finishReason = choice.finish_reason || choice.native_finish_reason || "";
+                const msg = choice.message || {};
                 let thinking = msg.reasoning_content || msg.reasoning || "";
                 let content = msg.content || "";
 
@@ -807,7 +821,7 @@
                     content = extracted.content;
                 }
 
-                return { text: content.trim(), thinking: thinking.trim() };
+                return { text: content.trim(), thinking: thinking.trim(), finishReason };
             },
 
             /**
@@ -1163,7 +1177,9 @@
                     throw new Error(`LM Studio API Error: ${errorDetails}`);
                 }
                 const data = await res.json();
-                const msg = data.choices?.[0]?.message || {};
+                const choice = data.choices?.[0] || {};
+                const finishReason = choice.finish_reason || choice.native_finish_reason || "";
+                const msg = choice.message || {};
                 let thinking = msg.reasoning_content || msg.reasoning || "";
                 let content = msg.content || "";
 
@@ -1173,6 +1189,6 @@
                     content = extracted.content;
                 }
 
-                return { text: content.trim(), thinking: thinking.trim() };
+                return { text: content.trim(), thinking: thinking.trim(), finishReason };
             },
         };
