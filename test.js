@@ -2105,13 +2105,50 @@ test('the output ceiling leaves room for a model that thinks before it answers',
     assert.ok(!/max_tokens: 2048/.test(api), 'the old hardcoded 2048 ceiling is gone');
 });
 
-test('style guide: both halves exist and stay lean', () => {
-    const g = UTILITY.getStyleGuide();
-    assert.ok(g.rules.length > 800, 'the full rules are substantial');
-    assert.ok(g.rules.length < 3000,
-        'but stay lean - heavy micromanagement reportedly makes these models follow fewer rules, not more');
-    assert.ok(g.reminder.length < 250, 'the reminder is a one-liner, not a second copy of the rules');
-    assert.ok(/never the user/i.test(g.reminder), 'the rule that matters most is the one restated last');
+const StyleGuide = vm.runInNewContext(
+    fs.readFileSync(path.join(__dirname, 'js', 'util', 'style-guide.js'), 'utf8') + '\nStyleGuide', {});
+
+test('style guide: the ported preset carries both placements and its sampler', () => {
+    assert.ok(StyleGuide.prefix.length > 5000, 'the prefix blocks came across');
+    assert.ok(StyleGuide.lastMile.length > 3000, 'so did the ones injected next to the reply');
+    assert.equal(StyleGuide.sampling.temperature, 0.7);
+    assert.equal(StyleGuide.sampling.top_p, 0.8);
+    assert.equal(StyleGuide.sampling.repetition_penalty, 1);
+});
+
+test('style guide: no SillyTavern macro survives the port', () => {
+    const all = StyleGuide.prefix + StyleGuide.lastMile;
+    assert.equal(all.match(/\{\{[^}]*\}\}/g), null,
+        'a {{macro}} this app cannot substitute would reach the model as literal text');
+    assert.ok(/\{user\}/.test(all), 'converted to the single-brace macro _getReplacer understands');
+    assert.ok(!/\{\{trim\}\}|setvar::/.test(all));
+});
+
+test('style guide: the depth-0 blocks sit nearest the reply', () => {
+    const banned = StyleGuide.lastMile.indexOf('<banlist>');
+    const prose = StyleGuide.lastMile.indexOf('<prose_concepts>');
+    assert.ok(prose > -1 && banned > -1);
+    assert.ok(banned > prose,
+        'the preset injects the banlist at depth 0 and prose concepts at depth 1, so the banlist lands later');
+});
+
+test('style guide: the custom reasoning template is carried but not wired in', () => {
+    assert.ok(StyleGuide.reasoningTemplate.length > 500, 'kept for reference');
+    for (const f of ['js/util/prompt-builder.js', 'js/services/api.js', 'js/controllers/narrative.js']) {
+        const src = fs.readFileSync(path.join(__dirname, f), 'utf8');
+        assert.ok(!/reasoningTemplate/.test(src),
+            `${f} must not send it: it replaces a model's native thinking rather than stacking on it`);
+    }
+});
+
+test('style guide: both halves go through the name replacer', () => {
+    const pb = fs.readFileSync(path.join(__dirname, 'js', 'util', 'prompt-builder.js'), 'utf8');
+    assert.ok(/replacer\(styleGuide\.prefix\)/.test(pb),
+        'the guide is appended after the system prompt was already replaced, so it needs its own pass');
+    assert.ok(/replacer\(StyleGuide\.lastMile\)/.test(pb));
+    // 21 {user} macros reaching the model as literal text is the failure this guards.
+    assert.ok(/\{user\}/.test(StyleGuide.prefix + StyleGuide.lastMile),
+        'there is something for the replacer to do');
 });
 
 test('style guide: off by default, and off means absent', () => {
@@ -2119,22 +2156,30 @@ test('style guide: off by default, and off means absent', () => {
     assert.ok(/enableStyleGuide: globals\.default_enableStyleGuide !== undefined \? globals\.default_enableStyleGuide : false/.test(u),
         'a new story does not get it unless asked');
     const pb = fs.readFileSync(path.join(__dirname, 'js', 'util', 'prompt-builder.js'), 'utf8');
-    assert.ok(/state\.enableStyleGuide \? UTILITY\.getStyleGuide\(\) : null/.test(pb));
+    assert.ok(/state\.enableStyleGuide \? StyleGuide : null/.test(pb));
     assert.ok(/if \(state\.enableStyleGuide\) p \+=/.test(pb));
+});
+
+test('style guide: switching it on adopts the sampler it was tuned at', () => {
+    const api = fs.readFileSync(path.join(__dirname, 'js', 'services', 'api.js'), 'utf8');
+    assert.ok(/state\.enableStyleGuide && typeof StyleGuide !== 'undefined' \? StyleGuide\.sampling/.test(api));
+    const after = api.slice(api.indexOf('StyleGuide.sampling'), api.indexOf('StyleGuide.sampling') + 600);
+    const spreadEnd = after.indexOf('}),');
+    assert.ok(!/repetition_penalty/.test(after.slice(spreadEnd)),
+        'nothing may be set after the spread or it would override the preset value');
+});
+
+test('style guide: the last-mile block is the last instruction before the reply', () => {
+    const pb = fs.readFileSync(path.join(__dirname, 'js', 'util', 'prompt-builder.js'), 'utf8');
+    const at = pb.indexOf('StyleGuide.lastMile');
+    const anchorAt = pb.indexOf('+ components.charToAct.name + ":"', at);
+    assert.ok(at > -1 && anchorAt > at);
 });
 
 test('style guide: layers onto the story prompt instead of replacing it', () => {
     const pb = fs.readFileSync(path.join(__dirname, 'js', 'util', 'prompt-builder.js'), 'utf8');
     assert.ok(/system_prompt: replacer\(modelInstructions\) \+ \(styleGuide \?/.test(pb),
         'turning it off must restore exactly what the story had');
-});
-
-test('style guide: the reminder is the last instruction before the reply', () => {
-    const pb = fs.readFileSync(path.join(__dirname, 'js', 'util', 'prompt-builder.js'), 'utf8');
-    const reminderAt = pb.indexOf('UTILITY.getStyleGuide().reminder');
-    const anchorAt = pb.indexOf('+ components.charToAct.name + ":"', reminderAt);
-    assert.ok(reminderAt > -1 && anchorAt > reminderAt,
-        'it must sit between the other instructions and the name anchor');
 });
 
 test('style guide: the setting survives export and import', () => {

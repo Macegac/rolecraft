@@ -717,13 +717,18 @@
                         // return nothing - billed in full - which reached the user as an empty
                         // message bubble. 2048 left no room for both.
                         max_tokens: APIService.MAX_OUTPUT_TOKENS,
-                        temperature: 1.0,
-                        top_p: 1.0,
-                        // Deliberately mild. Roleplay reuses names and pronouns constantly,
-                        // so a heavy hand here reads as a model avoiding the words it needs.
-                        frequency_penalty: 0.2,
-                        presence_penalty: 0.0,
-                        repetition_penalty: 1.05
+                        // The style guide is a port of a preset that was tuned at its own sampler
+                        // settings, so switching it on adopts them. Sending it at this app's
+                        // defaults would be testing something the author never tested.
+                        ...(state.enableStyleGuide && typeof StyleGuide !== 'undefined' ? StyleGuide.sampling : {
+                            temperature: 1.0,
+                            top_p: 1.0,
+                            // Deliberately mild. Roleplay reuses names and pronouns constantly,
+                            // so a heavy hand here reads as a model avoiding the words it needs.
+                            frequency_penalty: 0.2,
+                            presence_penalty: 0.0,
+                            repetition_penalty: 1.05
+                        })
                     }),
                     signal
                 });

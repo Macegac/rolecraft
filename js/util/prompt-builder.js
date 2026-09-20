@@ -436,9 +436,9 @@ JSON Schema:
                     return msg;
                 });
 
-                const styleGuide = state.enableStyleGuide ? UTILITY.getStyleGuide() : null;
+                const styleGuide = state.enableStyleGuide ? StyleGuide : null;
                 return {
-                    system_prompt: replacer(modelInstructions) + (styleGuide ? "\n\n" + styleGuide.rules : ""),
+                    system_prompt: replacer(modelInstructions) + (styleGuide ? "\n\n" + replacer(styleGuide.prefix) : ""),
                     static_entries: (state.static_entries || []).map(l => `### ${l.title}\n${replacer(l.content)}`).join('\n\n'),
                     characters: [...(state.characters || []), ...ReactiveStore.getActiveLocationCharacters()]
                         .filter(c => c.is_active)
@@ -788,7 +788,7 @@ JSON Schema:
                 p += " Do not repeat the character's name in the response itself.";
                 // Last instruction before the reply anchor. A rule given once at the top of a
                 // long prompt is the one most often dropped, so the essentials are restated here.
-                if (state.enableStyleGuide) p += "\n\n" + UTILITY.getStyleGuide().reminder;
+                if (state.enableStyleGuide) p += "\n\n" + replacer(StyleGuide.lastMile);
                 p += "\n### " + components.charToAct.name + ":";
 
                 // Extract images from history
