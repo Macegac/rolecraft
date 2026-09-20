@@ -911,6 +911,10 @@
                 });
 
                 let cleanPrompt = typeof prompt === 'string' ? prompt : prompt.text;
+                // Same as every other provider: the cache marker is not part of the story.
+                if (typeof cleanPrompt === 'string') {
+                    cleanPrompt = cleanPrompt.replace(/<\|ELLIPSIS_CACHE_BREAK\|>\n?/g, '');
+                }
                 const images = typeof prompt === 'string' ? [] : (prompt.images || []);
 
                 const payload = {
@@ -1078,6 +1082,12 @@
                 const baseUrl = state.lmstudio_url.replace(/\/+$/, '');
                 const endpoint = `${baseUrl}/v1/chat/completions`;
                 let cleanPrompt = typeof prompt === 'string' ? prompt : prompt.text;
+                // The cache marker only means something to providers that split the prompt on it.
+                // Anywhere else it is a stray <|...|> token sitting in the middle of the story,
+                // right where the conversation begins.
+                if (typeof cleanPrompt === 'string') {
+                    cleanPrompt = cleanPrompt.replace(/<\|ELLIPSIS_CACHE_BREAK\|>\n?/g, '');
+                }
                 const images = typeof prompt === 'string' ? [] : (prompt.images || []);
 
                 let contentPayload = cleanPrompt;

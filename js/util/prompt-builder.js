@@ -244,7 +244,10 @@ JSON Schema:
 
                 for (const char of chars) {
                     const charStats = statsObj[char.id];
-                    if (!charStats || charStats.length === 0) continue;
+                    // A stats record that is not a list (an old save, a hand-edited backup) used to
+                    // throw here, and because this runs while building every prompt it stopped the
+                    // story being able to send anything at all.
+                    if (!Array.isArray(charStats) || charStats.length === 0) continue;
                     const statStr = charStats.map(s => `${s.name}: ${Math.round(s.value)}/${s.max || 100}`).join(', ');
                     lines.push(`${char.name}: ${statStr}`);
                 }
@@ -1569,7 +1572,11 @@ Write only the character's message.`;
                     ? state.evolved_characters[char.id]
                     : (char.description || '');
 
-                const systemPrompt = char.model_instructions || state.systemPrompt || 'You are a creative roleplay AI.';
+                // state.system_prompt is where the story keeps it, and what every other prompt
+                // reads. This used to ask for a camelCase spelling that nothing ever writes, so in
+                // Swarm mode a character with no instructions of their own was written by the
+                // generic fallback below instead of by the story's own storyteller voice.
+                const systemPrompt = char.model_instructions || state.system_prompt || 'You are a creative roleplay AI.';
 
                 const historyArray = this._getSmartHistorySlice(state.chat_history || [], 2000, char.id).slice(-6);
                 const agentNotes = (typeof AgentController !== 'undefined')

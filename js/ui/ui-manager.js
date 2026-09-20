@@ -77,10 +77,13 @@
             /**
              * Prompts the user to add a resource manually.
              */
-            promptAddResource() {
-                const name = prompt("Enter the item name:");
+            async promptAddResource() {
+                // UTILITY.customPrompt, not the browser's own prompt(): a browser refuses that
+                // one outright once Rolecraft is installed to a phone's home screen, and these
+                // buttons then did nothing at all.
+                const name = await UTILITY.customPrompt("Enter the item name:", '', 'Item name');
                 if (!name) return;
-                const valueStr = prompt("Enter initial quantity:", "1");
+                const valueStr = await UTILITY.customPrompt("Enter initial quantity:", "1", 'Quantity');
                 if (valueStr === null) return;
                 const value = parseInt(valueStr) || 1;
                 InventoryController.addResource(name, value);
@@ -89,10 +92,10 @@
             /**
              * Prompts the user to add a quest manually.
              */
-            promptAddQuest() {
-                const title = prompt("Enter quest title:");
+            async promptAddQuest() {
+                const title = await UTILITY.customPrompt("Enter quest title:", '', 'Quest title');
                 if (!title) return;
-                const objective = prompt("Enter active objective (optional):") || '';
+                const objective = (await UTILITY.customPrompt("Enter active objective (optional):", '', 'Objective')) || '';
                 InventoryController.addQuest(title, objective);
             },
 
@@ -100,8 +103,8 @@
              * Prompts the user to update a quest's objective manually.
              * @param {string} questId - The quest ID.
              */
-            promptUpdateQuestObjective(questId) {
-                const objective = prompt("Enter new objective:");
+            async promptUpdateQuestObjective(questId) {
+                const objective = await UTILITY.customPrompt("Enter new objective:", '', 'Objective');
                 if (objective === null) return;
                 InventoryController.updateQuestObjective(questId, objective);
             },
@@ -109,12 +112,12 @@
             /**
              * Prompts the user to track a relationship manually.
              */
-            promptAddRelationship() {
-                const charName = prompt("Enter character name:");
+            async promptAddRelationship() {
+                const charName = await UTILITY.customPrompt("Enter character name:", '', 'Character name');
                 if (!charName) return;
-                const track = prompt("Enter relationship track (e.g. Affection, Attraction, Trust):", "Affection");
+                const track = await UTILITY.customPrompt("Enter relationship track (e.g. Affection, Attraction, Trust):", "Affection", 'Track');
                 if (!track) return;
-                const valStr = prompt("Enter starting percentage (0-100):", "50");
+                const valStr = await UTILITY.customPrompt("Enter starting percentage (0-100):", "50", '0-100');
                 if (valStr === null) return;
                 const value = Math.max(0, Math.min(100, parseInt(valStr) || 50));
 

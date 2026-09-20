@@ -1744,6 +1744,37 @@ test('AgentSchema.pickFeedNotes: feed-once skips notes already used', () => {
     deepEq(AgentSchema.pickFeedNotes([{ id: 'a', usedAt: 1 }], { feedOnce: true, feedCount: 1 }), []);
 });
 
+// The story's own system prompt lives at state.system_prompt. A camelCase state.systemPrompt is a
+// key nothing ever writes, so reading it silently falls through to a generic fallback — which is
+// exactly what Swarm mode used to do with everyone's custom storyteller instructions.
+test('prompts read the story system prompt under the name it is stored as', () => {
+    const builder = fs.readFileSync(path.join(__dirname, 'js', 'util', 'prompt-builder.js'), 'utf8');
+    const camel = builder.match(/state\.systemPrompt\b/g) || [];
+    assert.equal(camel.length, 0,
+        'prompt-builder reads state.systemPrompt, which nothing writes; it is state.system_prompt');
+    assert.match(builder, /state\.system_prompt/, 'the story system prompt must be read somewhere');
+});
+
+// Stats come from the model, and a story restored from an old save or another app may hold a shape
+// this never expected. Building a prompt must not be the thing that breaks.
+test('a stats record that is not a list cannot break prompt building', () => {
+    const builder = fs.readFileSync(path.join(__dirname, 'js', 'util', 'prompt-builder.js'), 'utf8');
+    assert.match(builder, /if \(!Array\.isArray\(charStats\) \|\| charStats\.length === 0\) continue;/,
+        '_buildStatsContext must check it really has a list before mapping over it');
+});
+
+// The cache marker is only meaningful to providers that split the prompt on it. Every other
+// provider has to strip it, or the model gets a stray <|...|> token in the middle of the story.
+test('every provider strips the cache marker before sending', () => {
+    const api = fs.readFileSync(path.join(__dirname, 'js', 'services', 'api.js'), 'utf8');
+    const bodies = api.split(/\n            async (?=(?:call|stream)[A-Za-z]*\()/).slice(1);
+    const senders = bodies
+        .map(b => ({ name: b.slice(0, b.indexOf('(')), body: b }))
+        .filter(x => !['callAI'].includes(x.name));
+    const leaking = senders.filter(x => !x.body.includes('ELLIPSIS_CACHE_BREAK')).map(x => x.name);
+    assert.deepStrictEqual(leaking, [], `these send the cache marker to the model: ${leaking.join(', ')}`);
+});
+
 // A one-shot note is spent when a reply prompt carries it. Looking at the prompt preview builds a
 // prompt that is never sent, so it has to leave the note pending — otherwise the reply the Event
 // Master planned a surprise for silently arrives without one.
