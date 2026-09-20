@@ -2141,6 +2141,24 @@ test('style guide: the custom reasoning template is carried but not wired in', (
     }
 });
 
+test('style guide: carries the preset reply ceiling, not the app default', () => {
+    assert.equal(StyleGuide.maxTokens, 15000,
+        'reasoning is billed against this; 4096 is what made replies come back empty');
+    assert.equal(StyleGuide.reasoning.effort, 'low');
+    const api = fs.readFileSync(path.join(__dirname, 'js', 'services', 'api.js'), 'utf8');
+    assert.ok(api.includes('StyleGuide.maxTokens'), 'the preset ceiling is consulted');
+    assert.ok(api.includes('|| APIService.MAX_OUTPUT_TOKENS'),
+        'and the app default is the fallback when the guide is off');
+});
+
+test('style guide: a reasoning setting is never sent unless the guide asks for it', () => {
+    const api = fs.readFileSync(path.join(__dirname, 'js', 'services', 'api.js'), 'utf8');
+    const sends = api.match(/\{ reasoning: StyleGuide\.reasoning \}/g) || [];
+    assert.equal(sends.length, 1);
+    assert.ok(/state\.enableStyleGuide && typeof StyleGuide !== 'undefined' && StyleGuide\.reasoning/.test(api),
+        'handing a reasoning object to a model that was not reasoning can switch thinking ON');
+});
+
 test('style guide: both halves go through the name replacer', () => {
     const pb = fs.readFileSync(path.join(__dirname, 'js', 'util', 'prompt-builder.js'), 'utf8');
     assert.ok(/replacer\(styleGuide\.prefix\)/.test(pb),

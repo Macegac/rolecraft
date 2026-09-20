@@ -29,6 +29,16 @@
 
             reasoningTemplate: "Reasoning is six dashed lines. Fragments joined by semicolons; the first answer that fits stands; a written line is settled.\n\n- Scene: where everyone is; what just happened; what each NPC wants now (card blanks filled from archetype, fixed once chosen).\n- Mode: realism or freaky; what it licenses this turn.\n- Move: who pursues what; what resists; the adjustment; the result; the ledger that shifts; each speaker's register; the closing tactic; the reply stops where {user} would act.\n- Fate: A/B/C and the row they produce, copied from the module's text; the happening in five words; \"off\" if internal_life is not loaded.\n- Mods: each other loaded module in a few words; a colour, sound or value already on record in the chat is copied, never chosen again; \"none\" if none.\n- Done.\n\nThe six lines are the whole of the reasoning; nothing written past Done carries into the reply or the next turn. The reply opens with the scene header if one is loaded and the state block if one is drawn, copied as drawn, then its first sentence, prose about the scene; a sentence that would announce, map, preview or draft the reply is that first sentence instead. The same holds inside quotation marks: the first words out of a mouth are already the point. Length, dialogue share, narration person, colours, sounds and bans are all on record above and apply to each sentence as it is written.",
 
+            // The preset's own reply ceiling. Reasoning is billed against this, and 15000 is what the
+            // author set precisely so a thinking model has room to think AND still write. The app's
+            // own 4096 is less than a third of that, which is how a reply comes back empty.
+            maxTokens: 15000,
+
+            // The preset also asks for reasoning effort 'low'. Sent unset, the model reasons at its
+            // own default, which on a prompt this size is most of the budget. Fewer thinking tokens
+            // is also cheaper, so this pulls in the same direction as the larger ceiling.
+            reasoning: { effort: 'low' },
+
             // The preset's own sampler settings. This app otherwise sends temperature 1.0, top_p 1.0,
             // frequency_penalty 0.2 and repetition_penalty 1.05, which are not what it was tuned at.
             sampling: { temperature: 0.7, top_p: 0.8, frequency_penalty: 0, presence_penalty: 0, repetition_penalty: 1 }

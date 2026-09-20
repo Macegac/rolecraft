@@ -716,7 +716,13 @@
                         // that thinks before it answers can spend the whole of it thinking and
                         // return nothing - billed in full - which reached the user as an empty
                         // message bubble. 2048 left no room for both.
-                        max_tokens: APIService.MAX_OUTPUT_TOKENS,
+                        max_tokens: (state.enableStyleGuide && typeof StyleGuide !== 'undefined' && StyleGuide.maxTokens)
+                            || APIService.MAX_OUTPUT_TOKENS,
+                        // Only sent when the preset asks for it. Handing a `reasoning` object to a
+                        // model that was not reasoning can switch thinking ON, which is the opposite
+                        // of what is wanted, so this never goes out on its own.
+                        ...(state.enableStyleGuide && typeof StyleGuide !== 'undefined' && StyleGuide.reasoning
+                            ? { reasoning: StyleGuide.reasoning } : {}),
                         // The style guide is a port of a preset that was tuned at its own sampler
                         // settings, so switching it on adopts them. Sending it at this app's
                         // defaults would be testing something the author never tested.
