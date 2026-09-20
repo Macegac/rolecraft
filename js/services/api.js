@@ -12,6 +12,11 @@
             openRouterModelCache: null,
             lastThinking: "",
 
+            // How long an un-signaled (background) call may take before it is given up on.
+            // The main story turn is exempt: it passes its own signal so the stop button owns it.
+            CALL_TIMEOUT_MS: 180000,
+            CALL_TIMEOUT_LABEL: '3 minutes',
+
             getLastThinking() {
                 return this.lastThinking || "";
             },
@@ -267,6 +272,24 @@
                 }
             },
 
+            /** Human-readable name for the configured backend, used in failure notices. */
+            _providerLabel(provider) {
+                switch (provider) {
+                    case 'koboldcpp': return 'KoboldCPP';
+                    case 'lmstudio': return 'LM Studio';
+                    case 'gemini': return 'Gemini API';
+                    case 'openrouter': return 'OpenRouter';
+                    case 'nanogpt': return 'NanoGPT';
+                    case 'webllm': return 'the in-browser model';
+                    default: return provider || 'the AI backend';
+                }
+            },
+
+            /** True for backends that run on the user's own machine, where "is it running?" is useful advice. */
+            _isLocalProvider(provider) {
+                return provider === 'koboldcpp' || provider === 'lmstudio' || provider === 'webllm';
+            },
+
             async callAI(prompt, isJson = false, signal = null, silent = false, options = null) {
                 const state = StateManager.getState();
 
@@ -306,7 +329,12 @@
                     }
                 }
 
-                // Apply a default 60-second timeout to prevent background/un-signaled tasks from hanging the UI.
+                // Apply a default timeout to prevent background/un-signaled tasks from hanging forever.
+                //
+                // Nothing is streamed (every provider is called with stream:false), so this budget
+                // has to cover the model's entire thinking-and-writing time with nothing arriving
+                // until the very end. The old 60 seconds was shorter than a single whole-transcript
+                // summary on a cloud model, so healthy replies were thrown away as failures.
                 //
                 // The budget counts only time the app is actually on screen. A phone that
                 // backgrounds the tab suspends this timer, and the browser fires anything
@@ -332,7 +360,7 @@
                     const controller = new AbortController();
                     activeSignal = controller.signal;
 
-                    let remainingMs = 60000;
+                    let remainingMs = APIService.CALL_TIMEOUT_MS;
                     let armedAt = 0;
 
                     const arm = () => {
@@ -420,8 +448,14 @@
                             // throw a differently worded error, so every caller that reported
                             // e.message produced a second banner for the same problem.
                             // The friendly wording now rides on the error itself.
-                            const timeoutError = new Error("Connection timed out after 60 seconds. Check that your AI backend is running.");
-                            if (typeof UIManager !== 'undefined' && UIManager.showNotification) {
+                            const label = this._providerLabel(state.apiProvider);
+                            const timeoutError = new Error(this._isLocalProvider(state.apiProvider)
+                                ? `${label} did not answer within ${APIService.CALL_TIMEOUT_LABEL}. Check that it is running.`
+                                : `${label} did not answer within ${APIService.CALL_TIMEOUT_LABEL}. The model may be busy — try again, or switch to a faster one.`);
+                            // Background chores pass silent:true; they must not raise a red banner
+                            // for work the user never asked for and whose failure changes nothing
+                            // on screen. The network path below already respects this flag.
+                            if (!silent && typeof UIManager !== 'undefined' && UIManager.showNotification) {
                                 UIManager.showNotification(timeoutError.message, 'error');
                                 timeoutError.reported = true;
                             }
@@ -436,12 +470,7 @@
                             error.message.toLowerCase().includes('net::err')
                         ));
                     if (isNetworkError) {
-                        let friendlyProvider = state.apiProvider;
-                        if (friendlyProvider === 'koboldcpp') friendlyProvider = 'KoboldCPP';
-                        else if (friendlyProvider === 'lmstudio') friendlyProvider = 'LM Studio';
-                        else if (friendlyProvider === 'gemini') friendlyProvider = 'Gemini API';
-                        else if (friendlyProvider === 'openrouter') friendlyProvider = 'OpenRouter';
-                        else if (friendlyProvider === 'nanogpt') friendlyProvider = 'NanoGPT';
+                        const friendlyProvider = this._providerLabel(state.apiProvider);
 
                         const msg = wentHiddenDuringCall
                             ? `Connection dropped while the app was in the background (${friendlyProvider}).`

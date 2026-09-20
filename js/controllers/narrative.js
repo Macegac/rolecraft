@@ -836,7 +836,7 @@ Return ONLY the physical description. Write in the 3rd person. No preamble.`;
 
                     try {
                         const promptText = PromptBuilder.buildJournalExtractorPrompt(transcript, characterNames);
-                        const aiResponse = await APIService.callAI(promptText, false);
+                        const aiResponse = await APIService.callAI(promptText, false, null, true);
                         if (aiResponse) {
                             const parsedEntries = UTILITY.parseJournalExtractions(aiResponse);
                             if (parsedEntries && parsedEntries.length > 0) {
@@ -879,9 +879,12 @@ Return ONLY the physical description. Write in the 3rd person. No preamble.`;
             async _runBackgroundExtractions(transcript) {
                 const state = ReactiveStore.state;
                 try {
+                    // silent:true - these are bookkeeping passes the user never asked for. If they
+                    // fail the story on screen is unaffected, so they belong in the problem report,
+                    // not in a red banner over the scene.
                     const [timelineRes, relationRes] = await Promise.all([
-                        APIService.callAI(PromptBuilder.buildTimelineExtractorPrompt(transcript), false),
-                        APIService.callAI(PromptBuilder.buildRelationshipMatrixPrompt(transcript), false)
+                        APIService.callAI(PromptBuilder.buildTimelineExtractorPrompt(transcript), false, null, true),
+                        APIService.callAI(PromptBuilder.buildRelationshipMatrixPrompt(transcript), false, null, true)
                     ]);
 
                     // Update Timeline
@@ -927,7 +930,7 @@ Return ONLY the physical description. Write in the 3rd person. No preamble.`;
                 let prompt = promptTemplate.replace('{transcript}', transcript).replace('{existing_knowledge}', existingKnowledgeStr);
 
                 try {
-                    const response = await APIService.callAI(prompt, false);
+                    const response = await APIService.callAI(prompt, false, null, true);
                     if (!response || response.toLowerCase().trim() === 'null') return;
 
                     const changeCount = await this.applyStaticKnowledgeUpdates(response);
@@ -956,7 +959,7 @@ Return ONLY the physical description. Write in the 3rd person. No preamble.`;
                 console.log("Archivist: Lore bloat detected. Condensing knowledge base...");
                 try {
                     const prompt = PromptBuilder.buildArchivistCondensationPrompt(state.static_entries.filter(e => !e.is_immutable));
-                    const response = await APIService.callAI(prompt, false);
+                    const response = await APIService.callAI(prompt, false, null, true);
 
                     const condensedData = UTILITY.extractDelimitedList(response, '|', ['title', 'content']);
                     if (condensedData && condensedData.length > 0) {

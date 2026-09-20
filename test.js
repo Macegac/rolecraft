@@ -2027,3 +2027,43 @@ test('DiagLog: a runaway source cannot grow the diary without limit', () => {
     assert.equal(log.entries.length, log.maxEntries);
     assert.equal(log.entries[log.entries.length - 1].message, 'repeat 1999');
 });
+
+test('callAI: the background timeout is long enough for an unstreamed whole-transcript call', () => {
+    const api = fs.readFileSync(path.join(__dirname, 'js', 'services', 'api.js'), 'utf8');
+    const budget = api.match(/CALL_TIMEOUT_MS:\s*(\d+)/);
+    assert.ok(budget, 'the timeout budget is a named constant, not a magic number');
+    assert.ok(Number(budget[1]) >= 120000, 'sixty seconds killed replies that were still on their way');
+    assert.ok(!/let remainingMs = 60000/.test(api), 'the old hardcoded 60s budget is gone');
+});
+
+test('callAI: a timed-out background chore does not raise a red banner', () => {
+    const api = fs.readFileSync(path.join(__dirname, 'js', 'services', 'api.js'), 'utf8');
+    const abortBlock = api.slice(api.indexOf("if (error.name === 'AbortError')"), api.indexOf('const isNetworkError'));
+    assert.ok(/if \(!silent && typeof UIManager/.test(abortBlock),
+        'the timeout notice must honour silent, like the network-error path already does');
+});
+
+test('callAI: a timeout notice names the real provider instead of blaming a local backend', () => {
+    const api = fs.readFileSync(path.join(__dirname, 'js', 'services', 'api.js'), 'utf8');
+    assert.ok(!/Check that your AI backend is running/.test(api),
+        'that wording sent cloud users to check a backend that was answering fine');
+    assert.ok(/_providerLabel\(state\.apiProvider\)/.test(api));
+    assert.ok(/_isLocalProvider\(state\.apiProvider\)/.test(api),
+        'only a local backend gets the "check that it is running" hint');
+});
+
+test('automatic post-turn chores are all marked silent', () => {
+    const nar = fs.readFileSync(path.join(__dirname, 'js', 'controllers', 'narrative.js'), 'utf8');
+    for (const builder of [
+        'buildTimelineExtractorPrompt',
+        'buildRelationshipMatrixPrompt',
+        'buildJournalExtractorPrompt',
+        'buildArchivistCondensationPrompt'
+    ]) {
+        const at = nar.indexOf(builder);
+        assert.ok(at > -1, `${builder} still exists`);
+        const window = nar.slice(at, at + 400);
+        assert.ok(/,\s*false,\s*null,\s*true\)/.test(window),
+            `${builder} runs unasked every few messages; its failure must not interrupt the scene`);
+    }
+});
