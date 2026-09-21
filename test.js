@@ -2141,6 +2141,39 @@ test('style guide: the custom reasoning template is carried but not wired in', (
     }
 });
 
+test('Something Slips: fires on a fifth of replies, Voice Holds on all of them', () => {
+    const slips = AgentStarters.list().find(a => a.source.id === 'something-slips');
+    const holds = AgentStarters.list().find(a => a.source.id === 'voice-holds');
+    assert.equal(holds.trigger.probability, 100);
+    assert.equal(slips.trigger.probability, 20);
+    assert.ok(slips.placement.order > holds.placement.order,
+        'the slip has to land after the rule it breaks for that turn');
+    const fired = n => AgentSchema.shouldFire(slips,
+        { messageCounter: 1, recentTexts: ['x'], chatTokens: 0, roll: n });
+    assert.equal(fired(0.19), true);
+    assert.equal(fired(0.21), false);
+});
+
+test('Something Slips: a different slip each time, and no macro survives', () => {
+    const slips = AgentStarters.list().find(a => a.source.id === 'something-slips');
+    const seen = new Set();
+    for (let i = 0; i < 200; i++) {
+        const out = AgentSchema.expandMacros(slips.prompt, { char: 'Cocoa', user: 'Mario' });
+        assert.equal(out.match(/[{}]/g), null, 'a leftover brace would reach the model as literal text');
+        const m = out.match(/let out: ([^.]+)\./);
+        if (m) seen.add(m[1]);
+    }
+    assert.ok(seen.size >= 6, `the whole list should come up, saw ${seen.size}`);
+});
+
+test('Something Slips: no macro is nested inside the random list', () => {
+    const slips = AgentStarters.list().find(a => a.source.id === 'something-slips');
+    const block = slips.prompt.match(/\{\{random::[^}]*\}\}/);
+    assert.ok(block, 'the random block parses at all');
+    assert.ok(!/\{/.test(block[0].slice(10)),
+        'expandMacros stops the random body at the first closing brace, so a nested macro would truncate the list');
+});
+
 test('style guide: carries the preset reply ceiling, not the app default', () => {
     assert.equal(StyleGuide.maxTokens, 15000,
         'reasoning is billed against this; 4096 is what made replies come back empty');

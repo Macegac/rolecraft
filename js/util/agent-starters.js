@@ -151,6 +151,36 @@
                         ].join('\n'),
                         placement: { position: 'chat', depth: 4, role: 'system', order: 170 },
                         helper: { run: 'manual', contextMessages: 16, includeCharacters: true, priorNotes: 0, display: 'panel', feedForward: false }
+                    }),
+
+                    starter('voice-holds', {
+                        name: 'Voice Holds',
+                        description: 'Keeps a character sounding like themselves when a scene turns intense',
+                        kind: 'note',
+                        prompt: [
+                            "Whatever {{char}} does with words - deflect, joke, understate, give orders, go quiet - they keep doing it here. Heat changes their tempo and their breathing, never who they are.",
+                            "Their vocabulary does not upgrade. A plain speaker stays plain and never reaches for poetry; a crude one stays crude; a formal one stays formal even while coming apart.",
+                            "What {{char}} will not say stays unsaid. Pride, embarrassment, manners and habit still hold. Wanting something does not make them able to ask for it.",
+                            "Show the state in breath, in pauses, in a dropped word or an unfinished sentence. The words themselves stay theirs."
+                        ].join('\n'),
+                        placement: { position: 'chat', depth: 4, role: 'system', order: 130 }
+                    }),
+
+                    starter('something-slips', {
+                        name: 'Something Slips',
+                        description: 'Sometimes their guard fails once, in a different way each time. Pair with Voice Holds',
+                        kind: 'note',
+                        prompt: [
+                            "This reply, {{char}}'s guard fails exactly once. One thing gets out that they did not choose to let out: {{random::a word or a name they did not mean to use::an admission truer than they meant to give::a reaction their body shows before they can arrange it::a question they had not planned to ask::a silence they cannot cover::something asked for plainly, without their usual hedging::a sound they did not mean to make::an endearment they would never normally use}}.",
+                            "One thing, not a change of character. Everything else about them holds.",
+                            "{{char}} registers that it happened. They may cover it, laugh it off, push straight past it or pretend it did not - whatever that person would do - but they never explain it, apologise for it, or say what it meant.",
+                            "Do not refer back to it in later replies unless {{user}} does first."
+                        ].join('\n'),
+                        // A fifth of replies. The roll is taken fresh each turn, and the {{random}}
+                        // list is expanded at the same moment, so the slip is a different kind of
+                        // slip each time it lands rather than the same beat on repeat.
+                        trigger: { probability: 20 },
+                        placement: { position: 'chat', depth: 4, role: 'system', order: 131 }
                     })
                 ];
             }
