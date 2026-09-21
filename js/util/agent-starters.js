@@ -163,7 +163,15 @@
                             "What {{char}} will not say stays unsaid. Pride, embarrassment, manners and habit still hold. Wanting something does not make them able to ask for it.",
                             "Show the state in breath, in pauses, in a dropped word or an unfinished sentence. The words themselves stay theirs."
                         ].join('\n'),
-                        placement: { position: 'chat', depth: 4, role: 'system', order: 130 }
+                                                trigger: {
+                            keywords: ['kiss', 'naked', 'nude', 'undress', 'unbutton', 'unzip', 'bare skin',
+                                'moan', 'groan', 'gasp', 'panting', 'breathless', 'thigh', 'straddle',
+                                'caress', 'arous', 'seduc', 'foreplay', 'intimate', 'nipple', 'breast',
+                                'thrust', 'orgasm', 'climax', 'grind', 'make love', 'pressed against',
+                                'cock', 'pussy', 'clit', 'cum'],
+                            keywordDepth: 8
+                        },
+                        placement: { position: 'chat', depth: 4, role: 'system', order: 180 }
                     }),
 
                     starter('something-slips', {
@@ -179,8 +187,17 @@
                         // A fifth of replies. The roll is taken fresh each turn, and the {{random}}
                         // list is expanded at the same moment, so the slip is a different kind of
                         // slip each time it lands rather than the same beat on repeat.
-                        trigger: { probability: 20 },
-                        placement: { position: 'chat', depth: 4, role: 'system', order: 131 }
+                        trigger: {
+                            keywords: ['kiss', 'naked', 'nude', 'undress', 'unbutton', 'unzip', 'bare skin',
+                                'moan', 'groan', 'gasp', 'panting', 'breathless', 'thigh', 'straddle',
+                                'caress', 'arous', 'seduc', 'foreplay', 'intimate', 'nipple', 'breast',
+                                'thrust', 'orgasm', 'climax', 'grind', 'make love', 'pressed against',
+                                'cock', 'pussy', 'clit', 'cum'],
+                            keywordDepth: 8,
+                            probability: 20
+                        },
+
+                        placement: { position: 'chat', depth: 4, role: 'system', order: 181 }
                     })
                 ];
             }

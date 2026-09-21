@@ -1637,8 +1637,8 @@ test('AgentSchema.shouldFire: schedule, keywords, then chance', () => {
 });
 
 test('AgentSchema.expandMacros: both placeholder styles and random picks', () => {
-    const ctx = { char: 'Cocoa', user: 'Mario', pick: () => 1 };
-    assert.equal(AgentSchema.expandMacros('{{char}} and {{user}}; {character} and {user}', ctx), 'Cocoa and Mario; Cocoa and Mario');
+    const ctx = { char: 'Wren', user: 'Player', pick: () => 1 };
+    assert.equal(AgentSchema.expandMacros('{{char}} and {{user}}; {character} and {user}', ctx), 'Wren and Player; Wren and Player');
     assert.equal(AgentSchema.expandMacros('{{random::rain::snow}}', ctx), 'snow');
     assert.equal(AgentSchema.expandMacros('{{random:rain, snow}}', ctx), 'snow');
 });
@@ -1731,7 +1731,7 @@ test('AgentSchema.createEventMaster: a hidden, feed-once helper placed one messa
 
 test('AgentSchema.createEventMaster: its surprise roll expands to exactly one option', () => {
     const em = AgentSchema.createEventMaster();
-    const expanded = AgentSchema.expandMacros(em.prompt, { char: 'Cocoa', user: 'Mario', pick: () => 0 });
+    const expanded = AgentSchema.expandMacros(em.prompt, { char: 'Wren', user: 'Player', pick: () => 0 });
     assert.ok(!expanded.includes('{{'));
     assert.ok(expanded.includes('This time the surprise is: A practical snag'));
     assert.ok(!expanded.includes('An interruption'));
@@ -2012,10 +2012,10 @@ test('DiagLog.beginTurn: keeps only the last 5 turns', () => {
 test('DiagLog.format: story text only appears when switched on', () => {
     const log = loadDiagLog();
     log.beginTurn();
-    log.add('reply', 'Cocoa replied (12 chars)', { textLabel: 'reply', text: 'SECRET STORY' });
+    log.add('reply', 'Wren replied (12 chars)', { textLabel: 'reply', text: 'SECRET STORY' });
     const without = log.format({ App: 'test' }, false);
     const withText = log.format({ App: 'test' }, true);
-    assert.ok(without.includes('Cocoa replied (12 chars)'));
+    assert.ok(without.includes('Wren replied (12 chars)'));
     assert.ok(!without.includes('SECRET STORY'));
     assert.ok(withText.includes('reply: SECRET STORY'));
     assert.ok(without.includes('Story text: not included'));
@@ -2141,6 +2141,36 @@ test('style guide: the custom reasoning template is carried but not wired in', (
     }
 });
 
+test('the intimacy pair only fires in an intimate scene', () => {
+    const L = AgentStarters.list();
+    const pair = [L.find(a => a.source.id === 'voice-holds'), L.find(a => a.source.id === 'something-slips')];
+    const fires = (agent, texts) => AgentSchema.shouldFire(agent,
+        { messageCounter: 1, recentTexts: texts, chatTokens: 0, roll: 0 });
+    for (const agent of pair) {
+        assert.ok(agent.trigger.keywords.length > 10, `${agent.name} is gated at all`);
+        assert.equal(agent.trigger.keywordDepth, 8, 'stays alive across a scene, not just one reply');
+        assert.equal(fires(agent, ['She kissed him before he could answer.']), true);
+        assert.equal(fires(agent, ['They argued about the rent again.']), false);
+        // Substring matching is why these words are not on the list.
+        assert.equal(fires(agent, ['Their relationship was disturbed.', 'He barely touched his food.']), false,
+            `${agent.name} must not fire on relationship/disturbed/barely`);
+    }
+});
+
+test('the intimacy pair avoids keywords that hide inside ordinary words', () => {
+    const L = AgentStarters.list();
+    const words = L.find(a => a.source.id === 'something-slips').trigger.keywords;
+    for (const trap of ['bed', 'hips', 'bare', 'lap', 'skin', 'neck', 'chest', 'heat']) {
+        assert.ok(!words.includes(trap),
+            `"${trap}" is a substring of an everyday word and would fire in ordinary scenes`);
+    }
+});
+
+test('the new starters do not collide with an existing starter order', () => {
+    const orders = AgentStarters.list().map(a => a.placement.order);
+    assert.equal(new Set(orders).size, orders.length, 'every starter sorts to its own position');
+});
+
 test('Something Slips: fires on a fifth of replies, Voice Holds on all of them', () => {
     const slips = AgentStarters.list().find(a => a.source.id === 'something-slips');
     const holds = AgentStarters.list().find(a => a.source.id === 'voice-holds');
@@ -2149,7 +2179,7 @@ test('Something Slips: fires on a fifth of replies, Voice Holds on all of them',
     assert.ok(slips.placement.order > holds.placement.order,
         'the slip has to land after the rule it breaks for that turn');
     const fired = n => AgentSchema.shouldFire(slips,
-        { messageCounter: 1, recentTexts: ['x'], chatTokens: 0, roll: n });
+        { messageCounter: 1, recentTexts: ['She kissed him.'], chatTokens: 0, roll: n });
     assert.equal(fired(0.19), true);
     assert.equal(fired(0.21), false);
 });
@@ -2158,7 +2188,7 @@ test('Something Slips: a different slip each time, and no macro survives', () =>
     const slips = AgentStarters.list().find(a => a.source.id === 'something-slips');
     const seen = new Set();
     for (let i = 0; i < 200; i++) {
-        const out = AgentSchema.expandMacros(slips.prompt, { char: 'Cocoa', user: 'Mario' });
+        const out = AgentSchema.expandMacros(slips.prompt, { char: 'Wren', user: 'Player' });
         assert.equal(out.match(/[{}]/g), null, 'a leftover brace would reach the model as literal text');
         const m = out.match(/let out: ([^.]+)\./);
         if (m) seen.add(m[1]);
