@@ -2268,3 +2268,40 @@ test('style guide: the setting survives export and import', () => {
     assert.ok(/'enableStyleGuide'/.test(story),
         'otherwise a shared story silently loses it');
 });
+
+test('a leftover "is thinking" bubble never reaches the model', () => {
+    const PB = vm.runInNewContext(
+        fs.readFileSync(path.join(__dirname, 'js', 'util', 'prompt-builder.js'), 'utf8') + '\nPromptBuilder', { UTILITY: { stripThinking: t => t } });
+    assert.equal(PB.isThinkingPlaceholder('Wren is thinking...'), true);
+    assert.equal(PB.isThinkingPlaceholder('  Wren is thinking...  '), true);
+    // A real reply that happens to use the phrase keeps its place.
+    assert.equal(PB.isThinkingPlaceholder('She is thinking... about the offer, then looked away.'), false);
+    assert.equal(PB.isThinkingPlaceholder('Wren is thinking about the offer.'), false);
+    assert.equal(PB.isThinkingPlaceholder(''), false);
+    assert.equal(PB.isThinkingPlaceholder(null), false);
+
+    const kept = PB._getSmartHistorySlice([
+        { content: 'Do you trust him?' },
+        { content: 'Not for a second.' },
+        { content: 'Wren is thinking...' }
+    ], 8000, 'c1');
+    assert.equal(kept.length, 2, 'the placeholder is dropped, the real turns stay');
+});
+
+test('a failed Director Mode regen puts the original reply back', () => {
+    const nar = fs.readFileSync(path.join(__dirname, 'js', 'controllers', 'narrative.js'), 'utf8');
+    const swarm = nar.slice(nar.indexOf('_executeSwarmTurn'), nar.indexOf('async sendMessage()'));
+    assert.ok(/originalContent = state\.chat_history\[targetMessageIndex\]\.content/.test(swarm),
+        'it still takes a copy before overwriting with the placeholder');
+    assert.ok(/if \(target\) target\.content = originalContent/.test(swarm),
+        'and now puts it back on failure, which is what triggerAIResponse always did');
+});
+
+test('redo with a directive never targets the user own message', () => {
+    const nar = fs.readFileSync(path.join(__dirname, 'js', 'controllers', 'narrative.js'), 'utf8');
+    const scan = nar.slice(nar.indexOf("if (isRegen || actionVal === 'regen')"), nar.indexOf('} else if (actionVal =='));
+    assert.ok(/if \(char && char\.is_user\) break;/.test(scan),
+        'taking the user message as the target cut the history off before it');
+    assert.ok(scan.indexOf('char.is_user') < scan.indexOf('targetMessageIndex = i'),
+        'the user check has to run before the target is accepted');
+});

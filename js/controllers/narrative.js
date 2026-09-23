@@ -165,15 +165,19 @@
                 if (isRegen || actionVal === 'regen') {
                     for (let i = state.chat_history.length - 1; i >= 0; i--) {
                         const msg = state.chat_history[i];
-                        if (msg && msg.type === 'chat' && !msg.isHidden) {
-                            targetMessageIndex = i;
-                            targetId = msg.character_id;
-                            break;
-                        }
+                        if (!msg || msg.type !== 'chat' || msg.isHidden) continue;
+                        // Stop at the user's own message rather than regenerating it. Taking it
+                        // as the target cut the history off before it and asked for a reply from
+                        // the user's own character, which read as an answer to an older turn.
+                        const char = ReactiveStore.getCharacter(msg.character_id);
+                        if (char && char.is_user) break;
+                        targetMessageIndex = i;
+                        targetId = msg.character_id;
+                        break;
                     }
 
                     if (targetMessageIndex === null || !targetId) {
-                        UIManager.showNotification("No valid message to regenerate.", "error");
+                        UIManager.showNotification("There is no character reply to redo yet. Send a message first.", "error");
                         return;
                     }
                 } else if (actionVal === 'user' || actionVal === true) {
@@ -1069,6 +1073,15 @@ Return ONLY the physical description. Write in the 3rd person. No preamble.`;
                         } else {
                             console.error(`Swarm Error: ${error.message}`);
                         }
+                    }
+                    // Put the reply back. Without this the placeholder written above stayed in
+                    // the history as that character's turn, so the next prompt showed the model
+                    // "X is thinking..." where the last reply should be and it answered the
+                    // message before it instead. triggerAIResponse has always done this.
+                    if (targetMessageIndex !== null && originalContent !== null) {
+                        const target = state.chat_history[targetMessageIndex];
+                        if (target) target.content = originalContent;
+                        UIManager.renderChat();
                     }
                 } finally {
                     UIManager.setButtonToSendMode();

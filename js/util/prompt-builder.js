@@ -262,6 +262,26 @@ JSON Schema:
              * @returns {Array} - The history slice.
              * @private
              */
+            /**
+             * True for a leftover "<name> is thinking..." bubble.
+             *
+             * A regeneration replaces the message with that text while it runs and puts the
+             * original back if it fails. Director Mode did not put it back, so stories carry
+             * placeholders where a reply should be. Sent to the model they read as that
+             * character's actual turn, and the reply answers the message before it instead.
+             *
+             * The whole message must be exactly the placeholder: a real reply that happens to
+             * contain the phrase keeps its other sentences and is not matched. Fixing the cause
+             * does nothing for the ones already saved, so they are skipped here too rather than
+             * deleted out of anyone's story.
+             * @param {string} content
+             * @returns {boolean}
+             */
+            isThinkingPlaceholder(content) {
+                if (typeof content !== 'string') return false;
+                return /^.{1,60} is thinking\.\.\.$/.test(content.trim());
+            },
+
             _getSmartHistorySlice(history, maxSpaces = 8000, activeCharId = null) {
                 if (!Array.isArray(history)) return [];
 
@@ -273,6 +293,7 @@ JSON Schema:
                     if (msg.exclusive_to_char_id && msg.exclusive_to_char_id !== activeCharId) {
                         return false;
                     }
+                    if (this.isThinkingPlaceholder(msg.content)) return false;
                     return true;
                 });
 
