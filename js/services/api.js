@@ -19,7 +19,12 @@
 
             // Ceiling on one reply. On a model that reasons this covers the thinking as well
             // as the visible text, so it needs headroom for both or the reply comes back empty.
-            MAX_OUTPUT_TOKENS: 4096,
+            //
+            // Nothing is billed for headroom - tokens are charged as generated, not as budgeted -
+            // so this is the app-wide value rather than something the style guide switches on.
+            // Tying it to that toggle meant turning the guide off silently restored the ceiling
+            // that produced empty replies in the first place.
+            MAX_OUTPUT_TOKENS: 15000,
 
             getLastThinking() {
                 return this.lastThinking || "";

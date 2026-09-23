@@ -2305,3 +2305,10 @@ test('redo with a directive never targets the user own message', () => {
     assert.ok(scan.indexOf('char.is_user') < scan.indexOf('targetMessageIndex = i'),
         'the user check has to run before the target is accepted');
 });
+
+test('the reply ceiling does not depend on the style guide being on', () => {
+    const api = fs.readFileSync(path.join(__dirname, 'js', 'services', 'api.js'), 'utf8');
+    const cap = api.match(/MAX_OUTPUT_TOKENS:\s*(\d+)/);
+    assert.ok(cap && Number(cap[1]) >= 15000,
+        'switching the guide off must not restore the ceiling that produced empty replies');
+});
