@@ -2312,3 +2312,26 @@ test('the reply ceiling does not depend on the style guide being on', () => {
     assert.ok(cap && Number(cap[1]) >= 15000,
         'switching the guide off must not restore the ceiling that produced empty replies');
 });
+
+test('style guide: the preset REPAIR example sentences are not shipped', () => {
+    const all = StyleGuide.prefix + '\n' + StyleGuide.lastMile;
+    // The author gives this instruction five times in his own post: a quantized route starts
+    // parroting these and writes a scene out of them instead of the user's story.
+    for (const line of [
+        'The boat leaves at dawn',
+        'two men short and the tide turns',
+        'expensive ticket buys a bed',
+        'You ordered before I',
+        'Grief cracked her voice',
+        'took the stairs two at a time',
+        'between cleaning days'
+    ]) {
+        assert.ok(!all.includes(line), `"${line}" is a demo sentence the model can mistake for story`);
+    }
+    // The rules they illustrated must survive.
+    for (const block of ['<comparative_emphasis_killswitch>', '<inner_state_killswitch>',
+        '<briefing_register_killswitch>', '<staccato_chop_killswitch>']) {
+        assert.ok(all.includes(block), `${block} is still there`);
+    }
+    assert.ok(/Written as: the assertion alone/.test(all), 'and so is the instruction each one carried');
+});
