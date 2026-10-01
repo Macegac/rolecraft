@@ -394,6 +394,11 @@
                     if (typeof MusicService !== 'undefined') MusicService.cycleVolume();
                 });
 
+                // Provider blacklist
+                ActionHandler.register('regen-other-provider', () => NarrativeController.regenOnDifferentProvider());
+                ActionHandler.register('provider-release', (ds) => AppController.releaseProvider(ds.id));
+                ActionHandler.register('provider-keep', (ds) => AppController.keepProvider(ds.id));
+
                 // Direct Character Context Menu
                 ActionHandler.register('direct-character', (ds, val) => {
                     if (typeof NarrativeController !== 'undefined') {

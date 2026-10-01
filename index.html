@@ -663,6 +663,14 @@
                     </svg>
                     Regen with Directive
                 </button>
+                <button data-action="regen-other-provider"
+                    class="direct-regen-btn hidden w-full text-left px-4 py-2 hover:bg-emerald-600/50 text-white text-sm transition-colors flex items-center">
+                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path>
+                    </svg>
+                    Regen on a different provider
+                </button>
             </div>
 
             <!-- Character Context Menu: long press or right click a character name in the chat.
@@ -3130,6 +3138,14 @@
                 </div>
 
                 <div id="openrouter-saved-models-list" class="mt-3 flex flex-wrap gap-2"></div>
+
+                <div class="mt-4">
+                    <h4 class="text-sm font-medium text-gray-200">Provider blacklist</h4>
+                    <p class="text-gray-400 text-xs mb-2">Providers this app will not use. Hold the redo
+                        button and choose Regen on a different provider to add the one that wrote a bad
+                        reply. A new entry lifts by itself unless you keep it.</p>
+                    <div id="openrouter-provider-blacklist" class="space-y-2"></div>
+                </div>
             </div>
             <div id="nanogpt-settings">
                 <div class="flex justify-between items-center mb-2">
@@ -4139,9 +4155,9 @@
 
     <!-- [SEC:JS:CORE] -->
     <!-- Application Logic -->
-    <script src="js/core/build-info.js?v=dfffcd0cd3"></script>
+    <script src="js/core/build-info.js?v=25da863f75"></script>
     <script src="js/core/dom.js?v=63eb132604"></script>
-    <script src="js/core/action-handler.js?v=04c5d70639"></script>
+    <script src="js/core/action-handler.js?v=03f991f3d5"></script>
     <script src="js/core/debounce.js?v=dce774dcea"></script>
     <script src="js/services/db.js?v=3378a69e50"></script>
     <script src="js/services/visual-lore.js?v=0f65ddfa8a"></script>
@@ -4150,7 +4166,7 @@
     <script src="js/services/vision-bridge.js?v=e4ebf34fa1"></script>
     <script src="js/services/story.js?v=3adcb84ab3"></script>
     <script src="js/state/state-manager.js?v=0b36cabf32"></script>
-    <script src="js/services/api.js?v=491b18ad62"></script>
+    <script src="js/services/api.js?v=d7b44d76da"></script>
     <script src="js/services/tts.js?v=b5903b4d34"></script>
     <script src="js/services/music.js?v=6de37ebcdc"></script>
     <script src="js/ui/modal-manager.js?v=eedc205bd3"></script>
@@ -4160,6 +4176,7 @@
     <script src="js/util/undo-stack.js?v=44e25af094"></script>
     <script src="js/util/diag-log.js?v=2a43613d07"></script>
     <script src="js/util/prompt-builder.js?v=439226dd57"></script>
+    <script src="js/util/provider-blacklist.js?v=e64560663f"></script>
     <script src="js/util/style-guide.js?v=61579c9b22"></script>
     <script src="js/util/text-formatter.js?v=211f6d886e"></script>
     <script src="js/util/image-processor.js?v=ab91a76e63"></script>
@@ -4168,14 +4185,14 @@
     <script src="js/state/reactive-store.js?v=15c3ac99a8"></script>
     <script src="js/ui/ui-components.js?v=dc91210157"></script>
     <script src="js/ui/ui-manager.js?v=28a114d829"></script>
-    <script src="js/controllers/app.js?v=f16a055623"></script>
+    <script src="js/controllers/app.js?v=0bda0d8d1b"></script>
     <script src="js/controllers/story-generation.js?v=0327e295bc"></script>
     <script src="js/controllers/in-story-generation.js?v=7adf398b93"></script>
     <script src="js/controllers/hub.js?v=580ef37402"></script>
     <script src="js/controllers/library.js?v=bd4af906df"></script>
     <script src="js/controllers/visual-master.js?v=2bbbb9cb42"></script>
     <script src="js/controllers/swarm.js?v=05a85299ee"></script>
-    <script src="js/controllers/narrative.js?v=82febc0006"></script>
+    <script src="js/controllers/narrative.js?v=82a0073f92"></script>
     <script src="js/controllers/text-mode.js?v=473844d73c"></script>
     <script src="js/controllers/crop.js?v=a2d1f4d345"></script>
     <script src="js/controllers/refine-mask.js?v=0316ba63ff"></script>
@@ -4183,8 +4200,8 @@
     <script src="js/controllers/inventory.js?v=d60cd29afb"></script>
     <script src="js/controllers/agents.js?v=6a67e60458"></script>
     <script src="js/controllers/history.js?v=ef41f00c31"></script>
-    <script src="js/controllers/diagnostics.js?v=d3792e043a"></script>
-    <script src="js/controllers/action-dispatcher.js?v=159b644ded"></script>
+    <script src="js/controllers/diagnostics.js?v=212e663caf"></script>
+    <script src="js/controllers/action-dispatcher.js?v=7b86f57538"></script>
     <script src="js/boot.js?v=c2d3cbcc39"></script>
     <!-- Onboarding Welcome Modal: Shown on first launch to guide new users -->
     <div id="onboarding-modal" class="hidden fixed inset-0 z-[90] flex items-center justify-center onboarding-backdrop">

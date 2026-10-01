@@ -110,14 +110,23 @@
                             contextMenu.querySelectorAll('.direct-new-btn').forEach(b => b.classList.toggle('hidden', isRegen));
                             contextMenu.querySelectorAll('.direct-regen-btn').forEach(b => b.classList.toggle('hidden', !isRegen));
 
+                            // Shown in the corner first so it can be measured at its natural
+                            // size, then placed. With fixed offsets the redo menu ran off the
+                            // right edge of a phone, and a second item put it under the finger
+                            // instead of above it.
+                            contextMenu.style.left = '10px';
+                            contextMenu.style.top = '10px';
+                            contextMenu.classList.remove('hidden');
+
                             let leftPos = e.clientX - 100;
-                            let topPos = e.clientY - 90;
+                            let topPos = e.clientY - contextMenu.offsetHeight - 10;
+                            const maxLeft = window.innerWidth - contextMenu.offsetWidth - 10;
+                            if (leftPos > maxLeft) leftPos = maxLeft;
                             if (leftPos < 10) leftPos = 10;
                             if (topPos < 10) topPos = 10;
 
                             contextMenu.style.left = `${leftPos}px`;
                             contextMenu.style.top = `${topPos}px`;
-                            contextMenu.classList.remove('hidden');
                         }
                     }
                 });

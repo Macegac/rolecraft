@@ -137,7 +137,10 @@
                     try {
                         const result = await original.apply(this, args);
                         const out = typeof result === 'string' ? result : (result && result.text) || '';
-                        DiagLog.add('ai', `${state.apiProvider} / ${model}${isJson ? ' (JSON)' : ''}: sent ${text.length} chars${images ? `, ${images} image(s)` : ''}, got ${out.length} chars${APIService.lastThinking ? ` + ${APIService.lastThinking.length} thinking` : ''} in ${Math.round(performance.now() - started)} ms`,
+                        // On OpenRouter one model is served by many providers; name the one that answered.
+                        const lastProvider = state.apiProvider === 'openrouter' ? APIService.lastProvider : null;
+                        const via = (lastProvider && lastProvider.name) ? ' via ' + lastProvider.name : '';
+                        DiagLog.add('ai', `${state.apiProvider} / ${model}${via}${isJson ? ' (JSON)' : ''}: sent ${text.length} chars${images ? `, ${images} image(s)` : ''}, got ${out.length} chars${APIService.lastThinking ? ` + ${APIService.lastThinking.length} thinking` : ''} in ${Math.round(performance.now() - started)} ms`,
                             { textLabel: 'prompt start', text: text.slice(0, 600) });
                         if (!out.trim()) DiagLog.add('warn', 'The AI returned an empty answer.');
                         return result;

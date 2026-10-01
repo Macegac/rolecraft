@@ -839,6 +839,7 @@
                     this.renderTokenVisualizer();
                 } else if (tabName === 'model') {
                     this.renderSavedOpenRouterModels();
+                    this.renderProviderBlacklist();
                     this.renderSavedNanoGPTModels();
                     // NEW: Populate Gemini Models dynamically
                     this.populateGeminiModels();
@@ -2482,6 +2483,49 @@
             </div>
         `;
                 }).join('');
+            },
+
+            /**
+             * Draws the providers the user has blocked, each with a way back.
+             */
+            renderProviderBlacklist() {
+                const container = document.getElementById('openrouter-provider-blacklist');
+                if (!container) return;
+
+                const now = Date.now();
+                const entries = ProviderBlacklist.active(ProviderBlacklist.load(), now);
+                if (entries.length === 0) {
+                    container.innerHTML = '<span class="text-xs text-gray-500 italic">No providers blocked.</span>';
+                    return;
+                }
+
+                container.innerHTML = entries.map(e => {
+                    const status = e.permanent
+                        ? 'Blocked until you release it'
+                        : 'Lifts in about ' + ProviderBlacklist.hoursLeft(e, now) + ' h';
+                    const keep = e.permanent ? '' : DOM.html`
+                    <button data-action="provider-keep" data-id="${e.slug}" class="px-3 py-2 text-xs rounded-lg bg-gray-700 hover:bg-red-700 text-white transition-colors">Keep blocked</button>`;
+                    return DOM.html`
+            <div class="flex flex-wrap items-center justify-between gap-2 bg-black/30 border border-gray-600 rounded-lg px-3 py-2">
+                <div class="min-w-0">
+                    <span class="block text-sm text-gray-200 break-words">${e.name}</span>
+                    <span class="block text-xs text-gray-500">${status}</span>
+                </div>
+                <div class="flex space-x-2 flex-shrink-0">${keep}
+                    <button data-action="provider-release" data-id="${e.slug}" class="px-3 py-2 text-xs rounded-lg bg-gray-700 hover:bg-indigo-600 text-white transition-colors">Release</button>
+                </div>
+            </div>`;
+                }).join('');
+            },
+
+            releaseProvider(slug) {
+                ProviderBlacklist.save(ProviderBlacklist.release(ProviderBlacklist.load(), slug));
+                this.renderProviderBlacklist();
+            },
+
+            keepProvider(slug) {
+                ProviderBlacklist.save(ProviderBlacklist.keep(ProviderBlacklist.load(), slug));
+                this.renderProviderBlacklist();
             },
 
             // --- OpenRouter Model Browser ---

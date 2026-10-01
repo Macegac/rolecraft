@@ -1283,6 +1283,14 @@ Return ONLY the physical description. Write in the 3rd person. No preamble.`;
                     }
                 }
 
+                // Remember which OpenRouter provider wrote this, so a bad one can be dropped later.
+                // On the normal path this is exactly the call that produced the text. In Director
+                // Mode it is the last call of the turn, which is the same provider in practice.
+                if (state.apiProvider === 'openrouter' && APIService.lastProvider) {
+                    newMessage.provider = APIService.lastProvider.name || '';
+                    newMessage.generationId = APIService.lastProvider.generationId || '';
+                }
+
                 // Process [STATE: ...] updates in the message content
                 if (typeof InventoryController !== 'undefined') {
                     InventoryController.processStateUpdates(newMessage);
@@ -1461,6 +1469,42 @@ Return ONLY the physical description. Write in the 3rd person. No preamble.`;
                     input.value = opt.prompt;
                     this.sendMessage();
                 }
+            },
+
+            /**
+             * Redoes the last reply with a different OpenRouter provider. The one that wrote it
+             * goes on the blacklist as a temporary entry, which the user can release or keep in
+             * Settings. Used when a provider starts answering badly: OpenRouter keeps routing an
+             * account back to the same one, so an ordinary redo cannot get away from it.
+             */
+            async regenOnDifferentProvider() {
+                const state = ReactiveStore.state;
+                if (state.apiProvider !== 'openrouter') {
+                    UIManager.showNotification('This only applies when the story runs on OpenRouter.', 'info');
+                    return;
+                }
+
+                // The reply a redo would replace. With none there (it was deleted), the provider
+                // that answered most recently is the one to drop.
+                let reply = null;
+                for (let i = state.chat_history.length - 1; i >= 0; i--) {
+                    const msg = state.chat_history[i];
+                    if (!msg || msg.type !== 'chat' || msg.isHidden) continue;
+                    const char = ReactiveStore.getCharacter(msg.character_id);
+                    if (char && !char.is_user) reply = msg;
+                    break;
+                }
+
+                const provider = await APIService.identifyProvider(reply);
+                if (!provider) {
+                    UIManager.showNotification('Could not tell which provider wrote that reply, so nothing was blocked.', 'error');
+                    return;
+                }
+
+                ProviderBlacklist.save(ProviderBlacklist.ban(ProviderBlacklist.load(), provider, Date.now()));
+                const hours = ProviderBlacklist.TEMP_MS / 3600000;
+                UIManager.showNotification(`Avoiding ${provider.name} for ${hours} hours. Release or keep it in Settings, Model tab.`, 'info');
+                await this.handleRegen();
             },
 
             /**

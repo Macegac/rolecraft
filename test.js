@@ -2335,3 +2335,99 @@ test('style guide: the preset REPAIR example sentences are not shipped', () => {
     }
     assert.ok(/Written as: the assertion alone/.test(all), 'and so is the instruction each one carried');
 });
+
+const ProviderBlacklist = vm.runInNewContext(
+    fs.readFileSync(path.join(__dirname, 'js', 'util', 'provider-blacklist.js'), 'utf8') + '\nProviderBlacklist', {});
+const HOUR = 3600000;
+const T0 = 1700000000000;
+const OPENINF = { slug: 'open-inference', name: 'OpenInference' };
+
+test('ProviderBlacklist: a ban is temporary and lifts by itself', () => {
+    const list = ProviderBlacklist.ban([], OPENINF, T0);
+    assert.equal(list.length, 1);
+    assert.equal(list[0].permanent, false);
+    assert.equal(JSON.stringify(ProviderBlacklist.slugs(list, T0)), '["open-inference"]');
+    assert.equal(JSON.stringify(ProviderBlacklist.slugs(list, T0 + 11 * HOUR)), '["open-inference"]');
+    assert.equal(JSON.stringify(ProviderBlacklist.slugs(list, T0 + 13 * HOUR)), '[]', 'a bad day is not a life sentence');
+    assert.equal(ProviderBlacklist.hoursLeft(list[0], T0 + 3 * HOUR), 9);
+});
+
+test('ProviderBlacklist: keep makes it permanent, release removes it', () => {
+    const kept = ProviderBlacklist.keep(ProviderBlacklist.ban([], OPENINF, T0), 'open-inference');
+    assert.equal(kept[0].permanent, true);
+    assert.equal(JSON.stringify(ProviderBlacklist.slugs(kept, T0 + 24 * 365 * HOUR)), '["open-inference"]');
+    assert.equal(ProviderBlacklist.release(kept, 'open-inference').length, 0);
+});
+
+test('ProviderBlacklist: banning again restarts the clock but never undoes a permanent ban', () => {
+    const first = ProviderBlacklist.ban([], OPENINF, T0);
+    const again = ProviderBlacklist.ban(first, OPENINF, T0 + 10 * HOUR);
+    assert.equal(again.length, 1, 'no duplicate entry');
+    assert.equal(JSON.stringify(ProviderBlacklist.slugs(again, T0 + 20 * HOUR)), '["open-inference"]');
+
+    const kept = ProviderBlacklist.keep(first, 'open-inference');
+    const rebanned = ProviderBlacklist.ban(kept, OPENINF, T0 + HOUR);
+    assert.equal(rebanned[0].permanent, true);
+});
+
+test('ProviderBlacklist: nothing becomes permanent on its own', () => {
+    const src = fs.readFileSync(path.join(__dirname, 'js', 'util', 'provider-blacklist.js'), 'utf8');
+    assert.equal((src.match(/permanent: true/g) || []).length, 1, 'only keep() sets it');
+    for (const f of ['js/controllers/narrative.js', 'js/services/api.js']) {
+        const code = fs.readFileSync(path.join(__dirname, f), 'utf8');
+        assert.ok(!/ProviderBlacklist\.keep\(/.test(code), `${f} must not promote a ban; only the Settings button does`);
+    }
+});
+
+test('ProviderBlacklist.resolveSlug: the reported name is not the id OpenRouter wants', () => {
+    const endpoints = [
+        { provider_name: 'OpenInference', tag: 'open-inference/fp8' },
+        { provider_name: 'Mancer 2', tag: 'mancer/fp8' },
+        { provider_name: 'AtlasCloud', tag: 'atlas-cloud/fp4' },
+        { provider_name: 'Azure', tag: 'azure/us' },
+        { provider_name: 'NoTag' }
+    ];
+    const slug = name => (ProviderBlacklist.resolveSlug(name, endpoints) || {}).slug;
+    assert.equal(slug('OpenInference'), 'open-inference');
+    assert.equal(slug('open-inference'), 'open-inference', 'a slug resolves to itself');
+    assert.equal(slug('Mancer 2'), 'mancer');
+    assert.equal(slug('ATLASCLOUD'), 'atlas-cloud');
+    assert.equal(slug('Azure'), 'azure', 'the region after the slash is not part of the id');
+    assert.equal(ProviderBlacklist.resolveSlug('Nobody', endpoints), null, 'an unknown name blocks nothing');
+    assert.equal(ProviderBlacklist.resolveSlug('', endpoints), null);
+    assert.equal(ProviderBlacklist.resolveSlug('NoTag', endpoints), null);
+});
+
+test('ProviderBlacklist.matches: spots a blocked provider answering anyway', () => {
+    const list = ProviderBlacklist.ban([], OPENINF, T0);
+    assert.equal(ProviderBlacklist.matches(list, 'OpenInference'), true);
+    assert.equal(ProviderBlacklist.matches(list, 'open-inference'), true);
+    assert.equal(ProviderBlacklist.matches(list, 'StreamLake'), false);
+    assert.equal(ProviderBlacklist.matches(list, ''), false);
+});
+
+test('OpenRouter requests: the blacklist only travels when something is blocked', () => {
+    const api = fs.readFileSync(path.join(__dirname, 'js', 'services', 'api.js'), 'utf8');
+    assert.ok(api.includes('...(blocked.length ? { provider: { ignore: blocked.map(e => e.slug) } } : {})'),
+        'an empty list must leave the request exactly as it was');
+    assert.ok(api.includes("res.headers.get('X-Provider-Name')"), 'the answering provider is read from the reply');
+    assert.ok(!/['"]X-OpenRouter-Metadata['"]\s*:/.test(api),
+        'OpenRouter refuses that request header from browsers, so sending it would fail every reply');
+});
+
+test('redo on a different provider: reachable from the hold menu and from Settings', () => {
+    const html = fs.readFileSync(HTML_PATH, 'utf8');
+    const item = html.slice(html.indexOf('data-action="regen-other-provider"'), html.indexOf('data-action="regen-other-provider"') + 200);
+    assert.ok(item.includes('direct-regen-btn'), 'shown only when the menu was opened from the redo button');
+    assert.ok(html.includes('id="openrouter-provider-blacklist"'));
+    const dispatcher = fs.readFileSync(path.join(__dirname, 'js', 'controllers', 'action-dispatcher.js'), 'utf8');
+    for (const action of ['regen-other-provider', 'provider-release', 'provider-keep']) {
+        assert.ok(dispatcher.includes(`ActionHandler.register('${action}'`), `${action} has a handler`);
+    }
+});
+
+test('the hold menu is measured before it is placed', () => {
+    const handler = fs.readFileSync(path.join(__dirname, 'js', 'core', 'action-handler.js'), 'utf8');
+    assert.ok(handler.includes('window.innerWidth - contextMenu.offsetWidth'), 'kept off the right edge of a phone');
+    assert.ok(handler.includes('e.clientY - contextMenu.offsetHeight'), 'and above the press point however many items it has');
+});

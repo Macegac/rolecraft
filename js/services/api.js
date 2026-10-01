@@ -17,6 +17,9 @@
             CALL_TIMEOUT_MS: 180000,
             CALL_TIMEOUT_LABEL: '3 minutes',
 
+            // The provider behind the most recent OpenRouter reply: { name, generationId }.
+            lastProvider: null,
+
             // Ceiling on one reply. On a model that reasons this covers the thinking as well
             // as the visible text, so it needs headroom for both or the reply comes back empty.
             //
@@ -709,12 +712,17 @@
                 // OpenRouter drops parameters the chosen model does not accept rather than
                 // erroring, so these can be sent unconditionally: Gemini takes only the
                 // first three and ignores the penalties, DeepSeek and GLM take them all.
+                // Providers the user has asked to avoid. Sent on every call, background ones
+                // included, so nothing drifts back to a provider that was just dropped.
+                const blocked = ProviderBlacklist.active(ProviderBlacklist.load(), Date.now());
+
                 const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
                     body: JSON.stringify({
                         model: model,
                         messages: messagesPayload,
+                        ...(blocked.length ? { provider: { ignore: blocked.map(e => e.slug) } } : {}),
                         // Generous, but bounded, so a failure costs seconds rather than minutes.
                         //
                         // This budget covers reasoning as well as the visible reply. A model
@@ -752,9 +760,21 @@
                     } catch (e) {
                         errorDetails += ` Response body: ${await res.text()}`;
                     }
+                    if (res.status === 404 && blocked.length) {
+                        errorDetails += ' Every provider for this model may be on your blacklist (Settings, Model tab).';
+                    }
                     throw new Error(`API Error: ${errorDetails}`);
                 }
                 const data = await res.json();
+
+                // Which provider answered. OpenRouter reports it in a reply header that browsers
+                // are allowed to read; the generation id is the fallback way to ask afterwards.
+                const providerName = res.headers.get('X-Provider-Name') || '';
+                this.lastProvider = { name: providerName, generationId: data.id || res.headers.get('X-Generation-Id') || '' };
+                if (providerName && ProviderBlacklist.matches(blocked, providerName)) {
+                    DiagLog.add('warn', `${providerName} answered although it is on the provider blacklist.`);
+                }
+
                 const choice = data.choices?.[0] || {};
                 const finishReason = choice.finish_reason || choice.native_finish_reason || "";
                 const msg = choice.message || {};
@@ -769,6 +789,38 @@
                 }
 
                 return { text: content.trim(), thinking: thinking.trim(), finishReason };
+            },
+
+            /**
+             * Works out which provider wrote a reply, as the slug OpenRouter's ignore list wants.
+             * Uses the name stored on the message, else the most recent one seen, else asks
+             * OpenRouter by generation id.
+             * @param {Object|null} msg - The chat message being redone, if there is one.
+             * @returns {Promise<{slug: string, name: string}|null>} null when it cannot be told.
+             */
+            async identifyProvider(msg) {
+                const state = StateManager.getState();
+                const global = StateManager.data.globalSettings;
+                const apiKey = global.openRouterKey || state.openRouterKey;
+                const model = state.openRouterModel || global.openRouterModel;
+                const last = this.lastProvider || {};
+                let name = (msg && msg.provider) || last.name || '';
+                const generationId = (msg && msg.generationId) || last.generationId || '';
+                try {
+                    if (!name && generationId && apiKey) {
+                        const res = await fetch(`https://openrouter.ai/api/v1/generation?id=${encodeURIComponent(generationId)}`, {
+                            headers: { 'Authorization': `Bearer ${apiKey}` }
+                        });
+                        if (res.ok) name = ((await res.json()).data || {}).provider_name || '';
+                    }
+                    if (!name || !model) return null;
+                    const list = await fetch(`https://openrouter.ai/api/v1/models/${model}/endpoints`);
+                    if (!list.ok) return null;
+                    return ProviderBlacklist.resolveSlug(name, ((await list.json()).data || {}).endpoints);
+                } catch (e) {
+                    console.warn('Could not identify the provider.', e);
+                    return null;
+                }
             },
 
             /**
