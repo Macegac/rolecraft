@@ -1471,6 +1471,45 @@ Return ONLY the physical description. Write in the 3rd person. No preamble.`;
                 }
             },
 
+            // --- Author's note: one standing rule per chat, sent with every reply. ---
+
+            openAuthorNote() {
+                if (!StateManager.getLibrary().active_narrative_id) {
+                    UIManager.showNotification('Open a story first.', 'info');
+                    return;
+                }
+                const modal = document.getElementById('author-note-modal');
+                const field = document.getElementById('author-note-field');
+                field.value = ReactiveStore.state.author_note || '';
+                modal.classList.remove('hidden');
+                modal.classList.add('flex');
+                setTimeout(() => field.focus(), 50);
+            },
+
+            closeAuthorNote() {
+                const modal = document.getElementById('author-note-modal');
+                modal.classList.add('hidden');
+                modal.classList.remove('flex');
+            },
+
+            saveAuthorNote(text) {
+                const field = document.getElementById('author-note-field');
+                const note = (typeof text === 'string' ? text : field.value).trim();
+                ReactiveStore.state.author_note = note;
+                if (typeof ReactiveStore.forceSave === 'function') ReactiveStore.forceSave();
+                this.refreshAuthorNoteButton();
+                this.closeAuthorNote();
+                UIManager.showNotification(note ? "Author's note saved. It applies from the next reply." : "Author's note cleared.", 'success');
+            },
+
+            /** Marks the pencil when this chat has a note, so a rule in force is never invisible. */
+            refreshAuthorNoteButton() {
+                const dot = document.getElementById('author-note-dot');
+                if (!dot) return;
+                const note = ReactiveStore.state && ReactiveStore.state.author_note;
+                dot.classList.toggle('hidden', !(typeof note === 'string' && note.trim()));
+            },
+
             /**
              * Redoes the last reply with a different OpenRouter provider. The one that wrote it
              * goes on the blacklist as a temporary entry, which the user can release or keep in

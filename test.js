@@ -2431,3 +2431,54 @@ test('the hold menu is measured before it is placed', () => {
     assert.ok(handler.includes('window.innerWidth - contextMenu.offsetWidth'), 'kept off the right edge of a phone');
     assert.ok(handler.includes('e.clientY - contextMenu.offsetHeight'), 'and above the press point however many items it has');
 });
+
+const NotePB = vm.runInNewContext(
+    fs.readFileSync(path.join(__dirname, 'js', 'util', 'prompt-builder.js'), 'utf8') + '\nPromptBuilder',
+    { UTILITY: { stripThinking: t => t } });
+const fillNames = text => text.replace('{character}', 'Wren').replace('{user}', 'Player');
+
+test("author's note: nothing is added when the chat has none", () => {
+    assert.equal(NotePB.authorNoteBlock({}, fillNames), '');
+    assert.equal(NotePB.authorNoteBlock({ author_note: '' }, fillNames), '');
+    assert.equal(NotePB.authorNoteBlock({ author_note: '   \n ' }, fillNames), '', 'only spaces is still no note');
+    assert.equal(NotePB.authorNoteBlock({ author_note: 42 }, fillNames), '');
+    assert.equal(NotePB.authorNoteBlock(null, fillNames), '');
+});
+
+test("author's note: sent as a rule that overrides, with names filled in", () => {
+    const block = NotePB.authorNoteBlock({ author_note: '  {character} never uses pet names.  ' }, fillNames);
+    assert.ok(block.includes("## AUTHOR'S NOTE"));
+    assert.ok(block.includes('overrides anything above that conflicts with it'));
+    assert.ok(block.endsWith('Wren never uses pet names.'), 'the rule itself is the last line, trimmed');
+});
+
+test("author's note: the last instruction in every kind of reply prompt", () => {
+    const pb = fs.readFileSync(path.join(__dirname, 'js', 'util', 'prompt-builder.js'), 'utf8');
+    const styleTail = pb.indexOf('replacer(StyleGuide.lastMile)');
+    const note = pb.indexOf('p += this.authorNoteBlock(state, replacer);');
+    const anchor = pb.indexOf('+ components.charToAct.name + ":"', note);
+    assert.ok(styleTail > -1 && note > styleTail, "after the style guide's closing block, so the user's rule wins");
+    assert.ok(anchor > note && anchor - note < 120, 'and straight before the name the reply starts from');
+    assert.ok(pb.includes('instruction += this.authorNoteBlock(state, replacer);'), 'KoboldCPP templates carry it');
+    assert.ok(pb.includes('prompt += this.authorNoteBlock(state, this._getReplacer(char));'), 'Director Mode carries it');
+});
+
+test("author's note: belongs to the chat, not the story", () => {
+    const story = fs.readFileSync(path.join(__dirname, 'js', 'services', 'story.js'), 'utf8');
+    assert.ok(story.includes("author_note: currentState.author_note || '',"),
+        "a chat's saved record lists its fields one by one; an unlisted one is dropped on save");
+    assert.ok(!story.includes("'author_note'"),
+        'not in the story-level settings list, or every chat of a story would share one note');
+});
+
+test("author's note: the pencil has the image button's slot", () => {
+    const html = fs.readFileSync(HTML_PATH, 'utf8');
+    const pencil = html.indexOf('id="author-note-btn" data-action="open-author-note"');
+    const image = html.indexOf('id="upload-image-btn"');
+    assert.ok(pencil > -1 && image > pencil, 'the pencil comes first, in the same button grid');
+    assert.ok(html.slice(image, image + 220).includes('class="hidden '),
+        'the image button is hidden, not deleted, so its wiring still finds it');
+    assert.ok(html.includes('id="author-note-field"') && html.includes('id="author-note-dot"'));
+    const dispatcher = fs.readFileSync(path.join(__dirname, 'js', 'controllers', 'action-dispatcher.js'), 'utf8');
+    assert.ok(dispatcher.includes("ActionHandler.register('open-author-note'"));
+});

@@ -263,6 +263,25 @@ JSON Schema:
              * @private
              */
             /**
+             * The author's note for this chat, worded as a standing rule, or '' when none is set.
+             *
+             * It goes last in every reply prompt, after the style guide's own closing block, so
+             * the user's rule is the final instruction read and wins where the two disagree. It
+             * sits in the instruction section rather than in the conversation: a note placed as
+             * the newest chat line gets recited back as the reply.
+             * @param {Object} state
+             * @param {Function} replacer - Fills in {user} and {character}.
+             * @returns {string}
+             */
+            authorNoteBlock(state, replacer) {
+                const note = (state && typeof state.author_note === 'string') ? state.author_note.trim() : '';
+                if (!note) return '';
+                return "\n\n## AUTHOR'S NOTE\n" +
+                    "The author has set the rule below for this story. It applies to this reply and overrides anything above that conflicts with it. Follow it without mentioning it.\n" +
+                    replacer(note);
+            },
+
+            /**
              * True for a leftover "<name> is thinking..." bubble.
              *
              * A regeneration replaces the message with that text while it runs and puts the
@@ -810,6 +829,7 @@ JSON Schema:
                 // Last instruction before the reply anchor. A rule given once at the top of a
                 // long prompt is the one most often dropped, so the essentials are restated here.
                 if (state.enableStyleGuide) p += "\n\n" + replacer(StyleGuide.lastMile);
+                p += this.authorNoteBlock(state, replacer);
                 p += "\n### " + components.charToAct.name + ":";
 
                 // Extract images from history
@@ -888,6 +908,7 @@ JSON Schema:
                 }
 
                 instruction += " Do not repeat the character's name in the response itself.";
+                instruction += this.authorNoteBlock(state, replacer);
 
                 if (template === 'none') return this.buildDefaultPrompt(components, replacer);
 
@@ -1668,6 +1689,8 @@ Write only the character's message.`;
 
                 prompt += "\n[PERSPECTIVE]\n" +
                     "Write exclusively from the perspective of " + char.name + ". Describe your own actions and words. Maintain total immersion.";
+
+                prompt += this.authorNoteBlock(state, this._getReplacer(char));
 
                 return prompt;
             }

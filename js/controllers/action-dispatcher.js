@@ -394,6 +394,8 @@
                     if (typeof MusicService !== 'undefined') MusicService.cycleVolume();
                 });
 
+                ActionHandler.register('open-author-note', () => NarrativeController.openAuthorNote());
+
                 // Provider blacklist
                 ActionHandler.register('regen-other-provider', () => NarrativeController.regenOnDifferentProvider());
                 ActionHandler.register('provider-release', (ds) => AppController.releaseProvider(ds.id));

@@ -2339,6 +2339,8 @@
                 const state = StateManager.getState();
                 const chatWindow = document.getElementById('chat-window');
 
+                // The pencil's marker follows whichever chat is open.
+                NarrativeController.refreshAuthorNoteButton();
 
                 // 1. Empty State Check
                 if (!state || !state.chat_history) {

@@ -226,3 +226,15 @@
         input:checked+.toggle-bg:after {
             left: calc(100% - 2px - 1.25rem);
         }
+
+/* Author's note: a small mark on the pencil while this chat has a note in force. */
+.author-note-dot {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 7px;
+    height: 7px;
+    border-radius: 9999px;
+    background: #f472b6;
+    pointer-events: none;
+}

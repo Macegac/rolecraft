@@ -308,6 +308,7 @@
                     state: {
                         chat_history: safeChatHistory,
                         messageCounter: currentState.messageCounter,
+                        author_note: currentState.author_note || '',
                         static_entries: safeStaticEntries,
                         worldMap: safeWorldMap,
                         character_stats: currentState.character_stats || {},
