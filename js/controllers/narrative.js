@@ -1481,6 +1481,9 @@ Return ONLY the physical description. Write in the 3rd person. No preamble.`;
                 const modal = document.getElementById('author-note-modal');
                 const field = document.getElementById('author-note-field');
                 field.value = ReactiveStore.state.author_note || '';
+                const inUse = this.savedAuthorNotes().find(n => n.text === field.value.trim());
+                document.getElementById('author-note-name').value = inUse ? inUse.name : '';
+                this.renderSavedAuthorNotes(inUse ? inUse.name : '');
                 modal.classList.remove('hidden');
                 modal.classList.add('flex');
                 setTimeout(() => field.focus(), 50);
@@ -1508,6 +1511,74 @@ Return ONLY the physical description. Write in the 3rd person. No preamble.`;
                 if (!dot) return;
                 const note = ReactiveStore.state && ReactiveStore.state.author_note;
                 dot.classList.toggle('hidden', !(typeof note === 'string' && note.trim()));
+            },
+
+            // Saved notes are kept app-wide, not per chat, so one written with {character} and
+            // {user} can be loaded into any chat. Loading copies the text: editing a chat's note
+            // later never changes the saved one, and removing a saved one leaves chats alone.
+
+            savedAuthorNotes() {
+                const list = StateManager.data.globalSettings.saved_author_notes;
+                return Array.isArray(list) ? list.filter(n => n && typeof n.name === 'string' && typeof n.text === 'string') : [];
+            },
+
+            renderSavedAuthorNotes(selectedName) {
+                const select = document.getElementById('author-note-saved');
+                const notes = this.savedAuthorNotes().sort((a, b) => a.name.localeCompare(b.name));
+                select.innerHTML = '';
+                const first = document.createElement('option');
+                first.value = '';
+                first.textContent = notes.length ? 'Load a saved note...' : 'No saved notes yet';
+                select.appendChild(first);
+                notes.forEach(n => {
+                    const opt = document.createElement('option');
+                    opt.value = n.name;
+                    opt.textContent = n.name;
+                    select.appendChild(opt);
+                });
+                select.disabled = !notes.length;
+                select.value = notes.some(n => n.name === selectedName) ? selectedName : '';
+                document.getElementById('author-note-remove').classList.toggle('hidden', !select.value);
+            },
+
+            loadSavedAuthorNote(name) {
+                const note = this.savedAuthorNotes().find(n => n.name === name);
+                document.getElementById('author-note-remove').classList.toggle('hidden', !note);
+                if (!note) return;
+                document.getElementById('author-note-field').value = note.text;
+                document.getElementById('author-note-name').value = note.name;
+            },
+
+            addAuthorNoteToList() {
+                const nameField = document.getElementById('author-note-name');
+                const name = nameField.value.trim();
+                const text = document.getElementById('author-note-field').value.trim();
+                if (!text) {
+                    UIManager.showNotification('Write the note first.', 'info');
+                    return;
+                }
+                if (!name) {
+                    UIManager.showNotification('Give it a name so you can find it later.', 'info');
+                    nameField.focus();
+                    return;
+                }
+                const notes = this.savedAuthorNotes();
+                const existing = notes.find(n => n.name.toLowerCase() === name.toLowerCase());
+                if (existing && existing.text !== text && !confirm(`Replace the saved note "${existing.name}"?`)) return;
+                StateManager.data.globalSettings.saved_author_notes = [...notes.filter(n => n !== existing), { name, text }];
+                StateManager.saveGlobalSettings();
+                this.renderSavedAuthorNotes(name);
+                UIManager.showNotification(existing ? `Replaced "${name}".` : `Added "${name}" to your saved notes.`, 'success');
+            },
+
+            removeSavedAuthorNote() {
+                const name = document.getElementById('author-note-saved').value;
+                if (!name || !confirm(`Remove the saved note "${name}"? Chats already using it keep their copy.`)) return;
+                StateManager.data.globalSettings.saved_author_notes = this.savedAuthorNotes().filter(n => n.name !== name);
+                StateManager.saveGlobalSettings();
+                document.getElementById('author-note-name').value = '';
+                this.renderSavedAuthorNotes('');
+                UIManager.showNotification(`Removed "${name}".`, 'success');
             },
 
             /**

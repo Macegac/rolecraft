@@ -2482,3 +2482,107 @@ test("author's note: the pencil has the image button's slot", () => {
     const dispatcher = fs.readFileSync(path.join(__dirname, 'js', 'controllers', 'action-dispatcher.js'), 'utf8');
     assert.ok(dispatcher.includes("ActionHandler.register('open-author-note'"));
 });
+
+function savedNotesPage({ answer = true } = {}) {
+    const toasts = [];
+    const asked = [];
+    const classes = () => { const set = new Set(); return { toggle: (c, on) => on ? set.add(c) : set.delete(c), contains: c => set.has(c) }; };
+    const select = {
+        options: [], disabled: false, _value: '', classList: classes(),
+        set innerHTML(_) { this.options = []; this._value = ''; },
+        appendChild(o) { this.options.push(o); },
+        get value() { return this._value; },
+        set value(v) { this._value = this.options.some(o => o.value === v) ? v : ''; }
+    };
+    const els = {
+        'author-note-saved': select,
+        'author-note-remove': { classList: classes() },
+        'author-note-field': { value: '' },
+        'author-note-name': { value: '', focus() {} }
+    };
+    const globalSettings = {};
+    let saves = 0;
+    const NC = vm.runInNewContext(
+        fs.readFileSync(path.join(__dirname, 'js', 'controllers', 'narrative.js'), 'utf8') + '\nNarrativeController', {
+            debounce: f => f,
+            document: { getElementById: id => els[id], createElement: () => ({ value: '', textContent: '' }) },
+            StateManager: { data: { globalSettings }, saveGlobalSettings: () => saves++ },
+            ReactiveStore: { state: {} },
+            UIManager: { showNotification: (m, kind) => toasts.push([m, kind]) },
+            confirm: q => { asked.push(q); return answer; }
+        });
+    return { NC, els, globalSettings, toasts, asked, saves: () => saves, setAnswer: a => { answer = a; } };
+}
+
+test("saved author's notes: kept app-wide, loaded into the box, removed", () => {
+    const p = savedNotesPage();
+    p.NC.renderSavedAuthorNotes('');
+    assert.equal(p.els['author-note-saved'].options[0].textContent, 'No saved notes yet');
+    assert.ok(p.els['author-note-saved'].disabled, 'nothing to pick yet');
+
+    p.els['author-note-field'].value = '  {character} stays cold toward {user}.  ';
+    p.els['author-note-name'].value = ' Cold ';
+    p.NC.addAuthorNoteToList();
+    assert.deepEqual(JSON.parse(JSON.stringify(p.globalSettings.saved_author_notes)),
+        [{ name: 'Cold', text: '{character} stays cold toward {user}.' }],
+        'trimmed, placeholders kept as written so any character fills them');
+    assert.equal(p.saves(), 1);
+    assert.equal(p.els['author-note-saved'].value, 'Cold', 'the one just added is shown as picked');
+    assert.ok(!p.els['author-note-saved'].disabled);
+
+    p.els['author-note-field'].value = 'Write short replies.';
+    p.els['author-note-name'].value = 'Brief';
+    p.NC.addAuthorNoteToList();
+    assert.deepEqual(p.els['author-note-saved'].options.map(o => o.textContent),
+        ['Load a saved note...', 'Brief', 'Cold'], 'listed by name');
+
+    p.els['author-note-field'].value = '';
+    p.els['author-note-name'].value = '';
+    p.NC.loadSavedAuthorNote('Cold');
+    assert.equal(p.els['author-note-field'].value, '{character} stays cold toward {user}.');
+    assert.equal(p.els['author-note-name'].value, 'Cold');
+    assert.ok(p.els['author-note-remove'].classList.contains('hidden') === false, 'Remove shows for a picked note');
+
+    p.els['author-note-saved'].value = 'Cold';
+    p.NC.removeSavedAuthorNote();
+    assert.deepEqual([...p.globalSettings.saved_author_notes.map(n => n.name)], ['Brief']);
+    assert.ok(p.asked[0].includes('keep their copy'), 'says chats using it are not changed');
+});
+
+test("saved author's notes: same name asks before replacing; nothing saved without a name or text", () => {
+    const p = savedNotesPage({ answer: false });
+    p.els['author-note-field'].value = 'Old rule.';
+    p.els['author-note-name'].value = 'Mood';
+    p.NC.addAuthorNoteToList();
+
+    p.els['author-note-field'].value = 'New rule.';
+    p.els['author-note-name'].value = 'mood';
+    p.NC.addAuthorNoteToList();
+    assert.equal(p.asked.length, 1, 'a name that differs only in capitals is the same note');
+    assert.equal(p.globalSettings.saved_author_notes[0].text, 'Old rule.', 'declined, so the old one stays');
+
+    p.setAnswer(true);
+    p.NC.addAuthorNoteToList();
+    assert.deepEqual([...p.globalSettings.saved_author_notes.map(n => n.text)], ['New rule.'], 'replaced, not duplicated');
+
+    const before = p.saves();
+    p.els['author-note-name'].value = '';
+    p.NC.addAuthorNoteToList();
+    p.els['author-note-field'].value = '';
+    p.els['author-note-name'].value = 'Empty';
+    p.NC.addAuthorNoteToList();
+    assert.equal(p.saves(), before, 'neither one was saved');
+    assert.equal(p.globalSettings.saved_author_notes.length, 1);
+});
+
+test("saved author's notes: the editor shows which saved note a chat is using", () => {
+    const nar = fs.readFileSync(path.join(__dirname, 'js', 'controllers', 'narrative.js'), 'utf8');
+    const open = nar.slice(nar.indexOf('openAuthorNote() {'), nar.indexOf('closeAuthorNote() {'));
+    assert.ok(open.includes('this.renderSavedAuthorNotes('), 'the list is refreshed every time the editor opens');
+    assert.ok(open.includes('n.text === field.value.trim()'), "a chat whose note matches a saved one shows that one picked");
+    const html = fs.readFileSync(HTML_PATH, 'utf8');
+    const modal = html.slice(html.indexOf('id="author-note-modal"'));
+    for (const id of ['author-note-saved', 'author-note-remove', 'author-note-name']) {
+        assert.ok(modal.includes(`id="${id}"`), `${id} is inside the note editor`);
+    }
+});

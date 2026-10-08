@@ -4172,7 +4172,7 @@
 
     <!-- [SEC:JS:CORE] -->
     <!-- Application Logic -->
-    <script src="js/core/build-info.js?v=baf83a3036"></script>
+    <script src="js/core/build-info.js?v=acacb5c334"></script>
     <script src="js/core/dom.js?v=63eb132604"></script>
     <script src="js/core/action-handler.js?v=03f991f3d5"></script>
     <script src="js/core/debounce.js?v=dce774dcea"></script>
@@ -4209,7 +4209,7 @@
     <script src="js/controllers/library.js?v=bd4af906df"></script>
     <script src="js/controllers/visual-master.js?v=2bbbb9cb42"></script>
     <script src="js/controllers/swarm.js?v=05a85299ee"></script>
-    <script src="js/controllers/narrative.js?v=b20b520c94"></script>
+    <script src="js/controllers/narrative.js?v=f5fcae72f1"></script>
     <script src="js/controllers/text-mode.js?v=473844d73c"></script>
     <script src="js/controllers/crop.js?v=a2d1f4d345"></script>
     <script src="js/controllers/refine-mask.js?v=0316ba63ff"></script>
@@ -4668,9 +4668,23 @@
                 <p class="text-sm text-gray-400 mb-3">A rule for this chat. It goes out with every reply as the
                     last thing the AI reads, and it wins over anything else that disagrees with it. Leave it
                     empty for none.</p>
+                <div class="flex gap-2 mb-3">
+                    <select id="author-note-saved" onchange="NarrativeController.loadSavedAuthorNote(this.value)"
+                        class="flex-grow min-w-0 bg-gray-800 border border-gray-700 rounded-lg text-white px-3 py-2 text-sm focus:ring-2 focus:ring-pink-500 focus:border-pink-500 focus:outline-none disabled:opacity-50"></select>
+                    <button id="author-note-remove" onclick="NarrativeController.removeSavedAuthorNote()"
+                        class="hidden flex-shrink-0 bg-gray-800 hover:bg-gray-700 text-gray-300 font-semibold py-2 px-3 rounded-lg transition-colors border border-gray-700/50 text-sm">Remove</button>
+                </div>
                 <textarea id="author-note-field" rows="6"
                     class="w-full bg-gray-800 border border-gray-700 rounded-lg text-white px-4 py-2 text-sm focus:ring-2 focus:ring-pink-500 focus:border-pink-500 focus:outline-none transition-all shadow-inner"
                     placeholder="Example: Keep every reply under three paragraphs. {character} never uses pet names."></textarea>
+                <p class="text-xs text-gray-500 mt-2">Write {character} and {user} instead of names and a saved
+                    note works in any chat. {character} is whoever is replying.</p>
+                <div class="flex gap-2 mt-3">
+                    <input type="text" id="author-note-name" placeholder="Name it to keep it for other chats"
+                        class="flex-grow min-w-0 bg-gray-800 border border-gray-700 rounded-lg text-white px-3 py-2 text-sm focus:ring-2 focus:ring-pink-500 focus:border-pink-500 focus:outline-none">
+                    <button onclick="NarrativeController.addAuthorNoteToList()"
+                        class="flex-shrink-0 bg-gray-800 hover:bg-gray-700 text-gray-300 font-semibold py-2 px-3 rounded-lg transition-colors border border-gray-700/50 text-sm">Add to list</button>
+                </div>
             </div>
             <div class="mt-6 flex justify-end gap-3">
                 <button onclick="NarrativeController.saveAuthorNote('')"
