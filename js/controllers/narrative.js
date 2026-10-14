@@ -3048,18 +3048,7 @@ Return ONLY the physical description. Write in the 3rd person. No preamble.`;
                     // reasoned itself out of room, one that had been paid for in full. Say
                     // what happened and leave the story untouched instead.
                     if (!responseText || !responseText.trim()) {
-                        const ranOutOfRoom = finishReason === 'length';
-                        const thoughtOnly = !!(thinkingText && thinkingText.trim());
-                        let why;
-                        if (ranOutOfRoom && thoughtOnly) {
-                            why = 'The model used its whole reply on thinking and never got to the words. Try again, or pick a model that thinks less.';
-                        } else if (ranOutOfRoom) {
-                            why = 'The reply hit the length limit before any text came through. Try again.';
-                        } else if (thoughtOnly) {
-                            why = 'The model thought about its reply but returned no words. Try again.';
-                        } else {
-                            why = 'The model returned an empty reply. It may have declined this one. Try again, or rephrase.';
-                        }
+                        const why = UTILITY.emptyReplyReason(finishReason, thinkingText);
                         const emptyError = new Error(why);
                         emptyError.reported = true;
                         if (typeof UIManager !== 'undefined' && UIManager.showNotification) {

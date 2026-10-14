@@ -400,6 +400,18 @@ test('extractThinking: handles null or non-string inputs safely', () => {
     deepEq(UTILITY.extractThinking(undefined), { thinking: '', content: '' });
 });
 
+// ─── emptyReplyReason ─────────────────────────────────────────────────────
+
+test('emptyReplyReason: says why a reply had no words, the same way for story replies and the Workshop', () => {
+    assert.match(UTILITY.emptyReplyReason('length', 'pondering'), /used its whole reply on thinking/);
+    assert.match(UTILITY.emptyReplyReason('length', ''), /hit the length limit before any text/);
+    assert.match(UTILITY.emptyReplyReason('stop', 'pondering'), /thought about its reply but returned no words/);
+    assert.match(UTILITY.emptyReplyReason('stop', null), /returned an empty reply\. It may have declined/);
+    const narrative = fs.readFileSync(path.join(__dirname, 'js', 'controllers', 'narrative.js'), 'utf8');
+    assert.ok(narrative.includes('UTILITY.emptyReplyReason(finishReason, thinkingText)'), 'story replies use the shared wording');
+    assert.ok(!narrative.includes('never got to the words'), 'and no longer keep a copy of their own');
+});
+
 
 // ─── hex color math ───────────────────────────────────────────────────────
 
@@ -2082,7 +2094,8 @@ test('an empty reply is never committed as a blank message bubble', () => {
 
 test('an empty reply says whether the model ran out of room', () => {
     const nar = fs.readFileSync(path.join(__dirname, 'js', 'controllers', 'narrative.js'), 'utf8');
-    assert.ok(/finishReason === 'length'/.test(nar),
+    assert.ok(nar.includes('UTILITY.emptyReplyReason(finishReason, thinkingText)')
+        && UTILITY.emptyReplyReason('length', '') !== UTILITY.emptyReplyReason('stop', ''),
         'a reply cut off by the token cap reads differently from one the model declined');
     assert.ok(/emptyError\.reported = true/.test(nar),
         'marked reported so the catch below does not raise a second banner for it');
@@ -2702,4 +2715,349 @@ test("fake AI server: answers the browser's permission check, and its log never 
         assert.equal(logged[0].headers.authorization, '[hidden]');
         assert.ok(!fs.readFileSync(log, 'utf8').includes('sk-test-only'));
     });
+});
+
+test('fake AI server: thinking can come inside the reply, in <think> tags', async () => {
+    await withFakeAI(async ({ ask }) => {
+        const data = await (await ask({ messages: [{ role: 'user', content: 'Hi [[fake thinktags]]' }] })).json();
+        assert.match(data.choices[0].message.content, /^<think>.+<\/think>\nThis is a made-up reply/);
+        assert.equal(data.choices[0].message.reasoning, null);
+    });
+});
+
+// ─── WorkshopAI: the Character Workshop's model connection ───────────────────
+// The pure parts (settings, the request, the stream reader) are tested directly. chat() runs for
+// real against tools/fake-ai.js, pointed there by swapping OpenRouter's address.
+
+/** WorkshopAI with these settings, and the blacklist reading the same settings. */
+function loadWorkshopAI(globalSettings = {}, { state = {}, page = 'http://localhost:8785/' } = {}) {
+    const source = ['js/util/provider-blacklist.js', 'js/services/workshop-ai.js']
+        .map(file => fs.readFileSync(path.join(__dirname, file), 'utf8')).join('\n');
+    return vm.runInNewContext(source + '\nWorkshopAI', {
+        StateManager: { data: { globalSettings }, getState: () => state },
+        UTILITY, fetch, TextDecoder, AbortController, URL, setTimeout, clearTimeout,
+        window: { location: new URL(page) }
+    });
+}
+
+/** WorkshopAI talking to the fake server as if it were OpenRouter. */
+function workshopOnFake(url, globalSettings = {}) {
+    const W = loadWorkshopAI({ openRouterKey: 'sk-test-only', ...globalSettings });
+    W.BACKENDS.openrouter.url = `${url}/api`;
+    return W;
+}
+
+const sentRequests = log => fs.readFileSync(log, 'utf8').trim().split('\n').map(line => JSON.parse(line));
+
+test('WorkshopAI settings: DeepSeek V4.1 Flash on OpenRouter, thinking at medium, unless told otherwise', () => {
+    const cfg = loadWorkshopAI().resolveSettings({});
+    assert.equal(cfg.backend, 'openrouter');
+    assert.equal(cfg.url, 'https://openrouter.ai/api');
+    assert.equal(cfg.model, 'deepseek/deepseek-v4.1-flash');
+    assert.equal(cfg.reasoning, 'medium');
+    assert.equal(cfg.maxTokens, 16000);
+    assert.equal(cfg.secondOpinionModel, 'deepseek/deepseek-v4-pro-0813');
+    assert.equal(loadWorkshopAI().resolveSettings({ workshopReasoning: 'extreme', workshopBackend: 'nonsense' }).reasoning, 'medium', 'an unknown level falls back');
+});
+
+test('WorkshopAI settings: its own key first, then the main key, then one kept on the story', () => {
+    const W = loadWorkshopAI();
+    assert.equal(W.resolveSettings({ workshopOpenRouterKey: ' sk-own ', openRouterKey: 'sk-main' }).key, 'sk-own');
+    assert.equal(W.resolveSettings({ workshopOpenRouterKey: '', openRouterKey: 'sk-main' }).key, 'sk-main');
+    assert.equal(W.resolveSettings({}, { openRouterKey: 'sk-story' }).key, 'sk-story');
+    assert.deepEqual(['own', 'main', 'missing'], [
+        W.resolveSettings({ workshopOpenRouterKey: 'a' }).keySource, W.resolveSettings({ openRouterKey: 'b' }).keySource, W.resolveSettings({}).keySource]);
+    assert.equal(W.resolveSettings({ workshopBackend: 'koboldcpp', openRouterKey: 'sk-main' }).key, '', 'a local server never gets the OpenRouter key');
+});
+
+test('WorkshopAI settings: local servers fall back to their usual port and take whole pasted addresses', () => {
+    const W = loadWorkshopAI();
+    assert.equal(W.resolveSettings({ workshopBackend: 'koboldcpp' }).url, 'http://localhost:5001');
+    assert.equal(W.resolveSettings({ workshopBackend: 'lmstudio' }).url, 'http://localhost:1234');
+    assert.equal(W.resolveSettings({ workshopBackend: 'ollama' }).url, 'http://localhost:11434');
+    assert.equal(W.resolveSettings({ workshopBackend: 'ollama', workshopUrl: 'http://192.168.1.20:11434/v1/chat/completions' }).url, 'http://192.168.1.20:11434');
+    assert.equal(W.resolveSettings({ workshopBackend: 'koboldcpp' }).model, '', 'no OpenRouter model name goes to a local server');
+});
+
+test('WorkshopAI request: OpenRouter gets the key, the app credit, an explicit reasoning object and the blacklist', () => {
+    const W = loadWorkshopAI();
+    const messages = [{ role: 'system', content: 'Rules.' }, { role: 'user', content: 'Write it.' }];
+    const { url, init } = W.buildRequest({ messages, json: true, temperature: 0.8 }, W.resolveSettings({ openRouterKey: 'sk-main' }),
+        ['bad-host'], 'https://macegac.github.io/rolecraft/');
+    const body = JSON.parse(init.body);
+    assert.equal(url, 'https://openrouter.ai/api/v1/chat/completions');
+    assert.equal(init.headers['Authorization'], 'Bearer sk-main');
+    assert.equal(init.headers['HTTP-Referer'], 'https://macegac.github.io/rolecraft/');
+    assert.equal(init.headers['X-Title'], 'Rolecraft');
+    deepEq(body.messages, messages, 'the whole conversation, not one flattened prompt');
+    assert.equal(body.stream, true);
+    assert.equal(body.max_tokens, 16000);
+    assert.equal(body.temperature, 0.8);
+    deepEq(body.reasoning, { effort: 'medium' });
+    deepEq(body.provider, { ignore: ['bad-host'] });
+    deepEq(body.response_format, { type: 'json_object' });
+
+    const off = JSON.parse(W.buildRequest({ messages }, W.resolveSettings({ openRouterKey: 'k', workshopReasoning: 'off' }), []).init.body);
+    deepEq(off.reasoning, { enabled: false }, 'off is said out loud, not left to the provider');
+    assert.ok(!('provider' in off), 'an empty blacklist leaves the request alone');
+    assert.ok(!('response_format' in off) && !('temperature' in off));
+});
+
+test('WorkshopAI request: local servers get a plain request with no key, no reasoning and no blacklist', () => {
+    const W = loadWorkshopAI();
+    for (const backend of ['koboldcpp', 'lmstudio', 'ollama']) {
+        const { url, init } = W.buildRequest({ messages: [{ role: 'user', content: 'Hi' }], json: true },
+            W.resolveSettings({ workshopBackend: backend, openRouterKey: 'sk-main' }), ['bad-host'], 'https://x.test/');
+        const body = JSON.parse(init.body);
+        assert.equal(url, `${W.BACKENDS[backend].url}/v1/chat/completions`);
+        assert.ok(!init.headers['Authorization'], `${backend}: no key`);
+        assert.ok(!('reasoning' in body) && !('provider' in body), `${backend}: no OpenRouter extras`);
+        assert.equal(body.model, 'local-model', `${backend}: a stand-in name when none is set`);
+        assert.equal('response_format' in body, backend === 'ollama', `${backend}: JSON mode only where the server takes it`);
+    }
+});
+
+test('WorkshopAI request: from the https site, a home-network address is marked local so Chrome can allow it', () => {
+    const W = loadWorkshopAI();
+    deepEq(W.localNetworkOption('http://192.168.1.20:5001/v1/chat/completions', 'https:'), { targetAddressSpace: 'local' });
+    deepEq(W.localNetworkOption('http://desktop-pc:5001/v1/chat/completions', 'https:'), { targetAddressSpace: 'local' });
+    deepEq(W.localNetworkOption('http://localhost:5001/v1/chat/completions', 'https:'), {}, 'this device is allowed anyway');
+    deepEq(W.localNetworkOption('http://127.0.0.1:5001/v1/chat/completions', 'https:'), {});
+    deepEq(W.localNetworkOption('https://pc.example.ts.net/v1/chat/completions', 'https:'), {}, 'an https address needs nothing');
+    deepEq(W.localNetworkOption('http://192.168.1.20:5001/v1/chat/completions', 'http:'), {}, 'an http page is not blocked to begin with');
+});
+
+test('WorkshopAI stream: lines and characters cut across chunks come out whole', async () => {
+    const W = loadWorkshopAI();
+    const events = [
+        ': OPENROUTER PROCESSING',
+        'data: {"provider":"Testco","choices":[{"delta":{"role":"assistant","content":""}}]}',
+        'data: {"choices":[{"delta":{"content":"","reasoning":"Plan "}}]}',
+        'data: {"choices":[{"delta":{"content":null,"reasoning_content":"first."}}]}',
+        'data: {"choices":[{"delta":{"content":"Café "}}]}',
+        'data: {"choices":[{"delta":{"content":"au lait ☕"}}]}',
+        'data: {"choices":[{"delta":{"content":""},"finish_reason":"stop"}]}',
+        'data: [DONE]'
+    ].map(line => line + '\n\n').join('');
+    const bytes = new TextEncoder().encode(events);
+    // One byte at a time: every line, and every two- and three-byte character, arrives in pieces.
+    const body = new ReadableStream({ start(c) { for (const b of bytes) c.enqueue(new Uint8Array([b])); c.close(); } });
+    const seen = [];
+    let chunks = 0;
+    const out = await W.readStream(body, { onDelta: d => seen.push(d.text), onChunk: () => chunks++ });
+    assert.equal(out.text, 'Café au lait ☕');
+    assert.equal(out.thinking, 'Plan first.');
+    assert.equal(out.finishReason, 'stop');
+    assert.equal(out.provider, 'Testco');
+    assert.equal(chunks, bytes.length, 'every chunk counts as a sign of life, keep-alive lines included');
+    assert.deepEqual(seen.filter(Boolean), ['Café ', 'Café au lait ☕'], 'the text so far, each time more arrives');
+});
+
+test('WorkshopAI stream: an error chunk part way through is a failure, not a short reply', async () => {
+    const W = loadWorkshopAI();
+    const text = 'data: {"choices":[{"delta":{"content":"Half a "}}]}\n\n'
+        + 'data: {"provider":"Testco","error":{"code":502,"message":"Provider disconnected"},"choices":[{"delta":{"content":""},"finish_reason":"error"}]}\n\n';
+    const body = new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(text)); c.close(); } });
+    await assert.rejects(W.readStream(body), /stopped part way through \(Testco\): Provider disconnected/);
+});
+
+test('WorkshopAI chat: streams word by word from the fake server, with thinking and the provider', async () => {
+    await withFakeAI(async ({ url, log }) => {
+        const W = workshopOnFake(url);
+        const texts = [];
+        const reply = await W.chat({
+            messages: [{ role: 'system', content: 'Rules. [[fake delay=0 provider=Testco]]' }, { role: 'user', content: 'Write the Appearance section.' }],
+            onDelta: d => texts.push(d.text)
+        });
+        assert.match(reply.text, /"Write the Appearance section\."/);
+        assert.ok(reply.thinking.length > 0);
+        assert.equal(reply.provider, 'Testco');
+        assert.equal(reply.finishReason, 'stop');
+        assert.ok(texts.filter(Boolean).length > 5, 'many small updates, not one at the end');
+        const sent = sentRequests(log)[0];
+        assert.equal(sent.path, '/api/v1/chat/completions');
+        assert.equal(sent.body.model, 'deepseek/deepseek-v4.1-flash');
+        deepEq(sent.body.reasoning, { effort: 'medium' });
+        assert.ok(!('provider' in sent.body), 'nothing blocked, so no blacklist');
+        assert.equal(sent.headers['x-title'], 'Rolecraft');
+    });
+});
+
+test('WorkshopAI chat: blocked providers travel with every OpenRouter request', async () => {
+    await withFakeAI(async ({ url, log }) => {
+        const W = workshopOnFake(url, { provider_blacklist: [{ slug: 'bad-host', name: 'Bad Host', permanent: true, addedAt: 0 }] });
+        await W.chat({ messages: [{ role: 'user', content: 'Hi [[fake delay=0]]' }] });
+        deepEq(sentRequests(log)[0].body.provider, { ignore: ['bad-host'] });
+    });
+});
+
+test('WorkshopAI chat: JSON is cleaned out of fences, asked for once more when broken, and refused when cut off', async () => {
+    await withFakeAI(async ({ url, log }) => {
+        const W = workshopOnFake(url);
+        const fenced = await W.chat({ json: true, messages: [{ role: 'user', content: 'Pins please [[fake fenced delay=0]]' }] });
+        assert.equal(fenced.data.fake, true);
+        assert.equal(fenced.attempts, 1);
+
+        const retried = await W.chat({ json: true, messages: [{ role: 'user', content: 'Pins please [[fake badjson delay=0]]' }] });
+        assert.equal(retried.data.fake, true);
+        assert.equal(retried.attempts, 2);
+        const again = sentRequests(log).at(-1).body;
+        assert.equal(again.messages.at(-2).role, 'assistant', 'the model is shown what it sent');
+        assert.match(again.messages.at(-1).content, /JSON only/);
+        deepEq(again.response_format, { type: 'json_object' });
+
+        await assert.rejects(W.chat({ json: true, messages: [{ role: 'user', content: 'Pins [[fake length delay=0]]' }] }),
+            /length limit before its JSON was finished/);
+    });
+});
+
+test('WorkshopAI chat: a silent line is given up on, but keep-alive lines keep it going', async () => {
+    await withFakeAI(async ({ url }) => {
+        const W = workshopOnFake(url);
+        W.IDLE_MS = 150;
+        await assert.rejects(W.chat({ messages: [{ role: 'user', content: 'Hi [[fake stall=0.5 delay=0]]' }] }), /went quiet/);
+        const kept = await W.chat({ messages: [{ role: 'user', content: 'Hi [[fake stall=0.5 keepalive=0.05 delay=0]]' }] });
+        assert.match(kept.text, /made-up reply/, 'each keep-alive line restarted the timer');
+    });
+});
+
+test('WorkshopAI chat: Stop ends the request at once', async () => {
+    await withFakeAI(async ({ url }) => {
+        const W = workshopOnFake(url);
+        const stop = new AbortController();
+        const pending = W.chat({ messages: [{ role: 'user', content: 'A long story [[fake delay=50]]' }], signal: stop.signal, onDelta: () => stop.abort() });
+        await assert.rejects(pending, err => err.name === 'AbortError');
+    });
+});
+
+test('WorkshopAI chat: refusals, dropped streams and empty replies come back as plain-language errors', async () => {
+    await withFakeAI(async ({ url }) => {
+        const W = workshopOnFake(url);
+        await assert.rejects(W.chat({ messages: [{ role: 'user', content: '[[fake status=429]]' }] }), /^Error: Too many requests right now.*\(Fake error 429/);
+        await assert.rejects(W.chat({ messages: [{ role: 'user', content: '[[fake status=401]]' }] }), /OpenRouter did not accept the key/);
+        await assert.rejects(W.chat({ messages: [{ role: 'user', content: 'Hi [[fake midstream-error delay=0]]' }] }), /stopped part way through \(Fake\)/);
+        await assert.rejects(W.chat({ messages: [{ role: 'user', content: 'Hi [[fake empty delay=0]]' }] }), /thought about its reply but returned no words/);
+        await assert.rejects(loadWorkshopAI().chat({ messages: [{ role: 'user', content: 'Hi' }] }), /needs an OpenRouter key/);
+        await assert.rejects(loadWorkshopAI({ workshopBackend: 'koboldcpp', workshopUrl: 'http://127.0.0.1:9' }).chat({ messages: [{ role: 'user', content: 'Hi' }] }),
+            /Could not reach KoboldCPP at http:\/\/127\.0\.0\.1:9/);
+    });
+});
+
+test('WorkshopAI chat: a local server works too, and thinking sent inside <think> tags is split from the answer', async () => {
+    await withFakeAI(async ({ url, log }) => {
+        const W = loadWorkshopAI({ workshopBackend: 'koboldcpp', workshopUrl: url, openRouterKey: 'sk-main' });
+        const texts = [];
+        const tagged = await W.chat({ messages: [{ role: 'user', content: 'Hi [[fake delay=0 thinktags]]' }], onDelta: d => texts.push(d.text) });
+        assert.match(tagged.text, /^This is a made-up reply/);
+        assert.match(tagged.thinking, /The request is clear/);
+        assert.ok(texts.every(t => !t.includes('<think>')), 'the tags never show while it streams either');
+
+        const separate = await W.chat({ messages: [{ role: 'user', content: 'Hi [[fake delay=0 reasoning_content]]' }] });
+        assert.ok(separate.thinking.length > 0, 'reasoning_content is read too');
+        const sent = sentRequests(log)[0];
+        assert.equal(sent.path, '/v1/chat/completions');
+        assert.equal(sent.headers.authorization, undefined, 'no key goes to a local server');
+        assert.ok(!('reasoning' in sent.body));
+    });
+});
+
+test('WorkshopAI: leaves the story alone (its Stop button, its shared reply slots)', () => {
+    const service = fs.readFileSync(path.join(__dirname, 'js', 'services', 'workshop-ai.js'), 'utf8');
+    assert.ok(!service.includes('activeRequestAbortController'), "Send and Redo stop the story's request; they must not stop the Workshop's");
+    assert.ok(!/\.(lastThinking|lastProvider)\s*=/.test(service), 'the chat reads those slots');
+    assert.ok(!/APIService\.\w+\(/.test(service), 'it has its own connection');
+});
+
+test('Workshop model settings: wired into Settings → Model, the model browser, start-up and problem reports', () => {
+    const html = fs.readFileSync(HTML_PATH, 'utf8');
+    const modelTab = html.slice(html.indexOf('id="settings-model-content"'), html.indexOf('id="settings-image-gen-content"'));
+    const app = fs.readFileSync(path.join(__dirname, 'js', 'controllers', 'app.js'), 'utf8');
+    const globalKeys = app.slice(app.indexOf('MODEL_SETTING_KEYS: ['), app.indexOf(']', app.indexOf('MODEL_SETTING_KEYS: [')));
+    for (const [id, key] of [['workshop-backend', 'workshopBackend'], ['workshop-url', 'workshopUrl'], ['workshop-model', 'workshopModel'],
+        ['workshop-openrouter-key', 'workshopOpenRouterKey'], ['workshop-reasoning', 'workshopReasoning']]) {
+        assert.ok(modelTab.includes(`id="${id}" data-setting-key="${key}"`), `${id} is in Settings → Model, saved as ${key}`);
+        assert.ok(globalKeys.includes(`'${key}'`), `${key} is app-wide, not per story`);
+        assert.ok(app.includes(`setListener('${id}', '${key}')`), `${id} saves as you type`);
+    }
+    assert.ok(app.includes("this.RUNTIME.modelBrowserMode === 'workshop'"), 'the model browser can pick the Workshop model');
+    assert.ok(app.includes('WorkshopController.renderSettings()'), 'the block is filled in when the tab opens');
+
+    const controller = fs.readFileSync(path.join(__dirname, 'js', 'controllers', 'workshop.js'), 'utf8');
+    for (const action of new Set([...html.matchAll(/data-action(?:-change)?="(workshop-[a-z-]+)"/g), ...controller.matchAll(/data-action="(workshop-[a-z-]+)"/g)].map(m => m[1]))) {
+        assert.ok(controller.includes(`ActionHandler.register('${action}'`), `${action} has a handler`);
+    }
+    const boot = fs.readFileSync(path.join(__dirname, 'js', 'boot.js'), 'utf8');
+    assert.ok(boot.includes('WorkshopController.registerActions();'));
+    const diagnostics = fs.readFileSync(path.join(__dirname, 'js', 'controllers', 'diagnostics.js'), 'utf8');
+    assert.ok(/if \(typeof WorkshopAI !== 'undefined'\) \{\s*this\._wrap\(WorkshopAI, 'chat'/.test(diagnostics), 'every Workshop request goes in the problem report');
+    assert.ok(diagnostics.includes("'Workshop model': this._workshop()"), 'and the report header names its model, never its key');
+});
+
+function workshopSettingsPage({ answer = true } = {}) {
+    const toasts = [];
+    const asked = [];
+    const classes = () => {
+        const set = new Set();
+        return { toggle: (c, on) => (on ? set.add(c) : set.delete(c)), contains: c => set.has(c), add: c => set.add(c), remove: c => set.delete(c) };
+    };
+    const field = (value = '') => ({ value, placeholder: '', classList: classes(), focus() { } });
+    const els = {
+        'workshop-backend': field('openrouter'), 'workshop-url': field(), 'workshop-model': field(), 'workshop-reasoning': field(),
+        'workshop-setup-name': field(), 'workshop-setups': { innerHTML: '' },
+        'workshop-local-settings': field(), 'workshop-openrouter-settings': field(), 'workshop-reasoning-row': field(), 'workshop-browse-btn': field()
+    };
+    const globalSettings = {};
+    let saves = 0;
+    const source = ['js/core/dom.js', 'js/services/workshop-ai.js', 'js/controllers/workshop.js']
+        .map(file => fs.readFileSync(path.join(__dirname, file), 'utf8')).join('\n');
+    const WC = vm.runInNewContext(source + '\nWorkshopController', {
+        document: { getElementById: id => els[id] },
+        StateManager: { data: { globalSettings }, getState: () => ({}), saveGlobalSettings: () => saves++ },
+        UIManager: { showNotification: (m, kind) => toasts.push([m, kind]) },
+        UTILITY,
+        confirm: q => { asked.push(q); return answer; }
+    });
+    return { WC, els, globalSettings, toasts, asked, saves: () => saves, setAnswer: a => { answer = a; } };
+}
+
+test('Workshop setups: saved by name, switched with one tap, replaced only when confirmed', () => {
+    const p = workshopSettingsPage();
+    p.els['workshop-backend'].value = 'koboldcpp';
+    p.els['workshop-url'].value = 'http://192.168.1.20:5001';
+    p.els['workshop-setup-name'].value = 'PC Kobold';
+    p.WC.saveSetup();
+    p.els['workshop-backend'].value = 'openrouter';
+    p.els['workshop-url'].value = '';
+    p.els['workshop-model'].value = 'deepseek/deepseek-v4-pro-0813';
+    p.els['workshop-setup-name'].value = 'Pro';
+    p.WC.saveSetup();
+    deepEq(p.globalSettings.workshopSetups, [
+        { name: 'PC Kobold', backend: 'koboldcpp', url: 'http://192.168.1.20:5001', model: '' },
+        { name: 'Pro', backend: 'openrouter', url: '', model: 'deepseek/deepseek-v4-pro-0813' }], 'keys are never part of a setup');
+    assert.equal(p.els['workshop-setup-name'].value, '', 'the name box empties for the next one');
+
+    const savesBefore = p.saves();
+    p.WC.useSetup('PC Kobold');
+    assert.equal(p.saves(), savesBefore + 1, 'saved straight away');
+    assert.equal(p.globalSettings.workshopBackend, 'koboldcpp');
+    assert.equal(p.globalSettings.workshopUrl, 'http://192.168.1.20:5001');
+    assert.equal(p.globalSettings.workshopModel, '');
+    assert.equal(p.els['workshop-url'].value, 'http://192.168.1.20:5001', 'the fields show the switch');
+    assert.ok(!p.els['workshop-local-settings'].classList.contains('hidden'), 'and the address field is showing');
+    assert.ok(p.els['workshop-openrouter-settings'].classList.contains('hidden'), 'and the key field is not');
+    assert.match(p.els['workshop-setups'].innerHTML, /border-indigo-400[^>]*title="KoboldCPP at http:\/\/192\.168\.1\.20:5001, default model"/, 'the setup in use is outlined');
+
+    p.setAnswer(false);
+    p.els['workshop-setup-name'].value = 'pc kobold';
+    p.WC.saveSetup();
+    assert.equal(p.asked.length, 1, 'the same name in other capitals asks first');
+    assert.equal(p.globalSettings.workshopSetups.length, 2, 'declined, so nothing changed');
+
+    p.setAnswer(true);
+    p.WC.removeSetup('Pro');
+    deepEq(p.globalSettings.workshopSetups.map(s => s.name), ['PC Kobold']);
+
+    p.els['workshop-setup-name'].value = '';
+    p.WC.saveSetup();
+    assert.equal(p.toasts.at(-1)[0], 'Give the setup a name first.');
 });

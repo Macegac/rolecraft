@@ -56,6 +56,15 @@
                 return typeof prompt === 'string' ? prompt : (prompt && prompt.text) || '';
             },
 
+            /** The Workshop's model setup for the report header. Says which key it uses, never the key. */
+            _workshop() {
+                if (typeof WorkshopAI === 'undefined') return 'not loaded';
+                const cfg = WorkshopAI.settings();
+                if (cfg.backend !== 'openrouter') return `${cfg.backend} at ${cfg.url} / ${cfg.model || '(loaded model)'}`;
+                const key = { own: 'its own key', main: 'the main key', missing: 'NO KEY' }[cfg.keySource];
+                return `openrouter / ${cfg.model}, thinking ${cfg.reasoning}, ${key}`;
+            },
+
             /** Starts recording. Called first thing at startup. */
             install() {
                 if (this.installed) return;
@@ -150,6 +159,32 @@
                         throw err;
                     }
                 });
+
+                // The Character Workshop's requests. It has a model of its own, so its lines say so.
+                if (typeof WorkshopAI !== 'undefined') {
+                    this._wrap(WorkshopAI, 'chat', async function (original, args) {
+                        const opts = args[0] || {};
+                        const cfg = WorkshopAI.settings();
+                        const model = opts.model || cfg.model || '(loaded model)';
+                        const messages = Array.isArray(opts.messages) ? opts.messages : [];
+                        const sent = messages.reduce((n, m) => n + (typeof (m && m.content) === 'string' ? m.content.length : JSON.stringify((m && m.content) || '').length), 0);
+                        const last = messages.length ? messages[messages.length - 1] : null;
+                        const lastText = (last && typeof last.content === 'string') ? last.content : '';
+                        const started = performance.now();
+                        try {
+                            const result = await original.apply(this, args);
+                            const json = opts.json ? ` (JSON${result.attempts > 1 ? ', asked twice' : ''})` : '';
+                            DiagLog.add('ai', `Workshop: ${cfg.backend} / ${model}${result.provider ? ' via ' + result.provider : ''}${json}: sent ${sent} chars, got ${result.text.length} chars + ${result.thinking.length} thinking, finish ${result.finishReason || 'unknown'}, in ${Math.round(performance.now() - started)} ms`,
+                                { textLabel: 'last message', text: lastText.slice(0, 600) });
+                            return result;
+                        } catch (err) {
+                            const stopped = err && err.name === 'AbortError';
+                            DiagLog.add(stopped ? 'net' : 'error', `Workshop: ${cfg.backend} / ${model} ${stopped ? 'stopped' : `failed: ${err && err.message}`} after ${Math.round(performance.now() - started)} ms`,
+                                { textLabel: 'last message', text: lastText.slice(0, 600) });
+                            throw err;
+                        }
+                    });
+                }
 
                 // Turns: each send, pass, reroll or directive starts one.
                 this._wrap(NarrativeController, 'handlePrimaryAction', function (original, args) {
@@ -272,6 +307,7 @@
                     'Database': (typeof DBService !== 'undefined' && DBService.db) ? `open (version ${DBService.db.version})` : 'not open',
                     'AI provider': `${state.apiProvider || globals.apiProvider || 'none'} / ${this._model(state)}`,
                     'Key set': keyFor ? ((globals[keyFor] || state[keyFor]) ? 'yes' : 'NO') : 'n/a',
+                    'Workshop model': this._workshop(),
                     'Chat': `${(state.chat_history || []).length} entries, ${(state.chat_history || []).filter(m => m && m.type === 'chat').length} messages, counter ${state.messageCounter}`,
                     'Characters': `${(state.characters || []).length} (${(state.characters || []).filter(c => c.is_active).length} active)`,
                     'Modes': `Director ${state.swarmMode ? 'on' : 'off'}, Text Mode thread ${typeof TextModeController !== 'undefined' && TextModeController.isActive() ? 'open' : 'closed'}, response length ${state.responseLength || 'normal'}, image mode ${state.characterImageMode || 'none'}`,

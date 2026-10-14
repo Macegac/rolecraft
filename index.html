@@ -3664,6 +3664,114 @@
                 </div>
             </div>
 
+            <!-- Workshop model: the Character Workshop's own connection, separate from the story's
+                 model. Requests: [SEC:JS:SRV:WSAI]. This block: [SEC:JS:CTRL:WS]. -->
+            <div class="pt-6 border-t border-gray-700/50">
+                <h3 class="text-lg font-bold text-white mb-1">Workshop model</h3>
+                <p class="text-xs text-gray-500 mb-4">The model the Character Workshop writes and talks
+                    with. It is separate from the story's model, so building a character never changes
+                    how your chats are written.</p>
+
+                <div class="mb-4">
+                    <label class="block text-sm font-bold text-gray-400 mb-2">Backend</label>
+                    <select id="workshop-backend" data-setting-key="workshopBackend"
+                        data-action-change="workshop-backend-change"
+                        class="w-full rounded-lg p-3 bg-gray-700 border border-gray-600 text-white focus:border-indigo-500 transition-colors">
+                        <option value="openrouter">Cloud (OpenRouter)</option>
+                        <option value="koboldcpp">Local (KoboldCPP)</option>
+                        <option value="lmstudio">Local (LM Studio)</option>
+                        <option value="ollama">Local (Ollama)</option>
+                    </select>
+                </div>
+
+                <!-- Local servers: KoboldCPP / LM Studio / Ollama -->
+                <div id="workshop-local-settings" class="space-y-4 mb-4 hidden">
+                    <div>
+                        <label class="block text-xs uppercase text-gray-500 font-bold mb-1">Server address</label>
+                        <input type="text" id="workshop-url" data-setting-key="workshopUrl"
+                            data-action-change="workshop-fields-change" placeholder="http://localhost:5001"
+                            class="w-full bg-black/30 border border-gray-600 rounded p-2 text-sm text-white focus:border-indigo-500">
+                        <p class="text-xs text-gray-500 mt-1">Leave blank for the usual port on this device.
+                            Ollama also needs <code>OLLAMA_ORIGINS=https://macegac.github.io</code> set on
+                            the PC. From your phone: use the PC's home-network address (like
+                            <code>http://192.168.1.20:5001</code>), have the server listen on the network,
+                            and allow local network access when Chrome asks. If Chrome still blocks it, use
+                            an https address, such as the PC's Tailscale name.</p>
+                    </div>
+                </div>
+
+                <!-- OpenRouter -->
+                <div id="workshop-openrouter-settings" class="space-y-4 mb-4">
+                    <div>
+                        <label class="block text-xs uppercase text-gray-500 font-bold mb-1">OpenRouter API Key</label>
+                        <input type="password" id="workshop-openrouter-key" data-setting-key="workshopOpenRouterKey"
+                            placeholder="Leave blank to use your main key"
+                            class="w-full bg-black/30 border border-gray-600 rounded p-2 text-sm text-white focus:border-indigo-500">
+                    </div>
+                </div>
+
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-xs uppercase text-gray-500 font-bold mb-1">Model</label>
+                        <div class="flex space-x-2">
+                            <input type="text" id="workshop-model" data-setting-key="workshopModel"
+                                data-action-change="workshop-fields-change" placeholder="deepseek/deepseek-v4.1-flash"
+                                class="flex-grow min-w-0 bg-black/30 border border-gray-600 rounded p-2 text-sm text-white focus:border-indigo-500">
+                            <button type="button" id="workshop-browse-btn" data-action="workshop-browse-models"
+                                class="bg-gray-700 hover:bg-indigo-600 text-white font-bold py-2 px-3 rounded-lg transition-colors"
+                                title="Browse models" aria-label="Browse models">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M4 6h16M4 10h16M4 14h16M4 18h16"></path>
+                                </svg>
+                            </button>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-1">Blank means DeepSeek V4.1 Flash on OpenRouter.
+                            KoboldCPP uses whatever model is loaded; Ollama needs the model's name.</p>
+                    </div>
+
+                    <div id="workshop-reasoning-row">
+                        <label class="block text-xs uppercase text-gray-500 font-bold mb-1">Thinking</label>
+                        <select id="workshop-reasoning" data-setting-key="workshopReasoning"
+                            class="w-full bg-black/30 border border-gray-600 rounded p-2 text-sm text-white focus:border-indigo-500">
+                            <option value="off">Off</option>
+                            <option value="low">Low</option>
+                            <option value="medium">Medium</option>
+                            <option value="high">High</option>
+                        </select>
+                        <p class="text-xs text-gray-500 mt-1">The model thinks before it writes. That keeps pins
+                            more reliably and makes Takes more different, but each reply takes longer. Turn it
+                            down if replies feel slow.</p>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs uppercase text-gray-500 font-bold mb-1">Saved setups</label>
+                        <div class="flex space-x-2">
+                            <input type="text" id="workshop-setup-name" placeholder="Name this setup, e.g. PC Kobold"
+                                class="flex-grow min-w-0 bg-black/30 border border-gray-600 rounded p-2 text-sm text-white focus:border-indigo-500">
+                            <button type="button" data-action="workshop-save-setup"
+                                class="px-3 py-2 rounded bg-gray-700 hover:bg-indigo-600 text-sm text-white transition-colors">Save</button>
+                        </div>
+                        <div id="workshop-setups" class="mt-3 flex flex-wrap gap-2"></div>
+                        <p class="text-xs text-gray-500 mt-1">Saves the backend, address and model, so you can
+                            switch back with one tap. Keys are not part of a setup.</p>
+                    </div>
+
+                    <div>
+                        <div class="flex flex-wrap items-center gap-3">
+                            <button type="button" id="workshop-test-btn" data-action="workshop-test"
+                                class="px-3 py-2 rounded bg-gray-700 hover:bg-gray-600 text-sm text-white transition-colors">Test
+                                connection</button>
+                            <span id="workshop-test-status" class="text-xs text-gray-400">Sends one short message
+                                with these settings.</span>
+                        </div>
+                        <div id="workshop-test-output"
+                            class="hidden mt-2 bg-black/30 border border-gray-600 rounded p-2 text-sm text-gray-200 whitespace-pre-wrap break-words">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
         </div>
         <div id="settings-image-gen-content">
             <div class="mb-4">
@@ -4172,7 +4280,7 @@
 
     <!-- [SEC:JS:CORE] -->
     <!-- Application Logic -->
-    <script src="js/core/build-info.js?v=acacb5c334"></script>
+    <script src="js/core/build-info.js?v=a17dbfdb72"></script>
     <script src="js/core/dom.js?v=63eb132604"></script>
     <script src="js/core/action-handler.js?v=03f991f3d5"></script>
     <script src="js/core/debounce.js?v=dce774dcea"></script>
@@ -4186,8 +4294,9 @@
     <script src="js/services/api.js?v=d7b44d76da"></script>
     <script src="js/services/tts.js?v=b5903b4d34"></script>
     <script src="js/services/music.js?v=6de37ebcdc"></script>
+    <script src="js/services/workshop-ai.js?v=92d01952d5"></script>
     <script src="js/ui/modal-manager.js?v=eedc205bd3"></script>
-    <script src="js/util/utility.js?v=3df10c2159"></script>
+    <script src="js/util/utility.js?v=c9359e724e"></script>
     <script src="js/util/agent-schema.js?v=21a243728f"></script>
     <script src="js/util/agent-starters.js?v=8320d65f66"></script>
     <script src="js/util/undo-stack.js?v=44e25af094"></script>
@@ -4202,14 +4311,14 @@
     <script src="js/state/reactive-store.js?v=15c3ac99a8"></script>
     <script src="js/ui/ui-components.js?v=dc91210157"></script>
     <script src="js/ui/ui-manager.js?v=e2379ecdac"></script>
-    <script src="js/controllers/app.js?v=0bda0d8d1b"></script>
+    <script src="js/controllers/app.js?v=d5011ec3c7"></script>
     <script src="js/controllers/story-generation.js?v=0327e295bc"></script>
     <script src="js/controllers/in-story-generation.js?v=7adf398b93"></script>
     <script src="js/controllers/hub.js?v=580ef37402"></script>
     <script src="js/controllers/library.js?v=bd4af906df"></script>
     <script src="js/controllers/visual-master.js?v=2bbbb9cb42"></script>
     <script src="js/controllers/swarm.js?v=05a85299ee"></script>
-    <script src="js/controllers/narrative.js?v=f5fcae72f1"></script>
+    <script src="js/controllers/narrative.js?v=00e9a89882"></script>
     <script src="js/controllers/text-mode.js?v=473844d73c"></script>
     <script src="js/controllers/crop.js?v=a2d1f4d345"></script>
     <script src="js/controllers/refine-mask.js?v=0316ba63ff"></script>
@@ -4217,9 +4326,10 @@
     <script src="js/controllers/inventory.js?v=d60cd29afb"></script>
     <script src="js/controllers/agents.js?v=6a67e60458"></script>
     <script src="js/controllers/history.js?v=ef41f00c31"></script>
-    <script src="js/controllers/diagnostics.js?v=212e663caf"></script>
+    <script src="js/controllers/diagnostics.js?v=b96c876187"></script>
+    <script src="js/controllers/workshop.js?v=50a4620027"></script>
     <script src="js/controllers/action-dispatcher.js?v=0ec1c44d71"></script>
-    <script src="js/boot.js?v=c2d3cbcc39"></script>
+    <script src="js/boot.js?v=9b065260e6"></script>
     <!-- Onboarding Welcome Modal: Shown on first launch to guide new users -->
     <div id="onboarding-modal" class="hidden fixed inset-0 z-[90] flex items-center justify-center onboarding-backdrop">
         <div class="onboarding-container">

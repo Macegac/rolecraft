@@ -326,6 +326,24 @@
             },
 
             /**
+             * Why a reply came back with no words, in plain language. Story replies and the
+             * Character Workshop both say it the same way. Pure. Tested in test.js.
+             * @param {string} finishReason - 'length' when the model ran out of room.
+             * @param {string} thinking - Whatever thinking came back with it.
+             * @returns {string}
+             */
+            emptyReplyReason(finishReason, thinking) {
+                const ranOutOfRoom = finishReason === 'length';
+                const thoughtOnly = !!(thinking && thinking.trim());
+                if (ranOutOfRoom && thoughtOnly) {
+                    return 'The model used its whole reply on thinking and never got to the words. Try again, or pick a model that thinks less.';
+                }
+                if (ranOutOfRoom) return 'The reply hit the length limit before any text came through. Try again.';
+                if (thoughtOnly) return 'The model thought about its reply but returned no words. Try again.';
+                return 'The model returned an empty reply. It may have declined this one. Try again, or rephrase.';
+            },
+
+            /**
              * Safely sets the source of an image element, preventing placeholders from leaking.
              * @param {HTMLImageElement} img - The image element.
              * @param {string} src - The image source URI.

@@ -27,6 +27,8 @@
 //   delay=15           milliseconds between words
 //   reasoning_content  thinking in delta.reasoning_content (DeepSeek, LM Studio) instead of
 //                      delta.reasoning (OpenRouter)
+//   thinktags          thinking inside the reply between <think> tags, the way many local
+//                      models send it
 //   nothink            no thinking. It's also left out when the request turns reasoning off.
 //
 // Every chat request is added to the log, one JSON object per line, with the key hidden. The
@@ -97,6 +99,7 @@ function compose(body, n, { opts, inLast }) {
         finish = 'length';
     }
     const thinkingOff = opts.nothink || reasoning.enabled === false || reasoning.effort === 'none';
+    if (opts.thinktags && !thinkingOff) return { thinking: '', content: `<think>${THINKING}</think>\n${content}`, finish };
     return { thinking: thinkingOff ? '' : THINKING, content, finish };
 }
 

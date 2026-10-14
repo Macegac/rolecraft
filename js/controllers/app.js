@@ -26,6 +26,8 @@
                     // Vision Bridge Keys
                     'visionBridgeBackend', 'visionBridgeUrl', 'visionBridgeModel',
                     'visionBridgeOpenRouterKey', 'visionBridgeInstruction',
+                    // Character Workshop model keys
+                    'workshopBackend', 'workshopUrl', 'workshopModel', 'workshopOpenRouterKey', 'workshopReasoning',
                     // TTS Keys
                     'ttsEnabled', 'ttsVoice', 'ttsAutoPlayback', 'ttsBackend',
                     // Music Keys
@@ -840,6 +842,7 @@
                 } else if (tabName === 'model') {
                     this.renderSavedOpenRouterModels();
                     this.renderProviderBlacklist();
+                    if (typeof WorkshopController !== 'undefined') WorkshopController.renderSettings();
                     this.renderSavedNanoGPTModels();
                     // NEW: Populate Gemini Models dynamically
                     this.populateGeminiModels();
@@ -1268,6 +1271,13 @@
                 if (document.getElementById('vision-bridge-model')) setListener('vision-bridge-model', 'visionBridgeModel');
                 if (document.getElementById('vision-bridge-openrouter-key')) setListener('vision-bridge-openrouter-key', 'visionBridgeOpenRouterKey');
                 if (document.getElementById('vision-bridge-instruction')) setListener('vision-bridge-instruction', 'visionBridgeInstruction');
+
+                // --- Bindings: Character Workshop model (Model Tab) ---
+                if (document.getElementById('workshop-backend')) setListener('workshop-backend', 'workshopBackend');
+                if (document.getElementById('workshop-url')) setListener('workshop-url', 'workshopUrl');
+                if (document.getElementById('workshop-model')) setListener('workshop-model', 'workshopModel');
+                if (document.getElementById('workshop-openrouter-key')) setListener('workshop-openrouter-key', 'workshopOpenRouterKey');
+                if (document.getElementById('workshop-reasoning')) setListener('workshop-reasoning', 'workshopReasoning');
 
                 // --- Bindings: Image Generation Tab ---
                 if (document.getElementById('image-gen-backend')) setListener('image-gen-backend', 'imageGenBackend', () => {
@@ -2584,8 +2594,8 @@
 
                     // In text mode, still filter out any pure image-only generators that
                     // may have slipped through (e.g. models with text->image modality) to
-                    // keep the text browser clean.
-                    if (mode === 'text') {
+                    // keep the text browser clean. The Workshop writes text too.
+                    if (mode === 'text' || mode === 'workshop') {
                         models = models.filter(m => {
                             const id = m.id.toLowerCase();
                             const mod = m.architecture?.modality;
@@ -2672,6 +2682,8 @@
                     currentModel = global.imageGenOpenRouterModel || state.imageGenOpenRouterModel;
                 } else if (this.RUNTIME.modelBrowserMode === 'audio') {
                     currentModel = global.musicOpenRouterModel || 'google/lyria-3-clip-preview';
+                } else if (this.RUNTIME.modelBrowserMode === 'workshop') {
+                    currentModel = global.workshopModel || WorkshopAI.DEFAULTS.model;
                 } else {
                     currentModel = global.openRouterModel || state.openRouterModel;
                 }
@@ -2740,6 +2752,16 @@
                     }
                     StateManager.data.globalSettings.visionBridgeModel = modelId;
                     StateManager.saveGlobalSettings();
+                    this.closeModal('openrouter-model-modal');
+                    return;
+                }
+
+                if (this.RUNTIME.modelBrowserMode === 'workshop') {
+                    const input = document.getElementById('workshop-model');
+                    if (input) input.value = modelId;
+                    StateManager.data.globalSettings.workshopModel = modelId;
+                    StateManager.saveGlobalSettings();
+                    if (typeof WorkshopController !== 'undefined') WorkshopController.renderSetups();
                     this.closeModal('openrouter-model-modal');
                     return;
                 }
