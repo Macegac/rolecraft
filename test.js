@@ -2586,3 +2586,120 @@ test("saved author's notes: the editor shows which saved note a chat is using", 
         assert.ok(modal.includes(`id="${id}"`), `${id} is inside the note editor`);
     }
 });
+
+// ─── tools/fake-ai.js, the stand-in AI server ────────────────────────────────
+// The Workshop's AI code is tested against this instead of a real key, so these pin down what
+// it relies on: the reply shapes, the stream format, misbehaving on request, and a log that
+// never holds a key.
+
+const os = require('node:os');
+const FakeAI = require('./tools/fake-ai.js');
+
+/** Runs fn against a fresh fake server on a free port, then shuts it down. */
+async function withFakeAI(fn) {
+    const log = path.join(os.tmpdir(), `rolecraft-fake-ai-${process.pid}.log`);
+    const fake = await FakeAI.start({ port: 0, log, quiet: true });
+    const url = `http://127.0.0.1:${fake.port}`;
+    const ask = body => fetch(`${url}/api/v1/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer sk-test-only' },
+        body: JSON.stringify({ model: 'fake/model', ...body }),
+    });
+    try {
+        await fn({ url, ask, log });
+    } finally {
+        await fake.close();
+        fs.rmSync(log, { force: true });
+    }
+}
+
+/** The data: lines of a streamed reply, parsed. "[DONE]" stays a string. */
+function sseData(text) {
+    return text.split('\n').filter(line => line.startsWith('data: ')).map(line => line.slice(6))
+        .map(data => (data === '[DONE]' ? data : JSON.parse(data)));
+}
+
+test('fake AI server: a plain reply quotes the message and names its provider', async () => {
+    await withFakeAI(async ({ ask }) => {
+        const res = await ask({ messages: [{ role: 'system', content: 'Be brief. [[fake provider=Testco]]' }, { role: 'user', content: 'Hello there' }] });
+        assert.equal(res.status, 200);
+        assert.equal(res.headers.get('X-Provider-Name'), 'Testco');
+        const data = await res.json();
+        assert.equal(data.provider, 'Testco');
+        assert.match(data.choices[0].message.content, /"Hello there"/);
+        assert.ok(data.choices[0].message.reasoning, 'it thinks unless told not to');
+        assert.equal(data.choices[0].finish_reason, 'stop');
+
+        const quiet = await (await ask({ reasoning: { enabled: false }, messages: [{ role: 'user', content: 'Hi' }] })).json();
+        assert.equal(quiet.choices[0].message.reasoning, null, 'reasoning switched off means no thinking');
+    });
+});
+
+test('fake AI server: a stream sends all the thinking, then the reply, a finish reason and [DONE]', async () => {
+    await withFakeAI(async ({ ask }) => {
+        const res = await ask({ stream: true, messages: [{ role: 'user', content: 'Hello there [[fake delay=0 split]]' }] });
+        assert.equal(res.headers.get('Content-Type'), 'text/event-stream');
+        const events = sseData(await res.text());
+        assert.equal(events.at(-1), '[DONE]');
+        const chunks = events.slice(0, -1);
+        const deltas = chunks.map(c => c.choices[0].delta);
+        const lastThought = deltas.findLastIndex(d => d.reasoning);
+        assert.ok(lastThought >= 0 && lastThought < deltas.findIndex(d => d.content), 'the thinking all comes before the reply');
+        assert.match(deltas.map(d => d.content).join(''), /"Hello there"/);
+        assert.equal(chunks.at(-1).choices[0].finish_reason, 'stop');
+        assert.ok(chunks.at(-1).usage.total_tokens > 0);
+    });
+});
+
+test('fake AI server: a stall can keep the line alive the way OpenRouter does', async () => {
+    await withFakeAI(async ({ ask }) => {
+        const text = await (await ask({ stream: true, messages: [{ role: 'user', content: 'Hi [[fake delay=0 stall=0.15 keepalive=0.05]]' }] })).text();
+        assert.match(text, /^(: OPENROUTER PROCESSING\n\n)+data: /, 'keep-alive lines come before the first word');
+    });
+});
+
+test('fake AI server: JSON on request, in fences, or broken until a retry adds a message', async () => {
+    await withFakeAI(async ({ ask }) => {
+        const reply = async body => (await (await ask(body)).json()).choices[0].message.content;
+        assert.equal(JSON.parse(await reply({ response_format: { type: 'json_object' }, messages: [{ role: 'user', content: 'Hi' }] })).fake, true);
+        assert.match(await reply({ messages: [{ role: 'user', content: 'Hi [[fake fenced]]' }] }), /```json\n\{.*\}\n```/);
+
+        const asked = [{ role: 'user', content: 'Hi [[fake badjson]]' }];
+        const broken = await reply({ messages: asked });
+        assert.throws(() => JSON.parse(broken));
+        const retried = await reply({ messages: [...asked, { role: 'assistant', content: broken }, { role: 'user', content: 'Reply with JSON only.' }] });
+        assert.equal(JSON.parse(retried).fake, true);
+    });
+});
+
+test('fake AI server: fails on request, before the reply or partway through a stream', async () => {
+    await withFakeAI(async ({ ask }) => {
+        const refused = await ask({ messages: [{ role: 'user', content: '[[fake status=429]]' }] });
+        assert.equal(refused.status, 429);
+        assert.equal((await refused.json()).error.code, 429);
+
+        const events = sseData(await (await ask({ stream: true, messages: [{ role: 'user', content: 'A long story [[fake midstream-error delay=0]]' }] })).text());
+        assert.ok(!events.includes('[DONE]'), 'a dropped stream never says [DONE]');
+        assert.equal(events.at(-1).choices[0].finish_reason, 'error');
+        assert.ok(events.at(-1).error.message);
+    });
+});
+
+test("fake AI server: answers the browser's permission check, and its log never holds the key", async () => {
+    await withFakeAI(async ({ url, ask, log }) => {
+        const check = await fetch(`${url}/v1/chat/completions`, {
+            method: 'OPTIONS',
+            headers: { Origin: 'http://localhost:8785', 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'authorization,content-type' },
+        });
+        assert.equal(check.status, 204);
+        assert.equal(check.headers.get('Access-Control-Allow-Headers'), 'authorization,content-type');
+        assert.match(check.headers.get('Access-Control-Expose-Headers'), /X-Provider-Name/);
+
+        await (await ask({ messages: [{ role: 'user', content: 'Hi' }] })).text();
+        const logged = fs.readFileSync(log, 'utf8').trim().split('\n').map(line => JSON.parse(line));
+        assert.equal(logged.length, 1, 'one line per chat request');
+        assert.equal(logged[0].body.messages[0].content, 'Hi');
+        assert.equal(logged[0].headers.authorization, '[hidden]');
+        assert.ok(!fs.readFileSync(log, 'utf8').includes('sk-test-only'));
+    });
+});
