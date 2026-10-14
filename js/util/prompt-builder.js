@@ -224,7 +224,10 @@ JSON Schema:
                 const userName = userChar ? userChar.name : 'You';
                 return (text) => {
                     if (typeof text !== 'string') return '';
-                    let processedText = text.replace(/{character}/g, characterName);
+                    // Cards and the Workshop write {{char}} and {{user}}. They go first: {user} also
+                    // matches inside {{user}}, which used to reach the model as "{Name}".
+                    let processedText = text.replace(/\{\{char\}\}/gi, characterName).replace(/\{\{user\}\}/gi, userName);
+                    processedText = processedText.replace(/{character}/g, characterName);
                     processedText = processedText.replace(/{user}/g, userName);
                     return processedText;
                 };

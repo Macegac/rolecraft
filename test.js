@@ -2282,6 +2282,16 @@ test('style guide: the setting survives export and import', () => {
         'otherwise a shared story silently loses it');
 });
 
+test("replies read the names: {{char}} and {{user}} from cards and the Workshop, and Rolecraft's own {character} and {user}", () => {
+    const PB = vm.runInNewContext(
+        fs.readFileSync(path.join(__dirname, 'js', 'util', 'prompt-builder.js'), 'utf8') + '\nPromptBuilder',
+        { UTILITY: { stripThinking: t => t }, StateManager: { getState: () => ({ characters: [{ name: 'Mario', is_user: true }] }) } });
+    const replace = PB._getReplacer({ name: 'Kael' });
+    assert.equal(replace('{{char}} owes {{user}} a favour. {{Char}} and {{USER}}.'), 'Kael owes Mario a favour. Kael and Mario.');
+    assert.equal(replace('{character} owes {user} a favour.'), 'Kael owes Mario a favour.');
+    assert.ok(!replace('{{user}}').includes('{'), 'never "{Mario}"');
+});
+
 test('a leftover "is thinking" bubble never reaches the model', () => {
     const PB = vm.runInNewContext(
         fs.readFileSync(path.join(__dirname, 'js', 'util', 'prompt-builder.js'), 'utf8') + '\nPromptBuilder', { UTILITY: { stripThinking: t => t } });
