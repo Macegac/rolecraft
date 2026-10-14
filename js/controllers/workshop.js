@@ -226,10 +226,112 @@
              * save may have copied the story before this change, so wait for it, then save.
              */
             async _saveNow() {
+                await this._waitForSave();
+                await ReactiveStore.forceSave();
+            },
+
+            async _waitForSave() {
                 for (let waited = 0; ReactiveStore._isSaving && waited < 10000; waited += 100) {
                     await new Promise(resolve => setTimeout(resolve, 100));
                 }
-                await ReactiveStore.forceSave();
+            },
+
+            // ---------------------------------------------------------------------------------------
+            // The story's openings. They belong to the story, not the character, so the Workshop
+            // writes them into the story record itself, and only for the story's lead.
+            // ---------------------------------------------------------------------------------------
+
+            /** The open story as the Library keeps it, openings included. */
+            _story() {
+                if (typeof StateManager === 'undefined' || !StateManager.getLibrary) return null;
+                const library = StateManager.getLibrary();
+                const stories = (library && Array.isArray(library.stories)) ? library.stories : [];
+                return stories.find(s => s.id === library.active_story_id) || null;
+            },
+
+            _scenarios() {
+                const story = this._story();
+                return (story && Array.isArray(story.scenarios)) ? story.scenarios : [];
+            },
+
+            _userId() {
+                const user = ((ReactiveStore.state && ReactiveStore.state.characters) || []).find(c => c.is_user);
+                return user ? user.id : null;
+            },
+
+            /** Whether this Workshop holds the story's openings: only the story's lead does. */
+            _ownsOpenings(view) {
+                const scenarios = this._scenarios();
+                if (!view || scenarios.length === 0) return false;
+                const story = this._story();
+                const characters = (ReactiveStore.state && ReactiveStore.state.characters) || story.characters || [];
+                return WorkshopStore.leadOf(characters, scenarios) === view.charId;
+            },
+
+            /** The example dialogue as this version of the character has it: its own, or the story's. */
+            _examples(view, state) {
+                const own = WorkshopStore.examplesIn(state, view.ws.original);
+                return own !== null ? own : WorkshopStore.storyExamples(this._scenarios(), view.charId);
+            },
+
+            /** What the Workshop's AI reads about the openings, labelled O1, O2…, for the lead only. */
+            _extras(view) {
+                if (!this._ownsOpenings(view)) return null;
+                const state = WorkshopStore.active(view.ws).state;
+                return {
+                    openings: this._scenarios().map((sc, i) => ({ id: sc.id, label: `O${i + 1}`, ...WorkshopStore.openingIn(state, view.ws.original, sc) })),
+                    examples: this._examples(view, state)
+                };
+            },
+
+            /**
+             * Changes the story record, and the Library's copy of it. The open story's own saves read
+             * the record fresh and leave its openings alone, so waiting for a running save and holding
+             * autosave off while this writes is enough to keep either from undoing the other.
+             * @param {Function} mutate - Changes the story it is given; false means nothing to write.
+             * @returns {Promise<boolean>} Whether the story was written.
+             */
+            async _writeStory(mutate) {
+                const library = StateManager.getLibrary();
+                const storyId = library && library.active_story_id;
+                if (!storyId) return false;
+                await this._waitForSave();
+                const paused = !!ReactiveStore._isSavingPaused;
+                if (!paused) ReactiveStore.pauseSaving();
+                try {
+                    const story = await DBService.getStory(storyId);
+                    if (!story || !Array.isArray(story.scenarios) || mutate(story) === false) return false;
+                    story.last_modified = new Date().toISOString();
+                    await DBService.saveStory(story);
+                    const copy = (library.stories || []).find(s => s.id === storyId);
+                    if (copy) {
+                        copy.scenarios = JSON.parse(JSON.stringify(story.scenarios));
+                        copy.last_modified = story.last_modified;
+                    }
+                    return true;
+                } finally {
+                    if (!paused) ReactiveStore.resumeSaving();
+                }
+            },
+
+            /** Who the story's text is about: the lead, by id and name, and you. */
+            _cast(view) {
+                const character = this._character(view.charId);
+                return { leadId: view.charId, leadName: (character && character.name) || '', userId: this._userId() };
+            },
+
+            /** Writes the variant in use's openings and examples into the story, when they differ from it. */
+            async _syncOpenings(view) {
+                if (!this._ownsOpenings(view)) return;
+                const cast = this._cast(view);
+                if (!WorkshopStore.syncStory(this._scenarios(), view.ws, cast).changed) return;
+                const ws = view.ws;
+                await this._writeStory(story => {
+                    const result = WorkshopStore.syncStory(story.scenarios, ws, cast);
+                    if (!result.changed) return false;
+                    story.scenarios = result.scenarios;
+                    return true;
+                });
             },
 
             // ---------------------------------------------------------------------------------------
@@ -398,6 +500,7 @@
                     `<div id="ws-aibar-wrap">${this._aiBar(state)}</div>`,
                     '<div id="ws-sort-wrap"></div>',
                     ...state.sections.map(s => this._sectionCard(s)),
+                    `<div id="ws-openings-wrap">${this._openingsCard(state)}</div>`,
                     this._notesCard(state)
                 ].join('');
                 this.renderSortArea();
@@ -434,6 +537,23 @@
                 if (String((view.ws.original || {}).description || '').trim()) picks.push({ value: 'original', label: 'The original card' });
                 view.ws.variants.filter(v => !v.deletedAt && v.id !== active.id).forEach(v => picks.push({ value: v.id, label: `Variant: ${v.name}` }));
                 const chosen = picks.some(p => p.value === view.exportPick) ? view.exportPick : 'current';
+                // The story's lead also shows what its card's greetings and examples will be.
+                const extras = this._extras(view);
+                const greetings = extras ? DOM.html`
+                    <div class="ws-card">
+                        <h3 class="ws-label">First message</h3>
+                        <p class="ws-hint">The first opening.</p>
+                        <div class="ws-preview">${(extras.openings[0] && extras.openings[0].message.trim()) || 'Empty.'}</div>
+                    </div>
+                    <div class="ws-card">
+                        <h3 class="ws-label">Alternate greetings</h3>
+                        <p class="ws-hint">The other openings.</p>
+                        <div class="ws-preview">${extras.openings.slice(1).map(o => o.message.trim()).filter(Boolean).join('\n\n---\n\n') || 'None.'}</div>
+                    </div>
+                    <div class="ws-card">
+                        <h3 class="ws-label">Example dialogue</h3>
+                        <div class="ws-preview">${extras.examples.trim() || 'None.'}</div>
+                    </div>` : '';
                 document.getElementById('ws-card').innerHTML = DOM.html`
                     <div class="ws-card">
                         <h3 class="ws-label">Description</h3>
@@ -445,6 +565,7 @@
                         <p class="ws-hint">Goes into the card's scenario field when you export it. Replies don't read it.</p>
                         <div class="ws-preview">${scenario || 'Empty.'}</div>
                     </div>
+                    ${greetings}
                     <div class="ws-card">
                         <h3 class="ws-label">Export as a card</h3>
                         <p class="ws-hint">A PNG card for SillyTavern and other apps, showing the version you pick. The whole Workshop rides inside it, so importing it into Rolecraft brings everything back.</p>
@@ -629,6 +750,7 @@
             async _saveWs(view) {
                 try {
                     await this.applyWorkshop(view.charId, view.ws);
+                    await this._syncOpenings(view);
                     if (this.RUNTIME.view === view) this.renderNotice();
                 } catch (err) {
                     UIManager.showNotification(`The Workshop could not save that change: ${err.message}`, 'error');
@@ -715,7 +837,7 @@
             },
 
             async _sortCard(view, name, onDelta) {
-                const ask = WorkshopPrompts.sortCard({ name, state: WorkshopStore.active(view.ws).state });
+                const ask = WorkshopPrompts.sortCard({ name, state: WorkshopStore.active(view.ws).state, extras: this._extras(view) });
                 const sort = ask.read((await this._chat(view, ask, onDelta)).data);
                 view.ws = WorkshopStore.setPending(view.ws, '_sort', { kind: 'sort', ...sort, at: Date.now() });
                 await this._saveWs(view);
@@ -763,9 +885,17 @@
             },
 
             _busyTitle(busy) {
-                const state = WorkshopStore.active(this.RUNTIME.view.ws).state;
+                const view = this.RUNTIME.view;
+                const state = WorkshopStore.active(view.ws).state;
                 const title = busy.sectionId ? this._section(state, busy.sectionId).title : '';
                 if (busy.kind === 'sort') return String(state.unsorted || '').trim() ? 'Sorting the card into sections' : 'Drafting pins from the text';
+                if (String(busy.kind).startsWith('opening')) {
+                    const scenario = this._scenarios().find(s => s.id === busy.target);
+                    const name = scenario ? WorkshopStore.openingIn(state, view.ws.original, scenario).name : 'an opening';
+                    return { 'opening-write': `Writing the opening "${name}"`, 'opening-reweave': `Re-weaving the opening "${name}"`, 'opening-takes': `3 takes for the opening "${name}"` }[busy.kind];
+                }
+                if (busy.kind === 'examples-write') return 'Writing the example dialogue';
+                if (busy.kind === 'examples-reweave') return 'Re-weaving the example dialogue';
                 return {
                     write: `Writing ${title}`, reweave: `Re-weaving ${title}`, takes: `3 takes for ${title}`,
                     suggest: 'Suggesting pins', 'write-all': 'Writing the empty sections'
@@ -853,17 +983,18 @@
             },
 
             /**
-             * Runs one AI job: write or re-weave a section, three takes, suggested pins, or writing
-             * every empty section. One job at a time; Stop ends it.
+             * Runs one AI job: write or re-weave a section, three takes, suggested pins, writing every
+             * empty section, or the same for an opening (its id as target) or the example dialogue.
+             * One job at a time; Stop ends it.
              */
-            async _ask(kind, sectionId = null, creativity = null) {
+            async _ask(kind, sectionId = null, creativity = null, target = null) {
                 const view = this.RUNTIME.view;
                 if (!view || view.busy) return;
                 const character = this._character(view.charId);
                 const name = character ? character.name : '';
                 view.errors = {};
-                view.busy = { kind, sectionId, controller: new AbortController(), status: 'Asking the Workshop model...', label: '' };
-                this._redrawFor(sectionId);
+                view.busy = { kind, sectionId, target, controller: new AbortController(), status: 'Asking the Workshop model...', label: '' };
+                this._redrawFor(sectionId, kind);
                 const onDelta = ({ text, thinking }) => {
                     const el = document.getElementById('ws-busy-status');
                     if (el && view.busy) el.textContent = `${view.busy.label}${text ? `Writing... ${text.length} characters` : `Thinking... ${thinking.length} characters`}`;
@@ -873,18 +1004,26 @@
                     else if (kind === 'sort') await this._sortCard(view, name, onDelta);
                     else if (kind === 'write-all') await this._writeAll(view, name, onDelta);
                     else if (kind === 'takes') await this._takes(view, name, sectionId, creativity, onDelta);
+                    else if (kind === 'opening-write' || kind === 'opening-reweave') await this._writeOpening(view, name, target, kind === 'opening-reweave', onDelta);
+                    else if (kind === 'opening-takes') await this._openingTakes(view, name, target, creativity, onDelta);
+                    else if (kind === 'examples-write' || kind === 'examples-reweave') await this._writeExamples(view, name, kind === 'examples-reweave', onDelta);
                     else await this._write(view, name, sectionId, kind === 'reweave', onDelta);
                 } catch (err) {
-                    if (!(err && err.name === 'AbortError')) view.errors = { [sectionId || '_all']: (err && err.message) || 'The Workshop model did not answer.' };
+                    const where = sectionId || (target ? `o:${target}` : (kind.startsWith('examples') ? '_examples' : '_all'));
+                    if (!(err && err.name === 'AbortError')) view.errors = { [where]: (err && err.message) || 'The Workshop model did not answer.' };
                 } finally {
                     view.busy = null;
-                    if (this.RUNTIME.view === view) this._redrawFor(sectionId);
+                    if (this.RUNTIME.view === view) this._redrawFor(sectionId, kind);
                 }
             },
 
-            _redrawFor(sectionId) {
+            _redrawFor(sectionId, kind = '') {
                 this.renderProgress();
                 this.renderAiBar();
+                if (/^(opening|examples)/.test(kind)) {
+                    this.renderOpenings();
+                    return;
+                }
                 if (sectionId) {
                     this.renderSection(sectionId);
                     return;
@@ -898,7 +1037,7 @@
             },
 
             async _write(view, name, sectionId, reweave, onDelta) {
-                const ask = WorkshopPrompts.writeSection({ name, state: WorkshopStore.active(view.ws).state, sectionId, reweave });
+                const ask = WorkshopPrompts.writeSection({ name, state: WorkshopStore.active(view.ws).state, sectionId, reweave, extras: this._extras(view) });
                 const result = ask.read((await this._chat(view, ask, onDelta)).data);
                 view.ws = WorkshopStore.setPending(view.ws, sectionId, { kind: reweave ? 'reweave' : 'write', text: result.text, pinMap: result.pinMap, at: Date.now() });
                 await this._saveWs(view);
@@ -908,7 +1047,7 @@
                 const previous = (view.ws.pending || {})[sectionId];
                 const level = creativity || (previous && previous.creativity) || 3;
                 const ask = WorkshopPrompts.takes({
-                    name, state: WorkshopStore.active(view.ws).state, sectionId, avoid: (view.ws.avoid || {})[sectionId] || [], creativity: level
+                    name, state: WorkshopStore.active(view.ws).state, sectionId, avoid: (view.ws.avoid || {})[sectionId] || [], creativity: level, extras: this._extras(view)
                 });
                 const takes = ask.read((await this._chat(view, ask, onDelta)).data);
                 view.ws = WorkshopStore.setPending(view.ws, sectionId, { kind: 'takes', takes, creativity: level, at: Date.now() });
@@ -919,7 +1058,7 @@
                 const state = WorkshopStore.active(view.ws).state;
                 const sectionIds = state.sections.filter(s => !s.locked && !String(s.text || '').trim()).map(s => s.id);
                 if (sectionIds.length === 0) return;
-                const ask = WorkshopPrompts.suggestPins({ name, state, sectionIds });
+                const ask = WorkshopPrompts.suggestPins({ name, state, sectionIds, extras: this._extras(view) });
                 const suggestions = ask.read((await this._chat(view, ask, onDelta)).data);
                 const count = Object.keys(suggestions).length;
                 await this._change(`The AI suggested pins for ${count} section${count === 1 ? '' : 's'}`,
@@ -935,7 +1074,7 @@
                     const el = document.getElementById('ws-busy-status');
                     if (el) el.textContent = `${view.busy.label}starting...`;
                     const written = Object.fromEntries(Object.entries(view.ws.pending || {}).filter(([, p]) => this._isSectionProposal(p)));
-                    const ask = WorkshopPrompts.writeSection({ name, state: WorkshopStore.active(view.ws).state, sectionId: s.id, pending: written });
+                    const ask = WorkshopPrompts.writeSection({ name, state: WorkshopStore.active(view.ws).state, sectionId: s.id, pending: written, extras: this._extras(view) });
                     const result = ask.read((await this._chat(view, ask, onDelta)).data);
                     view.ws = WorkshopStore.setPending(view.ws, s.id, { kind: 'write', text: result.text, pinMap: result.pinMap, at: Date.now() });
                     await this._saveWs(view);
@@ -1013,6 +1152,12 @@
                     const value = el.value;
                     const what = { concept: 'the concept', notes: 'the story notes', unsorted: 'the unsorted card text' }[field];
                     this._change(`Edited ${what}`, next => { next[field] = value; });
+                } else if (field === 'opening' || field === 'opening-name') {
+                    view.editing = null;
+                    return this._setOpening(el.dataset.opening, field === 'opening' ? { message: el.value } : { name: String(el.value || '').trim() });
+                } else if (field === 'examples') {
+                    view.editing = null;
+                    return this._setExamples(el.value);
                 } else if (el.classList.contains('ws-pin-input')) {
                     if (el.dataset.pin) this.editPin(el.dataset.section, el.dataset.pin, el.value);
                     else this.addPin(el.dataset.section, el.value);
@@ -1069,6 +1214,385 @@
                         delete s.pinMap[ds.pin];
                     }
                 }, () => this.renderSection(ds.section));
+            },
+
+            // ---------------------------------------------------------------------------------------
+            // Openings: how new chats start, and the example dialogue before them.
+            // ---------------------------------------------------------------------------------------
+
+            /** Redraws the Openings card, leaving a field being typed in alone. */
+            renderOpenings() {
+                const wrap = document.getElementById('ws-openings-wrap');
+                const view = this.RUNTIME.view;
+                if (!wrap || !view) return;
+                const typing = document.activeElement;
+                if (typing && wrap.contains(typing) && typing.matches('textarea, input')) return;
+                wrap.innerHTML = this._openingsCard(WorkshopStore.active(view.ws).state);
+                this._growAll(wrap);
+                const field = wrap.querySelector('[data-ws-field="opening"], [data-ws-field="opening-name"], [data-ws-field="examples"], #ws-opening-new-name');
+                if (field) {
+                    field.focus();
+                    if (field.setSelectionRange) field.setSelectionRange(field.value.length, field.value.length);
+                }
+            },
+
+            /** The story's openings and the example dialogue, in the lead's Workshop only. */
+            _openingsCard(state) {
+                const view = this.RUNTIME.view;
+                if (!this._ownsOpenings(view)) return '';
+                const busy = !!view.busy;
+                const errors = view.errors || {};
+                const character = this._character(view.charId);
+                const name = (character && character.name) || 'The character';
+                const openings = this._scenarios().map((sc, i) => this._openingBlock(sc, i, state, busy, errors));
+                const adding = view.editing === 'o:new' ? DOM.html`
+                    <div class="ws-opening is-new">
+                        <input type="text" id="ws-opening-new-name" class="ws-opening-name-input" maxlength="80" placeholder="Its name, e.g. Storm night" aria-label="Name of the new opening">
+                        <textarea id="ws-opening-new-text" class="ws-field" rows="4" placeholder="How this chat starts" aria-label="The new opening"></textarea>
+                        <div class="ws-proposal-actions">
+                            <button type="button" class="ws-btn is-primary" data-action="workshop-opening-add">Add it</button>
+                            <button type="button" class="ws-btn" data-action="workshop-opening-cancel">Cancel</button>
+                        </div>
+                    </div>` : DOM.html`<button type="button" class="ws-pin-add" data-action="workshop-opening-new">+ Add an opening</button>`;
+                return DOM.html`
+                    <article class="ws-card ws-openings" id="ws-openings">
+                        <h3 class="ws-label">Openings</h3>
+                        <p class="ws-hint">How new chats start. A change goes into the story, so the next chat you start uses it; the open chat keeps the first message it already has.</p>
+                        ${openings}
+                        ${adding}
+                        ${this._examplesBlock(state, name, busy, errors)}
+                    </article>`.toString();
+            },
+
+            _openingBlock(sc, index, state, busy, errors) {
+                const view = this.RUNTIME.view;
+                const opening = WorkshopStore.openingIn(state, view.ws.original, sc);
+                const key = `o:${sc.id}`;
+                const label = opening.name || `Opening ${index + 1}`;
+                const hasText = !!opening.message.trim();
+                const title = view.editing === `${key}:name`
+                    ? DOM.html`<input type="text" class="ws-opening-name-input" data-ws-field="opening-name" data-opening="${sc.id}" value="${opening.name}" maxlength="80" aria-label="Name of this opening">`
+                    : DOM.html`<button type="button" class="ws-opening-name" data-action="workshop-opening-rename" data-opening="${sc.id}" title="Rename it">${label}</button>`;
+                let body;
+                if (view.editing === key) {
+                    body = DOM.html`<textarea class="ws-field" data-ws-field="opening" data-opening="${sc.id}" rows="5" aria-label="${label}">${opening.message}</textarea>`;
+                } else if (hasText) {
+                    body = DOM.html`<div class="ws-text" data-action="workshop-opening-edit" data-opening="${sc.id}" role="button" tabindex="0" aria-label="Edit ${label}">${opening.message}</div>`;
+                } else {
+                    body = DOM.html`<div class="ws-text is-empty" data-action="workshop-opening-edit" data-opening="${sc.id}" role="button" tabindex="0">Empty. Tap to write it yourself.</div>`;
+                }
+                const pending = (view.ws.pending || {})[key];
+                let proposal = '';
+                if (pending && pending.kind === 'opening-takes') proposal = this._openingTakesBlock(sc.id, pending, busy);
+                else if (pending && pending.kind === 'opening') proposal = this._openingProposalBlock(sc.id, pending);
+                const status = errors[key] ? DOM.html`<span class="ws-status is-error">${errors[key]}</span>` : '';
+                return DOM.html`
+                    <div class="ws-opening" id="ws-opening-${sc.id}">
+                        <div class="ws-opening-head">${title}</div>
+                        ${body}
+                        <div class="ws-ai-row">
+                            <button type="button" class="ws-ai-btn" data-action="workshop-opening-write" data-opening="${sc.id}" data-mode="${hasText ? 'reweave' : 'write'}"
+                                title="${hasText ? 'Rewrite it to fit the character as it is now' : 'Write it from the character'}" ${busy ? 'disabled' : ''}>${hasText ? '✦ Re-weave' : '✦ Write'}</button>
+                            <button type="button" class="ws-ai-btn" data-action="workshop-opening-takes" data-opening="${sc.id}"
+                                title="Three really different ways to start" ${busy ? 'disabled' : ''}>✦ 3 takes</button>
+                            ${status}
+                        </div>
+                        ${proposal}
+                    </div>`;
+            },
+
+            _openingProposalBlock(id, p) {
+                return DOM.html`
+                    <div class="ws-proposal">
+                        <div class="ws-proposal-head"><span>${p.mode === 'reweave' ? 'Re-woven by the AI' : 'Written by the AI'}. Nothing changes until you use it.</span></div>
+                        <div class="ws-text is-proposal">${p.text}</div>
+                        <div class="ws-proposal-actions">
+                            <button type="button" class="ws-btn is-primary" data-action="workshop-opening-accept" data-opening="${id}">Use it</button>
+                            <button type="button" class="ws-btn" data-action="workshop-opening-discard" data-opening="${id}">Discard</button>
+                        </div>
+                    </div>`;
+            },
+
+            /** Three openings to choose from: use one here, add one as another opening, or turn one down. */
+            _openingTakesBlock(id, p, busy) {
+                const names = ['Safest', 'Grounded', 'Inventive', 'Bold', 'Wildest'];
+                const dial = names.map((name, i) => DOM.html`
+                    <button type="button" class="ws-dial-btn${i + 1 === p.creativity ? ' is-on' : ''}" data-action="workshop-opening-takes" data-opening="${id}"
+                        data-creativity="${i + 1}" title="${name}" aria-label="Three new takes, ${name.toLowerCase()}" ${busy ? 'disabled' : ''}>${i + 1}</button>`);
+                const takes = p.takes.map((t, i) => DOM.html`
+                    <div class="ws-take">
+                        <div class="ws-proposal-head"><span class="ws-take-angle">${t.angle}</span></div>
+                        <div class="ws-text is-proposal">${t.text}</div>
+                        <div class="ws-proposal-actions">
+                            <button type="button" class="ws-btn is-primary" data-action="workshop-opening-take-use" data-opening="${id}" data-index="${i}">Use this</button>
+                            <button type="button" class="ws-btn" data-action="workshop-opening-take-new" data-opening="${id}" data-index="${i}"
+                                title="Keep this opening, and add the take as another way to start">Add as a new opening</button>
+                            <button type="button" class="ws-btn" data-action="workshop-opening-take-reject" data-opening="${id}" data-index="${i}"
+                                title="Drop it, and steer the next takes away from it">Not this</button>
+                        </div>
+                    </div>`);
+                return DOM.html`
+                    <div class="ws-takes">
+                        <div class="ws-proposal-head">
+                            <span>${p.takes.length === 1 ? 'One take left.' : `${p.takes.length} takes.`} Nothing changes until you use one.</span>
+                            <button type="button" class="ws-link" data-action="workshop-opening-discard" data-opening="${id}">Close</button>
+                        </div>
+                        ${takes}
+                        <div class="ws-dial-row"><span>Three new takes, from safest to wildest:</span><span class="ws-dial" role="group">${dial}</span></div>
+                    </div>`;
+            },
+
+            _examplesBlock(state, name, busy, errors) {
+                const view = this.RUNTIME.view;
+                const examples = this._examples(view, state);
+                const hasText = !!examples.trim();
+                let body;
+                if (view.editing === '_examples') {
+                    body = DOM.html`<textarea class="ws-field" data-ws-field="examples" rows="5" aria-label="Example dialogue">${examples}</textarea>`;
+                } else if (hasText) {
+                    body = DOM.html`<div class="ws-text" data-action="workshop-examples-edit" role="button" tabindex="0" aria-label="Edit the example dialogue">${examples}</div>`;
+                } else {
+                    body = DOM.html`<div class="ws-text is-empty" data-action="workshop-examples-edit" role="button" tabindex="0">None yet. Tap to write some yourself.</div>`;
+                }
+                const character = this._character(view.charId);
+                const copy = character && WorkshopStore.hasExampleCopy(character.model_instructions) ? DOM.html`
+                    <div class="ws-notice">
+                        <span>${name}'s instructions also hold a copy of the example dialogue from when the card was imported, so every reply reads it twice.</span>
+                        <button type="button" class="ws-btn" data-action="workshop-examples-uncopy">Remove the copy</button>
+                    </div>` : '';
+                const chat = ReactiveStore.state && Array.isArray(ReactiveStore.state.chat_history);
+                const swapped = view.examplesSwap ? DOM.html`
+                    <p class="ws-hint">The open chat reads these examples now. <button type="button" class="ws-link" data-action="workshop-examples-undo">Undo</button></p>` : '';
+                const pending = (view.ws.pending || {})._examples;
+                const proposal = !pending ? '' : DOM.html`
+                    <div class="ws-proposal">
+                        <div class="ws-proposal-head"><span>${pending.mode === 'reweave' ? 'Re-woven by the AI' : 'Written by the AI'}. Nothing changes until you use it.</span></div>
+                        <div class="ws-text is-proposal">${pending.text}</div>
+                        <div class="ws-proposal-actions">
+                            <button type="button" class="ws-btn is-primary" data-action="workshop-examples-accept">Use it</button>
+                            <button type="button" class="ws-btn" data-action="workshop-examples-discard">Discard</button>
+                        </div>
+                    </div>`;
+                const status = errors._examples ? DOM.html`<span class="ws-status is-error">${errors._examples}</span>` : '';
+                return DOM.html`
+                    <div class="ws-examples">
+                        <h4 class="ws-sub">Example dialogue</h4>
+                        <p class="ws-hint">How ${name} talks. Replies read it as examples before the chat. One line per turn, starting {{user}}: or {{char}}:.</p>
+                        ${copy}
+                        ${body}
+                        <div class="ws-ai-row">
+                            <button type="button" class="ws-ai-btn" data-action="workshop-examples-write" data-mode="${hasText ? 'reweave' : 'write'}"
+                                title="${hasText ? 'Rewrite it to fit the character as it is now' : 'Write some from the character'}" ${busy ? 'disabled' : ''}>${hasText ? '✦ Re-weave' : '✦ Write'}</button>
+                            ${chat && hasText ? DOM.html`<button type="button" class="ws-btn" data-action="workshop-examples-to-chat"
+                                title="The open chat started with its own copy of the examples. Swap in these.">Use in the open chat</button>` : ''}
+                            ${status}
+                        </div>
+                        ${swapped}
+                        ${proposal}
+                    </div>`;
+            },
+
+            /**
+             * Changes an opening's name or message as a step in the history, keeping the story's own
+             * text the first time, and the story follows when the step is saved.
+             */
+            _setOpening(id, patch, { summary, origin = 'you' } = {}) {
+                const view = this.RUNTIME.view;
+                const scenario = this._scenarios().find(s => s.id === id);
+                if (!view || !scenario) return Promise.resolve();
+                const current = WorkshopStore.openingIn(WorkshopStore.active(view.ws).state, view.ws.original, scenario);
+                const next = {
+                    name: patch.name ? patch.name : current.name,
+                    message: patch.message !== undefined ? String(patch.message) : current.message
+                };
+                if (next.name === current.name && next.message === current.message) {
+                    this.renderOpenings();
+                    return Promise.resolve();
+                }
+                view.ws = WorkshopStore.keepOriginalOpening(view.ws, scenario);
+                const what = summary || (next.name !== current.name ? `Renamed the opening "${current.name}" to "${next.name}"` : `Edited the opening "${current.name}"`);
+                return this._change(what, state => { state.openings = { ...(state.openings || {}), [id]: next }; }, () => this.renderOpenings(), origin);
+            },
+
+            _setExamples(text, { summary, origin = 'you' } = {}) {
+                const view = this.RUNTIME.view;
+                if (!view) return Promise.resolve();
+                const value = String(text || '');
+                if (value === this._examples(view, WorkshopStore.active(view.ws).state)) {
+                    this.renderOpenings();
+                    return Promise.resolve();
+                }
+                view.ws = WorkshopStore.keepOriginalExamples(view.ws, WorkshopStore.storyExamples(this._scenarios(), view.charId));
+                return this._change(summary || 'Edited the example dialogue', state => { state.examples = value; }, () => this.renderOpenings(), origin);
+            },
+
+            /** A new opening in the story, with the first opening's cast and knowledge, then a step that holds its text. */
+            async addOpening(name, text, { summary, origin = 'you' } = {}) {
+                const view = this.RUNTIME.view;
+                const message = String(text || '').trim();
+                if (!view) return;
+                if (!message) {
+                    UIManager.showNotification('Write how the chat starts first.', 'info');
+                    return;
+                }
+                const title = String(name || '').trim() || `Opening ${this._scenarios().length + 1}`;
+                const id = UTILITY.uuid();
+                const made = await this._writeStory(story => {
+                    const first = story.scenarios[0];
+                    const scenario = first ? JSON.parse(JSON.stringify(first)) : { active_character_ids: (story.characters || []).map(c => c.id), example_dialogue: [] };
+                    Object.assign(scenario, { id, name: title, message: WorkshopStore.storyText(message, this._cast(view).leadName) });
+                    story.scenarios.push(scenario);
+                    return true;
+                });
+                if (!made) {
+                    UIManager.showNotification('Could not add the opening to the story.', 'error');
+                    return;
+                }
+                view.editing = null;
+                await this._change(summary || `Added the opening "${title}"`, state => { state.openings = { ...(state.openings || {}), [id]: { name: title, message } }; },
+                    () => this.renderOpenings(), origin);
+            },
+
+            async _writeOpening(view, name, id, reweave, onDelta) {
+                const ask = WorkshopPrompts.writeOpening({ name, state: WorkshopStore.active(view.ws).state, extras: this._extras(view), openingId: id, reweave });
+                const result = ask.read((await this._chat(view, ask, onDelta)).data);
+                view.ws = WorkshopStore.setPending(view.ws, `o:${id}`, { kind: 'opening', mode: reweave ? 'reweave' : 'write', text: result.text, at: Date.now() });
+                await this._saveWs(view);
+            },
+
+            async _openingTakes(view, name, id, creativity, onDelta) {
+                const key = `o:${id}`;
+                const previous = (view.ws.pending || {})[key];
+                const level = creativity || (previous && previous.creativity) || 3;
+                const ask = WorkshopPrompts.openingTakes({
+                    name, state: WorkshopStore.active(view.ws).state, extras: this._extras(view), openingId: id, avoid: (view.ws.avoid || {})[key] || [], creativity: level
+                });
+                const takes = ask.read((await this._chat(view, ask, onDelta)).data);
+                view.ws = WorkshopStore.setPending(view.ws, key, { kind: 'opening-takes', takes, creativity: level, at: Date.now() });
+                await this._saveWs(view);
+            },
+
+            async _writeExamples(view, name, reweave, onDelta) {
+                const ask = WorkshopPrompts.writeExamples({ name, state: WorkshopStore.active(view.ws).state, extras: this._extras(view), reweave });
+                const result = ask.read((await this._chat(view, ask, onDelta)).data);
+                view.ws = WorkshopStore.setPending(view.ws, '_examples', { kind: 'examples', mode: reweave ? 'reweave' : 'write', text: result.text, at: Date.now() });
+                await this._saveWs(view);
+            },
+
+            _openingName(view, id) {
+                const scenario = this._scenarios().find(s => s.id === id);
+                return scenario ? WorkshopStore.openingIn(WorkshopStore.active(view.ws).state, view.ws.original, scenario).name : 'the opening';
+            },
+
+            acceptOpening(id) {
+                const view = this.RUNTIME.view;
+                const key = `o:${id}`;
+                const p = view && (view.ws.pending || {})[key];
+                if (!p || p.kind !== 'opening') return Promise.resolve();
+                return this._useOpeningText(id, key, p.text, `${p.mode === 'reweave' ? 'Re-wove' : 'Wrote'} the opening "${this._openingName(view, id)}" with the AI`);
+            },
+
+            /** Puts the AI's text into an opening as one step, and the proposal goes with it. */
+            _useOpeningText(id, key, text, summary) {
+                const view = this.RUNTIME.view;
+                const scenario = this._scenarios().find(s => s.id === id);
+                const cleared = WorkshopStore.setPending(view.ws, key, null);
+                if (!scenario || WorkshopStore.openingIn(WorkshopStore.active(view.ws).state, view.ws.original, scenario).message === text) {
+                    return this._commitWs(cleared, () => this.renderOpenings());
+                }
+                view.ws = cleared;
+                return this._setOpening(id, { message: text }, { summary, origin: 'ai' });
+            },
+
+            discardOpening(id) {
+                const view = this.RUNTIME.view;
+                if (!view) return Promise.resolve();
+                return this._commitWs(WorkshopStore.setPending(view.ws, `o:${id}`, null), () => this.renderOpenings());
+            },
+
+            useOpeningTake(id, index) {
+                const view = this.RUNTIME.view;
+                const key = `o:${id}`;
+                const p = view && (view.ws.pending || {})[key];
+                const take = p && p.kind === 'opening-takes' && p.takes[index];
+                if (!take) return Promise.resolve();
+                return this._useOpeningText(id, key, take.text, `Took "${take.angle}" for the opening "${this._openingName(view, id)}"`);
+            },
+
+            /** Keeps the opening as it is and adds the take as another way to start, named after its angle. */
+            newOpeningFromTake(id, index) {
+                const view = this.RUNTIME.view;
+                const key = `o:${id}`;
+                const p = view && (view.ws.pending || {})[key];
+                const take = p && p.kind === 'opening-takes' && p.takes[index];
+                if (!take) return Promise.resolve();
+                const rest = p.takes.filter((t, i) => i !== index);
+                view.ws = WorkshopStore.setPending(view.ws, key, rest.length ? { ...p, takes: rest } : null);
+                return this.addOpening(take.angle, take.text, { origin: 'ai' });
+            },
+
+            rejectOpeningTake(id, index) {
+                const view = this.RUNTIME.view;
+                const key = `o:${id}`;
+                const p = view && (view.ws.pending || {})[key];
+                const take = p && p.kind === 'opening-takes' && p.takes[index];
+                if (!take) return Promise.resolve();
+                const rest = p.takes.filter((t, i) => i !== index);
+                const ws = WorkshopStore.addAvoid(view.ws, key, take.angle);
+                return this._commitWs(WorkshopStore.setPending(ws, key, rest.length ? { ...p, takes: rest } : null), () => this.renderOpenings());
+            },
+
+            acceptExamples() {
+                const view = this.RUNTIME.view;
+                const p = view && (view.ws.pending || {})._examples;
+                if (!p) return Promise.resolve();
+                const cleared = WorkshopStore.setPending(view.ws, '_examples', null);
+                if (p.text === this._examples(view, WorkshopStore.active(view.ws).state)) return this._commitWs(cleared, () => this.renderOpenings());
+                view.ws = cleared;
+                return this._setExamples(p.text, { summary: `${p.mode === 'reweave' ? 'Re-wove' : 'Wrote'} the example dialogue with the AI`, origin: 'ai' });
+            },
+
+            discardExamples() {
+                const view = this.RUNTIME.view;
+                if (!view) return Promise.resolve();
+                return this._commitWs(WorkshopStore.setPending(view.ws, '_examples', null), () => this.renderOpenings());
+            },
+
+            /**
+             * The open chat copied its opening's examples when it began. Swaps that copy for the
+             * examples as they are now, keeping every message of the chat; Undo swaps it back.
+             */
+            useExamplesInChat() {
+                const view = this.RUNTIME.view;
+                const state = ReactiveStore.state;
+                if (!view || !state || !Array.isArray(state.chat_history)) return;
+                const cast = this._cast(view);
+                const turns = WorkshopStore.turnsFromExamples(this._examples(view, WorkshopStore.active(view.ws).state), cast.leadId, cast.userId, Date.now(), cast.leadName);
+                const history = JSON.parse(JSON.stringify(state.chat_history));
+                const isExample = m => m && m.isHidden && m.type === 'chat';
+                view.examplesSwap = history.filter(isExample);
+                state.chat_history = [...turns, ...history.filter(m => !isExample(m))];
+                this.renderOpenings();
+            },
+
+            undoExamplesInChat() {
+                const view = this.RUNTIME.view;
+                const state = ReactiveStore.state;
+                if (!view || !view.examplesSwap || !state) return;
+                const history = JSON.parse(JSON.stringify(state.chat_history || []));
+                state.chat_history = [...view.examplesSwap, ...history.filter(m => !(m && m.isHidden && m.type === 'chat'))];
+                view.examplesSwap = null;
+                this.renderOpenings();
+            },
+
+            /** Takes out the copy of the example dialogue that card import used to paste into the instructions. */
+            removeExampleCopy() {
+                const view = this.RUNTIME.view;
+                const character = view && this._character(view.charId);
+                if (!character || !WorkshopStore.hasExampleCopy(character.model_instructions)) return;
+                character.model_instructions = WorkshopStore.withoutExampleCopy(character.model_instructions);
+                UIManager.showNotification('Took the copy out of the instructions. Replies read the example dialogue once now.', 'success');
+                this.renderOpenings();
             },
 
             // ---------------------------------------------------------------------------------------
@@ -1152,14 +1676,35 @@
             _hasContent(value) {
                 if (!value) return false;
                 if (typeof value === 'string') return !!value.trim();
+                // The openings: text by opening, not a section.
+                if (!('text' in value) && !('pins' in value)) return Object.keys(value).length > 0;
                 return !!String(value.text || '').trim() || (value.pins || []).length > 0;
             },
 
             /** One part of a step: what its text was and became, and what happened to its pins, lock and length. */
             _changeView(ch) {
-                const named = { _concept: 'Concept', _notes: 'Story notes', _unsorted: 'Card text not in a section' }[ch.section];
+                // Before the Workshop's first change to an opening or the examples, they were the story's own.
+                const original = (this.RUNTIME.view && this.RUNTIME.view.ws.original) || {};
+                const named = { _concept: 'Concept', _notes: 'Story notes', _unsorted: 'Card text not in a section', _examples: 'Example dialogue' }[ch.section];
                 if (named) {
-                    return DOM.html`<div class="ws-change"><div class="ws-sort-title">${named}</div>${this._beforeAfter(ch.before || '', ch.after || '')}</div>`;
+                    const before = ch.section === '_examples' && ch.before === null ? (original.examples || '') : (ch.before || '');
+                    return DOM.html`<div class="ws-change"><div class="ws-sort-title">${named}</div>${this._beforeAfter(before, ch.after || '')}</div>`;
+                }
+                if (ch.section === '_openings') {
+                    const was = ch.before || {};
+                    const now = ch.after || {};
+                    const ids = [...new Set([...Object.keys(was), ...Object.keys(now)])].filter(id => JSON.stringify(was[id] || null) !== JSON.stringify(now[id] || null));
+                    return DOM.html`${ids.map(id => {
+                        const a = was[id] || (original.openings || {})[id] || {};
+                        const b = now[id] || {};
+                        const renamed = a.name && b.name && a.name !== b.name ? DOM.html`<p class="ws-hint">Renamed from "${a.name}"</p>` : '';
+                        return DOM.html`
+                            <div class="ws-change">
+                                <div class="ws-sort-title">Opening: ${b.name || a.name || 'an opening'}</div>
+                                ${renamed}
+                                ${(a.message || '') !== (b.message || '') ? this._beforeAfter(a.message || '', b.message || '') : ''}
+                            </div>`;
+                    })}`;
                 }
                 const a = ch.before || {};
                 const b = ch.after || {};
@@ -1322,12 +1867,42 @@
                         next => { this._section(next, ds.section).length = ds.length; }, () => this.renderSection(ds.section));
                 });
 
+                // The Openings card.
+                const editOpening = editing => {
+                    if (!this.RUNTIME.view) return;
+                    this.RUNTIME.view.editing = editing;
+                    this.renderOpenings();
+                };
+                ActionHandler.register('workshop-opening-edit', (ds) => editOpening(`o:${ds.opening}`));
+                ActionHandler.register('workshop-opening-rename', (ds) => editOpening(`o:${ds.opening}:name`));
+                ActionHandler.register('workshop-opening-new', () => editOpening('o:new'));
+                ActionHandler.register('workshop-opening-cancel', () => editOpening(null));
+                ActionHandler.register('workshop-opening-add', () => {
+                    const name = document.getElementById('ws-opening-new-name');
+                    const text = document.getElementById('ws-opening-new-text');
+                    return this.addOpening(name ? name.value : '', text ? text.value : '');
+                });
+                ActionHandler.register('workshop-opening-write', (ds) => this._ask(ds.mode === 'reweave' ? 'opening-reweave' : 'opening-write', null, null, ds.opening));
+                ActionHandler.register('workshop-opening-takes', (ds) => this._ask('opening-takes', null, Number(ds.creativity) || null, ds.opening));
+                ActionHandler.register('workshop-opening-accept', (ds) => this.acceptOpening(ds.opening));
+                ActionHandler.register('workshop-opening-discard', (ds) => this.discardOpening(ds.opening));
+                ActionHandler.register('workshop-opening-take-use', (ds) => this.useOpeningTake(ds.opening, Number(ds.index)));
+                ActionHandler.register('workshop-opening-take-new', (ds) => this.newOpeningFromTake(ds.opening, Number(ds.index)));
+                ActionHandler.register('workshop-opening-take-reject', (ds) => this.rejectOpeningTake(ds.opening, Number(ds.index)));
+                ActionHandler.register('workshop-examples-edit', () => editOpening('_examples'));
+                ActionHandler.register('workshop-examples-write', (ds) => this._ask(ds.mode === 'reweave' ? 'examples-reweave' : 'examples-write'));
+                ActionHandler.register('workshop-examples-accept', () => this.acceptExamples());
+                ActionHandler.register('workshop-examples-discard', () => this.discardExamples());
+                ActionHandler.register('workshop-examples-to-chat', () => this.useExamplesInChat());
+                ActionHandler.register('workshop-examples-undo', () => this.undoExamplesInChat());
+                ActionHandler.register('workshop-examples-uncopy', () => this.removeExampleCopy());
+
                 const root = document.getElementById('character-workshop');
                 if (root) {
                     root.addEventListener('focusout', (e) => this._fieldDone(e.target));
                     root.addEventListener('input', (e) => { if (e.target.matches('textarea.ws-field, textarea.ws-pin-input')) this._grow(e.target); });
                     root.addEventListener('keydown', (e) => {
-                        if (e.target.classList.contains('ws-variant-name') && e.key === 'Enter') {
+                        if ((e.target.classList.contains('ws-variant-name') || e.target.classList.contains('ws-opening-name-input')) && e.key === 'Enter') {
                             e.preventDefault();
                             e.target.blur();
                             return;

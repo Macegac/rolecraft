@@ -39,12 +39,17 @@
                 '8. Reply with JSON only, in exactly the shape asked for.'
             ].join('\n'),
 
+            /** What an opening is, for every request that writes one. */
+            OPENING_RULES: "An opening is not a card section. It is the first message of a new roleplay chat, written from {{char}}'s side: what {{char}} does and says as the scene starts, in the same style as the other openings and the example dialogue, narration and dialogue together. Set the scene from the Scenario section and the story notes when they give one. Never write what {{user}} does, says, thinks or feels, and end where {{user}} can answer.",
+
             /**
              * The whole character as the model reads it before every task: name, concept, notes, card
              * text not sorted yet, and every section with its kept pins and text. Proposals waiting
              * for an answer count as written, so "Write all" builds each section on the ones before.
+             * For the story's lead, extras adds the openings, labelled O1, O2…, and the example dialogue.
+             * @param {{openings?: Array<{id: string, label: string, name: string, message: string}>, examples?: string|null}} [extras]
              */
-            sheet(name, state, pending = {}) {
+            sheet(name, state, pending = {}, extras = null) {
                 const lines = [
                     `CHARACTER: ${String(name || '').trim() || 'unnamed'} (always written as {{char}})`,
                     `CONCEPT: ${String(state.concept || '').trim() || '(none yet)'}`
@@ -59,6 +64,14 @@
                     lines.push(`## ${s.title}${s.locked ? ' [LOCKED: keep word for word]' : ''}`);
                     if (pins.length) lines.push(`Pins: ${pins.join('; ')}`);
                     lines.push(text || '(empty)', '');
+                }
+                const openings = (extras && Array.isArray(extras.openings)) ? extras.openings : [];
+                if (openings.length) {
+                    lines.push('OPENINGS (the first message of each new chat; they may be older than the sections, and the sections win):');
+                    openings.forEach(o => lines.push(`${o.label} "${o.name}":`, String(o.message || '').trim() || '(empty)', ''));
+                }
+                if (extras && extras.examples !== undefined) {
+                    lines.push('EXAMPLE DIALOGUE (how {{char}} talks, shown to the roleplay model before the chat):', String(extras.examples || '').trim() || '(none)');
                 }
                 return lines.join('\n').trim();
             },
@@ -76,10 +89,10 @@
                 return pins.map(p => `"${p.label}": "the exact phrase from your text that carries it"`).join(', ');
             },
 
-            _messages(name, state, pending, task) {
+            _messages(name, state, pending, task, extras = null) {
                 return [
                     { role: 'system', content: this.SYSTEM },
-                    { role: 'user', content: `${this.sheet(name, state, pending)}\n\n${task.filter(Boolean).join('\n\n')}` }
+                    { role: 'user', content: `${this.sheet(name, state, pending, extras)}\n\n${task.filter(Boolean).join('\n\n')}` }
                 ];
             },
 
@@ -88,7 +101,7 @@
              * whatever still fits.
              * @returns {{messages: Array, temperature: undefined, read: Function}} read gives {text, pinMap}.
              */
-            writeSection({ name, state, sectionId, pending = {}, reweave = false }) {
+            writeSection({ name, state, sectionId, pending = {}, reweave = false, extras = null }) {
                 const s = state.sections.find(x => x.id === sectionId);
                 const pins = this.labels(s);
                 const task = [
@@ -100,7 +113,7 @@
                     `Reply with JSON: {"text": "the section's text", "pins": {${this._pinShape(pins)}}}`
                 ];
                 return {
-                    messages: this._messages(name, state, pending, task),
+                    messages: this._messages(name, state, pending, task, extras),
                     // Left to the model's own default: providers of one model disagree on what a given number means.
                     temperature: undefined,
                     read: data => this.readSection(data, pins)
@@ -118,7 +131,7 @@
              * clear of the current text and of every take turned down before.
              * @returns {{messages: Array, temperature: number, read: Function}} read gives [{angle, text, pinMap}].
              */
-            takes({ name, state, sectionId, avoid = [], creativity = 3, pending = {} }) {
+            takes({ name, state, sectionId, avoid = [], creativity = 3, pending = {}, extras = null }) {
                 const s = state.sections.find(x => x.id === sectionId);
                 const pins = this.labels(s);
                 const level = this.CREATIVITY[Math.min(5, Math.max(1, Math.round(creativity) || 3)) - 1];
@@ -132,7 +145,7 @@
                     `Reply with JSON: {"takes": [{"angle": "one line naming this take's angle", "text": "the take", "pins": {${this._pinShape(pins)}}}, and two more like it]}`
                 ];
                 return {
-                    messages: this._messages(name, state, pending, task),
+                    messages: this._messages(name, state, pending, task, extras),
                     temperature: level.temperature,
                     read: data => this.readTakes(data, pins)
                 };
@@ -151,7 +164,7 @@
              * Two to four suggested pins for each of the given sections, which are empty.
              * @returns {{messages: Array, temperature: undefined, read: Function}} read gives {sectionId: [pin text]}.
              */
-            suggestPins({ name, state, sectionIds }) {
+            suggestPins({ name, state, sectionIds, extras = null }) {
                 const sections = state.sections.filter(s => sectionIds.includes(s.id));
                 const task = [
                     'TASK: Suggest pins for the sections listed below, which are still empty. A pin is one short must-have idea, at most 12 words, that the author might want in that section: specific, vivid and true to the concept. Suggest 2 to 4 for each section, different from each other and from the pins the character already has.',
@@ -159,7 +172,7 @@
                     `Reply with JSON: {"pins": {${sections.map(s => `"${s.id}": ["a pin", "another pin"]`).join(', ')}}}`
                 ];
                 return {
-                    messages: this._messages(name, state, {}, task),
+                    messages: this._messages(name, state, {}, task, extras),
                     temperature: undefined,
                     read: data => this.readSuggestions(data, sections)
                 };
@@ -183,7 +196,7 @@
              * @returns {{messages: Array, temperature: undefined, read: Function}} read gives
              *          {sections: {id: moved text}, leftover, pins: {id: [pin]}, restored: number}.
              */
-            sortCard({ name, state }) {
+            sortCard({ name, state, extras = null }) {
                 const open = state.sections.filter(s => !s.locked);
                 const hasLoose = !!String(state.unsorted || '').trim();
                 const task = [
@@ -195,10 +208,95 @@
                     `Reply with JSON: {${hasLoose ? '"sections": {"<section id>": "the sentences moved there, in their original order"}, "leftover": "sentences that fit nowhere, or an empty string", ' : ''}"pins": {"<section id>": ["a pin", "another pin"]}}`
                 ];
                 return {
-                    messages: this._messages(name, state, {}, task),
+                    messages: this._messages(name, state, {}, task, extras),
                     temperature: undefined,
                     read: data => this.readSort(data, state)
                 };
+            },
+
+            /** The opening an opening task is about, from the extras the sheet shows. */
+            _opening(extras, openingId) {
+                return ((extras && extras.openings) || []).find(o => o.id === openingId) || { label: 'O1', name: 'the opening', message: '' };
+            },
+
+            /**
+             * Write one of the story's openings, or re-weave it to fit the character as it is now.
+             * @returns {{messages: Array, temperature: undefined, read: Function}} read gives {text}.
+             */
+            writeOpening({ name, state, extras, openingId, reweave = false, steer = '' }) {
+                const o = this._opening(extras, openingId);
+                const task = [
+                    reweave
+                        ? `TASK: Re-weave the opening "${o.name}" (${o.label}). Rewrite it to fit the character as the concept and the sections have it now, keeping whatever still fits.`
+                        : `TASK: Write the opening "${o.name}" (${o.label})${String(o.message || '').trim() ? ', replacing its current text' : ''}.`,
+                    this.OPENING_RULES,
+                    `Length: ${this.LENGTHS.medium}, unless the opening is much longer or shorter now.`,
+                    steer ? `What should change: ${steer}` : '',
+                    'Reply with JSON: {"text": "the opening"}'
+                ];
+                return {
+                    messages: this._messages(name, state, {}, task, extras),
+                    temperature: undefined,
+                    read: data => this.readText(data, 'opening')
+                };
+            },
+
+            /**
+             * Three openings to choose from, each a different way into the story, steering clear of the
+             * current one and of every take turned down before.
+             * @returns {{messages: Array, temperature: number, read: Function}} read gives [{angle, text, pinMap}].
+             */
+            openingTakes({ name, state, extras, openingId, avoid = [], creativity = 3 }) {
+                const o = this._opening(extras, openingId);
+                const level = this.CREATIVITY[Math.min(5, Math.max(1, Math.round(creativity) || 3)) - 1];
+                const task = [
+                    `TASK: Write three takes on the opening "${o.name}" (${o.label}). Make them really different from each other: a different moment, place or way into the scene each, never rewordings of one idea.`,
+                    String(o.message || '').trim() ? "Don't reuse the current opening's moment or its first line." : '',
+                    avoid.length ? `The author turned these down before. Steer well clear of them:\n${avoid.map(a => `- ${a}`).join('\n')}` : '',
+                    this.OPENING_RULES,
+                    `Creativity: ${level.words}`,
+                    `Length of each take: ${this.LENGTHS.medium}.`,
+                    'Reply with JSON: {"takes": [{"angle": "one line naming this take\'s angle", "text": "the opening"}, and two more like it]}'
+                ];
+                return {
+                    messages: this._messages(name, state, {}, task, extras),
+                    temperature: level.temperature,
+                    read: data => this.readTakes(data, [])
+                };
+            },
+
+            /**
+             * Write the example dialogue that shows the roleplay model how the character talks, or
+             * re-weave it to fit the character as it is now.
+             * @returns {{messages: Array, temperature: undefined, read: Function}} read gives {text}.
+             */
+            writeExamples({ name, state, extras, reweave = false, steer = '' }) {
+                const current = String((extras && extras.examples) || '').trim();
+                const task = [
+                    reweave
+                        ? 'TASK: Re-weave the example dialogue. Rewrite it to fit the character as it is now, keeping whatever still fits.'
+                        : `TASK: Write the example dialogue${current ? ', replacing what is there' : ''}.`,
+                    'Example dialogue shows the roleplay model how {{char}} talks: two to four short exchanges between {{user}} and {{char}}, true to the Voice section and the rest of the character. Every turn starts with "{{user}}:" or "{{char}}:" at the start of a line. {{char}}\'s lines carry the voice; keep {{user}}\'s short. Actions can go between asterisks.',
+                    steer ? `What should change: ${steer}` : '',
+                    'Reply with JSON: {"text": "the dialogue, each turn on its own line"}'
+                ];
+                return {
+                    messages: this._messages(name, state, {}, task, extras),
+                    temperature: undefined,
+                    read: data => this.readExamples(data)
+                };
+            },
+
+            readText(data, what) {
+                const text = (data && typeof data.text === 'string') ? data.text.trim() : '';
+                if (!text) throw new Error(`The model sent no text for the ${what}. Try again.`);
+                return { text };
+            },
+
+            readExamples(data) {
+                const text = (data && typeof data.text === 'string') ? data.text.trim() : '';
+                if (!/\{\{char\}\}:/i.test(text)) throw new Error('The model sent no dialogue with {{char}} speaking in it. Try again.');
+                return { text };
             },
 
             /**

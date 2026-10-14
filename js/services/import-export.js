@@ -1120,7 +1120,11 @@
                 // description it builds, as they did before the card left.
                 const extensions = (v2Data.extensions && typeof v2Data.extensions === 'object') ? v2Data.extensions : {};
                 const carried = extensions[WorkshopStore.CARD_KEY];
-                const workshop = carried ? WorkshopStore.fromCard(carried, { description: v2Data.description, personality: v2Data.personality, scenario: v2Data.scenario }) : null;
+                const greetingsAsFound = [v2Data.first_mes || '', ...(Array.isArray(v2Data.alternate_greetings) ? v2Data.alternate_greetings : [])];
+                const workshop = carried ? WorkshopStore.fromCard(carried, {
+                    description: v2Data.description, personality: v2Data.personality, scenario: v2Data.scenario,
+                    greetings: greetingsAsFound, examples: v2Data.mes_example || ''
+                }) : null;
                 if (workshop) {
                     aiChar.workshop = workshop;
                     aiChar.description = WorkshopStore.compile(WorkshopStore.active(workshop).state);
@@ -1165,11 +1169,9 @@
                     const regex = /({{user}}|{{char}}):([\s\S]*?)(?={{user}}:|{{char}}:|$)/g;
                     let cleanedText = v2Data.mes_example.replace(/<START>/gi, '').trim();
 
-                    const formattedExample = cleanedText.replace(/{{char}}/gi, aiChar.name).replace(/{{user}}/gi, "{user}");
-                    if (formattedExample) {
-                        aiChar.model_instructions += `\n\n### Example Dialogue\n${formattedExample}`;
-                    }
-
+                    // The examples become hidden turns in each opening, which replies read as example
+                    // dialogue. They used to be pasted into the instructions as well, so every reply
+                    // read them twice.
                     for (const match of cleanedText.matchAll(regex)) {
                         const speakerPrefix = match[1];
                         const messageContent = match[2].trim().replace(/{{char}}/g, aiChar.name).replace(/{{user}}/g, "{user}");
@@ -1214,10 +1216,20 @@
                         worldMap: { grid: UTILITY.createDefaultMapGrid(), currentLocation: { x: 4, y: 4 }, destination: { x: null, y: null }, path: [] }
                     });
                 });
+                // A card from the Workshop names the opening each greeting came from. The new story's
+                // openings take their place, so the Workshop's text and its history line up with them,
+                // and the openings read as the Workshop's variant in use has them.
+                if (workshop && carried.exported && Array.isArray(carried.exported.openings)) {
+                    const renamed = {};
+                    carried.exported.openings.forEach((id, i) => { if (id && story.scenarios[i]) renamed[id] = story.scenarios[i].id; });
+                    aiChar.workshop = WorkshopStore.renameOpenings(aiChar.workshop, renamed);
+                    story.scenarios = WorkshopStore.syncStory(story.scenarios, aiChar.workshop, { leadId: aiChar.id, leadName: aiChar.name, userId: userChar.id }).scenarios;
+                }
                 const narrative = this._createEmptyEllipsisNarrative("Imported Chat");
                 narrative.active_character_ids = activeIDs;
                 narrative.state.static_entries = JSON.parse(JSON.stringify(staticEntries));
-                if (exampleDialogue.length > 0) narrative.state.chat_history.push(...JSON.parse(JSON.stringify(exampleDialogue)));
+                const openingTurns = (story.scenarios[0] && story.scenarios[0].example_dialogue) || exampleDialogue;
+                if (openingTurns.length > 0) narrative.state.chat_history.push(...JSON.parse(JSON.stringify(openingTurns)));
                 const firstScenario = story.scenarios[0];
                 if (firstScenario && firstScenario.message) {
                     narrative.state.chat_history.push({
@@ -1251,6 +1263,9 @@
                 const workshop = primaryChar.workshop || null;
                 const fields = workshop ? WorkshopStore.cardFields(workshop, pick) : null;
                 if (workshop && !fields) throw new Error("That version of the character is no longer in its Workshop.");
+                // The story's lead also shows its openings and example dialogue as that version has them.
+                const leadOpenings = (workshop && WorkshopStore.leadOf(story.characters, story.scenarios) === primaryCharId)
+                    ? WorkshopStore.cardOpenings(workshop, pick, story.scenarios) : null;
                 let fullDescription = fields ? fields.description : (primaryChar.description || "");
                 if (otherAiChars.length > 0) {
                     fullDescription += "\n\n--- Other Characters ---\n";
@@ -1293,24 +1308,33 @@
                         });
                     }
                 }
+                // Card wording is matched first: the {user} inside {{user}} used to become {{{user}}}.
                 const replacePlaceholdersV2 = (text) => {
                     if (typeof text !== 'string') return '';
-                    let processed = text.replace(/{character}/gi, '{{char}}');
-                    processed = processed.replace(/{user}/gi, '{{user}}');
-                    processed = processed.replace(/\{\{char\}\}/gi, '{{char}}');
-                    processed = processed.replace(/\{\{user\}\}/gi, '{{user}}');
-                    return processed;
+                    return text.replace(/\{\{(?:char|user)\}\}|\{character\}|\{user\}/gi,
+                        m => (/^\{\{?char|^\{character/i.test(m) ? '{{char}}' : '{{user}}'));
                 }
-                const mesExample = this._exampleTurns(story, narrative).map(m => {
-                    const speaker = story.characters.find(c => c.id === m.character_id);
-                    if (speaker) {
-                        const prefix = speaker.is_user ? '{{user}}:' : '{{char}}:';
-                        return `${prefix}\n${replacePlaceholdersV2(m.content)}`;
-                    }
-                    return replacePlaceholdersV2(m.content);
-                }).join('\n');
+                // The lead's own examples are already in card wording; anyone else's come from the story.
+                const mesExample = (leadOpenings && leadOpenings.examples !== null)
+                    ? WorkshopStore.exampleLines(leadOpenings.examples).map(line => `{{${line.who}}}:\n${replacePlaceholdersV2(line.text)}`).join('\n')
+                    : this._exampleTurns(story, narrative).map(m => {
+                        const speaker = story.characters.find(c => c.id === m.character_id);
+                        if (speaker) {
+                            const prefix = speaker.is_user ? '{{user}}:' : '{{char}}:';
+                            return `${prefix}\n${replacePlaceholdersV2(m.content)}`;
+                        }
+                        return replacePlaceholdersV2(m.content);
+                    }).join('\n');
+                // The lead's openings in the story's order, leaving out any with no text. Anyone else's
+                // card starts with whatever the open chat starts with, as before.
+                const openings = leadOpenings
+                    ? leadOpenings.ids.map((id, i) => ({ id, text: replacePlaceholdersV2(leadOpenings.greetings[i] || '') })).filter(o => o.text.trim())
+                    : null;
                 const firstMessageEntry = (narrative.state.chat_history || []).find(m => !m.isHidden && m.type === 'chat');
-                const firstMes = firstMessageEntry ? replacePlaceholdersV2(firstMessageEntry.content) : replacePlaceholdersV2(`The story of ${primaryChar.name} begins.`);
+                const noOpening = replacePlaceholdersV2(`The story of ${primaryChar.name} begins.`);
+                const firstMes = openings
+                    ? (openings.length ? openings[0].text : noOpening)
+                    : (firstMessageEntry ? replacePlaceholdersV2(firstMessageEntry.content) : noOpening);
                 const ownScenario = !!(fields && fields.scenario);
                 const scenarioText = ownScenario ? fields.scenario
                     : (narrative.state.static_entries || []).map(entry => `[${entry.title || 'Untitled Entry'}]\n${entry.content || '(No content)'}`).join('\n\n---\n\n');
@@ -1339,8 +1363,15 @@
                 };
                 // The whole Workshop rides along, so importing the card brings it back.
                 if (workshop) {
-                    v2Data.extensions[WorkshopStore.CARD_KEY] = WorkshopStore.toCard(workshop, pick,
-                        { description: v2Data.description, personality: v2Data.personality, scenario: v2Data.scenario, ownScenario });
+                    const written = { description: v2Data.description, personality: v2Data.personality, scenario: v2Data.scenario, ownScenario };
+                    if (openings) {
+                        // The lead's other openings, as the version picked has them.
+                        v2Data.alternate_greetings = openings.slice(1).map(o => o.text);
+                        written.openings = openings.map(o => o.id);
+                        written.greetings = [v2Data.first_mes, ...v2Data.alternate_greetings];
+                        written.examples = v2Data.mes_example;
+                    }
+                    v2Data.extensions[WorkshopStore.CARD_KEY] = WorkshopStore.toCard(workshop, pick, written);
                 }
                 return { spec: 'chara_card_v2', spec_version: '2.0', data: v2Data };
             },

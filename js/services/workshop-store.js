@@ -62,6 +62,11 @@
                     concept: '',
                     notes: '',
                     unsorted: '',
+                    // The lead's text for each of the story's openings, by its id in the story. An
+                    // opening with no text here reads as the story has it.
+                    openings: {},
+                    // The example dialogue as '{{user}}: …' and '{{char}}: …' lines; null reads as the story's own.
+                    examples: null,
                     sections: this.sectionDefs.map(d => ({
                         id: d.id, title: d.title, target: d.target, pins: [], text: '', pinMap: {}, locked: false, length: d.length, at: 0
                     }))
@@ -81,13 +86,18 @@
              * @returns {Object} The Workshop.
              */
             create({ state = this.blankState(), original = {}, origin = 'you', summary = 'Started', now = Date.now(), commitId = this.newId('c') } = {}) {
+                const openings = this._copy(state.openings || {});
+                const examples = state.examples ?? null;
                 const changes = [
                     { section: '_concept', before: null, after: state.concept || '' },
                     { section: '_notes', before: null, after: state.notes || '' },
                     { section: '_unsorted', before: null, after: state.unsorted || '' },
+                    // Only when there are some, so a character that starts without them starts as before.
+                    ...(Object.keys(openings).length ? [{ section: '_openings', before: null, after: this._copy(openings) }] : []),
+                    ...(examples !== null ? [{ section: '_examples', before: null, after: examples }] : []),
                     ...state.sections.map(s => ({ section: s.id, before: null, after: this._copy(s) }))
                 ];
-                const start = { concept: state.concept || '', notes: state.notes || '', unsorted: state.unsorted || '', sections: this._copy(state.sections) };
+                const start = { concept: state.concept || '', notes: state.notes || '', unsorted: state.unsorted || '', openings, examples, sections: this._copy(state.sections) };
                 return {
                     v: this.VERSION,
                     active: 'v_main',
@@ -153,6 +163,9 @@
                 if ((a.concept || '') !== (b.concept || '')) changes.push({ section: '_concept', before: a.concept || '', after: b.concept || '' });
                 if ((a.notes || '') !== (b.notes || '')) changes.push({ section: '_notes', before: a.notes || '', after: b.notes || '' });
                 if ((a.unsorted || '') !== (b.unsorted || '')) changes.push({ section: '_unsorted', before: a.unsorted || '', after: b.unsorted || '' });
+                // A Workshop from before openings were kept has neither, which reads as none.
+                if (!this._same(a.openings || {}, b.openings || {})) changes.push({ section: '_openings', before: this._copy(a.openings || {}), after: this._copy(b.openings || {}) });
+                if ((a.examples ?? null) !== (b.examples ?? null)) changes.push({ section: '_examples', before: a.examples ?? null, after: b.examples ?? null });
                 const before = new Map(a.sections.map(s => [s.id, s]));
                 const after = new Map(b.sections.map(s => [s.id, s]));
                 for (const id of new Set([...before.keys(), ...after.keys()])) {
@@ -179,7 +192,7 @@
             stateAt(ws, commitId) {
                 const path = this.lineage(ws, commitId);
                 if (path.length === 0) return null;
-                return path.reduce((state, c) => this._apply(state, c.changes), { concept: '', notes: '', unsorted: '', sections: [] });
+                return path.reduce((state, c) => this._apply(state, c.changes), { concept: '', notes: '', unsorted: '', openings: {}, examples: null, sections: [] });
             },
 
             /**
@@ -372,21 +385,25 @@
 
             /**
              * What a card carries in data.extensions[CARD_KEY]: the whole Workshop, which version the
-             * card shows, and a fingerprint of the fields exactly as written.
+             * card shows, and a fingerprint of the fields exactly as written. A lead's card also notes
+             * which opening each greeting came from, in order, with a fingerprint of the greetings and
+             * the examples.
              * @param {Object} ws
              * @param {string} pick
-             * @param {{description: string, personality: string, scenario: string, ownScenario: boolean}} written -
+             * @param {{description: string, personality: string, scenario: string, ownScenario: boolean,
+             *          openings?: string[], greetings?: string[], examples?: string}} written -
              *        ownScenario says the scenario is the Scenario section's, not the story's.
              */
             toCard(ws, pick, written, now = Date.now()) {
-                return {
-                    format: 1,
-                    exported: {
-                        pick, at: now, ownScenario: !!written.ownScenario,
-                        check: this.cardCheck(written.description, written.personality, written.scenario)
-                    },
-                    workshop: this._copy(ws)
+                const exported = {
+                    pick, at: now, ownScenario: !!written.ownScenario,
+                    check: this.cardCheck(written.description, written.personality, written.scenario)
                 };
+                if (Array.isArray(written.openings)) {
+                    exported.openings = written.openings.slice();
+                    exported.openingsCheck = this.cardCheck(...(written.greetings || []), written.examples || '');
+                }
+                return { format: 1, exported, workshop: this._copy(ws) };
             },
 
             /**
@@ -394,8 +411,10 @@
              * is none that can be read. If the card's text was changed in another app since it was
              * written, that text wins: it becomes a new step on the variant in use, split by its
              * headings like any card, and everything before it stays in the history.
+             * Greetings and examples changed elsewhere win the same way, in the openings they came from.
              * @param {Object} carried - data.extensions[CARD_KEY]
-             * @param {{description: string, personality: string, scenario: string}} card - The fields as found.
+             * @param {{description: string, personality: string, scenario: string, greetings?: string[],
+             *          examples?: string}} card - The fields as found; greetings are the first message, then the others.
              */
             fromCard(carried, card, now = Date.now()) {
                 const ws = carried && carried.workshop;
@@ -403,23 +422,226 @@
                     && ws.variants.every(v => v && v.state && Array.isArray(v.state.sections));
                 if (!readable) return null;
                 const copy = this._copy(ws);
-                const check = carried.exported && carried.exported.check;
-                if (check === this.cardCheck(card.description, card.personality, card.scenario)) return copy;
+                const exported = carried.exported || {};
+                const ids = Array.isArray(exported.openings) ? exported.openings : null;
+                const textSame = exported.check === this.cardCheck(card.description, card.personality, card.scenario);
+                const openingsSame = !ids || !Array.isArray(card.greetings)
+                    || exported.openingsCheck === this.cardCheck(...card.greetings, card.examples || '');
+                if (textSame && openingsSame) return copy;
 
-                // Rolecraft adds the story's other characters below the description; they aren't this character.
-                const description = String(card.description || '').split('\n\n--- Other Characters ---\n')[0];
-                const split = this.splitCard(description);
-                const base = this.active(copy).state;
-                const ownScenario = !!(carried.exported && carried.exported.ownScenario);
-                const next = {
-                    ...base,
-                    unsorted: [split.unsorted, String(card.personality || '').trim()].filter(Boolean).join('\n\n'),
-                    sections: base.sections.map(s => {
-                        if (s.target !== 'scenario') return { ...s, text: split.sections[s.id] || '' };
-                        return ownScenario ? { ...s, text: String(card.scenario || '').trim() } : s;
-                    })
-                };
+                let next = this.active(copy).state;
+                if (!textSame) {
+                    // Rolecraft adds the story's other characters below the description; they aren't this character.
+                    const description = String(card.description || '').split('\n\n--- Other Characters ---\n')[0];
+                    const split = this.splitCard(description);
+                    const base = next;
+                    next = {
+                        ...base,
+                        unsorted: [split.unsorted, String(card.personality || '').trim()].filter(Boolean).join('\n\n'),
+                        sections: base.sections.map(s => {
+                            if (s.target !== 'scenario') return { ...s, text: split.sections[s.id] || '' };
+                            return exported.ownScenario ? { ...s, text: String(card.scenario || '').trim() } : s;
+                        })
+                    };
+                }
+                if (!openingsSame) {
+                    const openings = { ...(next.openings || {}) };
+                    ids.forEach((id, i) => {
+                        if (!id || typeof card.greetings[i] !== 'string') return;
+                        const name = (openings[id] || {}).name;
+                        openings[id] = name ? { name, message: card.greetings[i].trim() } : { message: card.greetings[i].trim() };
+                    });
+                    next = { ...next, openings, examples: this.examplesFromCard(card.examples || '') };
+                }
                 return this.commit(copy, next, { origin: 'card', summary: 'Changed outside Rolecraft', now });
+            },
+
+            // A story's openings are the first message of each new chat, with the example dialogue
+            // that comes before it. They belong to the story, so the Workshop keeps only its own
+            // text for them, by each opening's id in the story, and writes that text into the story.
+
+            /**
+             * Whose Workshop holds the story's openings: whoever speaks the first one, or else the
+             * story's first character who isn't you or the narrator.
+             * @returns {string|null} A character id.
+             */
+            leadOf(characters, scenarios) {
+                const cast = (Array.isArray(characters) ? characters : []).filter(c => c && !c.is_user && !c.is_narrator);
+                const first = Array.isArray(scenarios) ? scenarios[0] : null;
+                const speaker = first && first.opening_character_id ? cast.find(c => c.id === first.opening_character_id) : null;
+                return (speaker || cast[0] || {}).id || null;
+            },
+
+            /**
+             * Card wording, {{char}} and {{user}}, as the story keeps it: the character's own name, the
+             * way card import writes openings, and {user}. Not {character}: in a chat that means
+             * whoever speaks the message, and a story's narrator can speak its opening.
+             * @param {string} [name] - The lead's name. Without one, {{char}} becomes {character}.
+             */
+            storyText(text, name) {
+                return String(text || '').replace(/\{\{char\}\}/gi, name || '{character}').replace(/\{\{user\}\}/gi, '{user}');
+            },
+
+            /** The story's {character} and {user} as card wording. Card wording already there is left as it is. */
+            cardText(text) {
+                // Card wording is matched first, so the {user} inside {{user}} is never touched.
+                return String(text || '').replace(/\{\{(?:char|user)\}\}|\{character\}|\{user\}/gi,
+                    m => (m.startsWith('{{') ? m : (/character/i.test(m) ? '{{char}}' : '{{user}}')));
+            },
+
+            /** Example dialogue as turns in card wording: each runs from "{{user}}:" or "{{char}}:" to the next one. */
+            exampleLines(text) {
+                const lines = [];
+                const source = String(text || '').replace(/<START>/gi, '');
+                for (const match of source.matchAll(/(\{\{user\}\}|\{\{char\}\}):([\s\S]*?)(?=\{\{user\}\}:|\{\{char\}\}:|$)/gi)) {
+                    const content = match[2].trim();
+                    if (content) lines.push({ who: /user/i.test(match[1]) ? 'user' : 'char', text: content });
+                }
+                return lines;
+            },
+
+            /** Example dialogue as the hidden chat turns a story keeps, in the story's wording. */
+            turnsFromExamples(text, leadId, userId, at = Date.now(), leadName = '') {
+                return this.exampleLines(text).map(line => ({
+                    character_id: line.who === 'user' ? userId : leadId, content: this.storyText(line.text, leadName),
+                    type: 'chat', isHidden: true, timestamp: new Date(at).toISOString()
+                }));
+            },
+
+            /** A story's example turns as lines of card wording. The lead speaks as {{char}}; anyone else as {{user}}. */
+            examplesFromTurns(turns, leadId) {
+                return (Array.isArray(turns) ? turns : [])
+                    .filter(t => t && typeof t.content === 'string' && t.content.trim())
+                    .map(t => `${t.character_id === leadId ? '{{char}}' : '{{user}}'}: ${this.cardText(t.content.trim())}`)
+                    .join('\n');
+            },
+
+            /** A card's example block, however it is laid out, as the Workshop's lines. */
+            examplesFromCard(text) {
+                return this.exampleLines(text).map(line => `{{${line.who}}}: ${line.text}`).join('\n');
+            },
+
+            /** The examples a story has: those of its first opening that has any, as lines. */
+            storyExamples(scenarios, leadId) {
+                const first = (Array.isArray(scenarios) ? scenarios : []).find(sc => sc && Array.isArray(sc.example_dialogue) && sc.example_dialogue.length);
+                return first ? this.examplesFromTurns(first.example_dialogue, leadId) : '';
+            },
+
+            /**
+             * Keeps the story's own text for an opening, the first time the Workshop changes it, for
+             * exporting the original card and for variants made from before the change.
+             */
+            keepOriginalOpening(ws, scenario) {
+                const kept = (ws.original && ws.original.openings) || {};
+                if (!scenario || kept[scenario.id]) return ws;
+                const opening = { name: scenario.name || '', message: this.cardText(scenario.message || '') };
+                return { ...ws, original: { ...(ws.original || {}), openings: { ...kept, [scenario.id]: opening } } };
+            },
+
+            keepOriginalExamples(ws, text) {
+                const original = ws.original || {};
+                if (original.examples !== undefined && original.examples !== null) return ws;
+                return { ...ws, original: { ...original, examples: String(text || '') } };
+            },
+
+            /** An opening in a version of the character: its own text, or else the story's from before the Workshop changed it. */
+            openingIn(state, original, scenario) {
+                const own = ((state && state.openings) || {})[scenario.id];
+                const kept = ((original && original.openings) || {})[scenario.id];
+                const from = own || kept;
+                return {
+                    name: (from && from.name) || scenario.name || '',
+                    message: from ? String(from.message || '') : this.cardText(scenario.message || '')
+                };
+            },
+
+            /** The examples in a version of the character, or null when they are the story's own. */
+            examplesIn(state, original) {
+                if (state && state.examples !== undefined && state.examples !== null) return state.examples;
+                if (original && original.examples !== undefined && original.examples !== null) return original.examples;
+                return null;
+            },
+
+            /**
+             * The story's openings with the variant in use written into them: each one's name and
+             * message, and the example turns in every opening, the way import fills them. Nothing
+             * else about an opening changes, an opening the Workshop never changed keeps its text, and
+             * text for an opening that is gone from the story is left out.
+             * @param {{leadId: string, leadName: string, userId: string}} who - The lead, by id and name, and you.
+             * @returns {{scenarios: Object[], changed: boolean}} The openings passed in, when nothing changed.
+             */
+            syncStory(scenarios, ws, { leadId, leadName, userId }, at = Date.now()) {
+                const list = Array.isArray(scenarios) ? scenarios : [];
+                const state = this.active(ws).state;
+                const original = ws.original || {};
+                const examples = this.examplesIn(state, original);
+                const turns = examples === null ? null : this.turnsFromExamples(examples, leadId, userId, at, leadName);
+                const wanted = turns && this.examplesFromTurns(turns, leadId);
+                let changed = false;
+                const out = list.map(sc => {
+                    let next = sc;
+                    const own = (state.openings || {})[sc.id] || (original.openings || {})[sc.id];
+                    if (own) {
+                        const name = own.name || sc.name;
+                        const message = this.storyText(own.message || '', leadName);
+                        if (name !== sc.name || message !== sc.message) next = { ...next, name, message };
+                    }
+                    if (turns && this.examplesFromTurns(sc.example_dialogue || [], leadId) !== wanted) {
+                        next = { ...next, example_dialogue: this._copy(turns) };
+                    }
+                    if (next !== sc) changed = true;
+                    return next;
+                });
+                return { scenarios: changed ? out : list, changed };
+            },
+
+            /**
+             * A lead's card: each opening's message in the version picked, in the story's order, and
+             * its examples, null when they are the story's own.
+             * @param {string} pick - 'current', 'original', a variant id or a commit id.
+             * @returns {{ids: string[], greetings: string[], examples: string|null}|null} Null for a version that isn't there.
+             */
+            cardOpenings(ws, pick = 'current', scenarios = []) {
+                const original = ws.original || {};
+                let state = null;
+                if (pick !== 'original') {
+                    const variant = ws.variants.find(v => v.id === pick);
+                    state = pick === 'current' ? this.active(ws).state : (variant ? variant.state : this.stateAt(ws, pick));
+                    if (!state) return null;
+                }
+                const list = (Array.isArray(scenarios) ? scenarios : []).filter(Boolean);
+                return {
+                    ids: list.map(sc => sc.id),
+                    greetings: list.map(sc => this.openingIn(state, original, sc).message),
+                    examples: this.examplesIn(state, original)
+                };
+            },
+
+            /** The Workshop with each old opening id swapped for a new one everywhere, its history included. */
+            renameOpenings(ws, map) {
+                let json = JSON.stringify(ws);
+                for (const [from, to] of Object.entries(map || {})) {
+                    if (!from || !to || from === to) continue;
+                    json = json.split(JSON.stringify(from)).join(JSON.stringify(to));
+                }
+                return JSON.parse(json);
+            },
+
+            // Card import used to paste the example dialogue into the character's instructions as well
+            // as making it hidden turns in each opening, so replies read it twice.
+            EXAMPLE_COPY: /(^|\n\n)### Example Dialogue\n[\s\S]*?(?=\n### |$)/,
+
+            hasExampleCopy(text) {
+                return this.EXAMPLE_COPY.test(String(text || ''));
+            },
+
+            /** The instructions without that copy, and with everything else as it was. */
+            withoutExampleCopy(text) {
+                const source = String(text || '');
+                const match = source.match(this.EXAMPLE_COPY);
+                if (!match) return source;
+                const rest = source.slice(0, match.index) + source.slice(match.index + match[0].length);
+                return match.index === 0 ? rest.replace(/^\n+/, '') : rest;
             },
 
             /**
@@ -544,11 +766,15 @@
 
             _apply(state, changes) {
                 let { concept, notes, unsorted } = state;
+                let openings = this._copy(state.openings || {});
+                let examples = state.examples ?? null;
                 const sections = state.sections.slice();
                 for (const ch of changes) {
                     if (ch.section === '_concept') concept = ch.after;
                     else if (ch.section === '_notes') notes = ch.after;
                     else if (ch.section === '_unsorted') unsorted = ch.after;
+                    else if (ch.section === '_openings') openings = this._copy(ch.after || {});
+                    else if (ch.section === '_examples') examples = ch.after ?? null;
                     else {
                         const i = sections.findIndex(s => s.id === ch.section);
                         if (ch.after === null) {
@@ -560,7 +786,7 @@
                         }
                     }
                 }
-                return { concept, notes, unsorted: unsorted || '', sections };
+                return { concept, notes, unsorted: unsorted || '', openings, examples, sections };
             },
 
             /**
@@ -573,6 +799,8 @@
                     concept: next.concept || '',
                     notes: next.notes || '',
                     unsorted: next.unsorted || '',
+                    openings: this._copy(next.openings || {}),
+                    examples: next.examples ?? null,
                     sections: next.sections.map(s => {
                         const copy = this._copy(s);
                         const old = before.get(s.id);

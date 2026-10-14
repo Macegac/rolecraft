@@ -4325,3 +4325,417 @@ test('Cardcraft move: wired into Library Management', () => {
     }
     assert.ok(fs.readFileSync(path.join(__dirname, 'js', 'boot.js'), 'utf8').includes('CardcraftMove.registerActions();'));
 });
+
+// ─── Openings in the Workshop ────────────────────────────────────────────────
+
+/** A story's two openings: the first with example turns and knowledge of its own, the second plain. */
+function openingsStory() {
+    return [
+        {
+            id: 'sc1', name: 'Default Start', message: 'Kael slides a mug across the bar. "On the house, {user}."',
+            example_dialogue: [
+                { character_id: 'me', content: 'Thanks for the other night.', type: 'chat', isHidden: true },
+                { character_id: 'ch1', content: "Don't. You paid your tab.", type: 'chat', isHidden: true }
+            ],
+            static_entries: [{ title: 'The inn', content: 'A warm inn.' }], active_character_ids: ['me', 'ch1']
+        },
+        { id: 'sc2', name: 'Storm night', message: 'Rain on the roof.', example_dialogue: [], active_character_ids: ['me', 'ch1'] }
+    ];
+}
+
+const AT_THE_BAR = { name: 'At the bar', message: `{{char}} doesn't look up. "Coin first, {{user}}."` };
+const KAEL = { leadId: 'ch1', leadName: 'Kael', userId: 'me' };
+
+/** A Workshop whose main line changed the first opening and the examples, with a variant from before either. */
+function openingsWorkshop(scenarios = openingsStory()) {
+    let ws = WorkshopStore.create({ now: 1, commitId: 'c0' });
+    ws = WorkshopStore.keepOriginalOpening(ws, scenarios[0]);
+    ws = WorkshopStore.keepOriginalExamples(ws, WorkshopStore.examplesFromTurns(scenarios[0].example_dialogue, 'ch1'));
+    ws = WorkshopStore.commit(ws, { ...WorkshopStore.active(ws).state, openings: { sc1: AT_THE_BAR } }, { now: 2, commitId: 'c1', summary: 'Edited the opening' });
+    ws = WorkshopStore.commit(ws, { ...WorkshopStore.active(ws).state, examples: "{{user}}: Thanks.\n{{char}}: Don't. You paid." }, { now: 3, commitId: 'c2', summary: 'Edited the examples' });
+    ws = WorkshopStore.branch(ws, 'c0', { name: 'Before', now: 4, variantId: 'v_before' });
+    return WorkshopStore.switchVariant(ws, 'v_main');
+}
+
+test('WorkshopStore: openings and example dialogue live in each variant, with a history, and a Phase 1 Workshop has none', () => {
+    let ws = WorkshopStore.create({ now: 1, commitId: 'c0' });
+    assert.equal(ws.commits[0].changes.length, 14, 'a character with no openings of its own starts as before');
+    deepEq(WorkshopStore.active(ws).state.openings, {});
+    assert.equal(WorkshopStore.active(ws).state.examples, null, "null: the story's own examples");
+
+    ws = WorkshopStore.commit(ws, { ...WorkshopStore.active(ws).state, openings: { sc1: AT_THE_BAR } }, { now: 2, commitId: 'c1' });
+    deepEq(ws.commits.at(-1).changes.map(ch => [ch.section, ch.before, ch.after]), [['_openings', {}, { sc1: AT_THE_BAR }]]);
+    ws = WorkshopStore.commit(ws, { ...WorkshopStore.active(ws).state, examples: '{{user}}: Hi.\n{{char}}: Hello.' }, { now: 3, commitId: 'c2' });
+    deepEq(ws.commits.at(-1).changes.map(ch => [ch.section, ch.before, ch.after]), [['_examples', null, '{{user}}: Hi.\n{{char}}: Hello.']]);
+
+    for (const [id, openings, examples] of [['c0', {}, null], ['c1', { sc1: AT_THE_BAR }, null], ['c2', { sc1: AT_THE_BAR }, '{{user}}: Hi.\n{{char}}: Hello.']]) {
+        const state = WorkshopStore.stateAt(ws, id);
+        deepEq([state.openings, state.examples], [openings, examples], `${id} rebuilds`);
+    }
+    deepEq(WorkshopStore.stateAt(ws, 'c2'), JSON.parse(JSON.stringify(WorkshopStore.active(ws).state)), 'the newest point rebuilds exactly');
+    deepEq(WorkshopStore.active(WorkshopStore.restore(ws, 'c0', { now: 4, commitId: 'c3' })).state.openings, {}, 'going back takes the openings back too');
+    assert.equal(WorkshopStore.active(WorkshopStore.branch(ws, 'c1', { now: 5, variantId: 'v2' })).state.examples, null,
+        'a variant from an earlier point has the examples as they were then');
+
+    const phase1 = JSON.parse(JSON.stringify(WorkshopStore.create({ now: 1, commitId: 'c0' })));
+    delete phase1.variants[0].state.openings;
+    delete phase1.variants[0].state.examples;
+    const next = WorkshopStore.commit(phase1, withTexts(WorkshopStore.active(phase1).state, { appearance: 'Tall.' }), { now: 2, commitId: 'c1' });
+    deepEq(next.commits.at(-1).changes.map(ch => ch.section), ['appearance'], 'a Workshop from before reads as having none, which is not a change');
+});
+
+test("WorkshopStore: a story's openings belong to its lead: whoever speaks the first one, or else its first character", () => {
+    const cast = [{ id: 'me', is_user: true }, { id: 'nar', is_narrator: true }, { id: 'ch1' }, { id: 'ch2' }];
+    assert.equal(WorkshopStore.leadOf(cast, [{ id: 'sc1' }]), 'ch1');
+    assert.equal(WorkshopStore.leadOf(cast, [{ id: 'sc1', opening_character_id: 'ch2' }, { id: 'sc2', opening_character_id: 'ch1' }]), 'ch2', 'the first opening decides');
+    assert.equal(WorkshopStore.leadOf(cast, [{ id: 'sc1', opening_character_id: 'me' }]), 'ch1', 'never you or the narrator');
+    assert.equal(WorkshopStore.leadOf(cast, [{ id: 'sc1', opening_character_id: 'gone' }]), 'ch1');
+    assert.equal(WorkshopStore.leadOf(cast, []), 'ch1');
+    assert.equal(WorkshopStore.leadOf([{ id: 'me', is_user: true }], [{ id: 'sc1' }]), null);
+});
+
+test("WorkshopStore: openings and examples switch between a card's wording and the story's own placeholders", () => {
+    assert.equal(WorkshopStore.storyText('{{char}} waves at {{user}}. {{User}}?', 'Kael'), 'Kael waves at {user}. {user}?',
+        "the lead's own name, as card import writes it: in a chat {character} means whoever speaks, and a narrator can speak an opening");
+    assert.equal(WorkshopStore.storyText('{{char}} waves.'), '{character} waves.', 'with no name to hand, the placeholder');
+    assert.equal(WorkshopStore.cardText('{character} waves at {user}.'), '{{char}} waves at {{user}}.');
+    assert.equal(WorkshopStore.cardText('{{char}} waves at {{user}}.'), '{{char}} waves at {{user}}.', 'card wording is left as it is');
+    const turns = WorkshopStore.turnsFromExamples("{{user}}: Thanks for the other night.\n{{char}}: Don't, {{user}}. You paid your tab.\n*She shrugs.*", 'ch1', 'me', 5, 'Kael');
+    assert.equal(WorkshopStore.turnsFromExamples('{{char}}: {{char}} never forgets.', 'ch1', 'me', 5, 'Kael')[0].content, 'Kael never forgets.');
+    deepEq(turns.map(t => [t.character_id, t.content, t.isHidden, t.type]),
+        [['me', 'Thanks for the other night.', true, 'chat'], ['ch1', "Don't, {user}. You paid your tab.\n*She shrugs.*", true, 'chat']], 'a turn runs until the next speaker');
+    assert.equal(WorkshopStore.examplesFromTurns(turns, 'ch1'), "{{user}}: Thanks for the other night.\n{{char}}: Don't, {{user}}. You paid your tab.\n*She shrugs.*");
+    assert.equal(WorkshopStore.examplesFromCard('<START>\n{{user}}:\nHi\n{{char}}:\nHello.'), '{{user}}: Hi\n{{char}}: Hello.', "a card's example block, as Rolecraft and other apps write it");
+    deepEq(WorkshopStore.turnsFromExamples('  ', 'ch1', 'me'), []);
+});
+
+test('WorkshopStore: the story gets each opening as the variant in use has it, and nothing else is touched', () => {
+    const scenarios = openingsStory();
+    const untouched = JSON.stringify(scenarios);
+    assert.equal(WorkshopStore.syncStory(scenarios, WorkshopStore.create({ now: 1, commitId: 'c0' }), KAEL).changed, false,
+        'a Workshop that never changed an opening leaves the story alone');
+
+    const ws = openingsWorkshop(scenarios);
+    const synced = WorkshopStore.syncStory(scenarios, ws, KAEL);
+    assert.equal(synced.changed, true);
+    assert.equal(JSON.stringify(scenarios), untouched, 'the openings passed in are left as they were');
+    deepEq([synced.scenarios[0].name, synced.scenarios[0].message], ['At the bar', `Kael doesn't look up. "Coin first, {user}."`],
+        "in the story's own wording: the lead's name, as card import writes it, and {user}");
+    deepEq(synced.scenarios[0].static_entries, scenarios[0].static_entries, "the opening's cast and knowledge stay");
+    deepEq(synced.scenarios.map(sc => sc.example_dialogue.map(t => [t.character_id, t.content])),
+        [[['me', 'Thanks.'], ['ch1', "Don't. You paid."]], [['me', 'Thanks.'], ['ch1', "Don't. You paid."]]], 'the examples go into every opening, as import does');
+    assert.equal(synced.scenarios[1].message, 'Rain on the roof.', 'an opening the Workshop never changed keeps its text');
+    assert.equal(WorkshopStore.syncStory(synced.scenarios, ws, KAEL).changed, false, 'once in step, there is nothing to write');
+
+    const before = WorkshopStore.syncStory(synced.scenarios, WorkshopStore.switchVariant(ws, 'v_before'), KAEL);
+    deepEq([before.scenarios[0].name, before.scenarios[0].message], ['Default Start', 'Kael slides a mug across the bar. "On the house, {user}."'],
+        'a variant from before the change puts the opening back as the story had it');
+    deepEq(before.scenarios[0].example_dialogue.map(t => t.content), ['Thanks for the other night.', "Don't. You paid your tab."]);
+
+    deepEq(WorkshopStore.syncStory([scenarios[1]], ws, KAEL).scenarios.map(sc => sc.id), ['sc2'], 'an opening deleted in the Library stays deleted');
+});
+
+test('WorkshopStore: a card takes its first message, other greetings and examples from the version picked', () => {
+    const scenarios = openingsStory();
+    const ws = openingsWorkshop(scenarios);
+    const now = WorkshopStore.cardOpenings(ws, 'current', scenarios);
+    deepEq(now.ids, ['sc1', 'sc2']);
+    deepEq(now.greetings, [AT_THE_BAR.message, 'Rain on the roof.']);
+    assert.equal(now.examples, "{{user}}: Thanks.\n{{char}}: Don't. You paid.");
+    const original = WorkshopStore.cardOpenings(ws, 'original', scenarios);
+    deepEq(original.greetings, ['Kael slides a mug across the bar. "On the house, {{user}}."', 'Rain on the roof.']);
+    assert.equal(original.examples, "{{user}}: Thanks for the other night.\n{{char}}: Don't. You paid your tab.");
+    assert.equal(WorkshopStore.cardOpenings(ws, 'v_before', scenarios).greetings[0], original.greetings[0], 'a variant');
+    assert.equal(WorkshopStore.cardOpenings(ws, 'c1', scenarios).greetings[0], AT_THE_BAR.message, 'a saved point');
+    assert.equal(WorkshopStore.cardOpenings(ws, 'c1', scenarios).examples, original.examples, 'with the examples it had then');
+    assert.equal(WorkshopStore.cardOpenings(ws, 'nope', scenarios), null);
+    assert.equal(WorkshopStore.cardOpenings(WorkshopStore.create({ now: 1, commitId: 'c0' }), 'current', scenarios).examples, null,
+        "no examples of its own: the card uses the story's, as before");
+});
+
+test('WorkshopStore: a card notes the order of its openings with a fingerprint, and greetings changed in another app come back as a new step', () => {
+    const ws = openingsWorkshop();
+    const written = { description: 'D', personality: '', scenario: 'S', ownScenario: false, openings: ['sc1', 'sc2'], greetings: ['G1', 'G2'], examples: '{{user}}:\nHi' };
+    const carried = WorkshopStore.toCard(ws, 'current', written, 9);
+    deepEq(carried.exported, {
+        pick: 'current', at: 9, ownScenario: false, check: WorkshopStore.cardCheck('D', '', 'S'),
+        openings: ['sc1', 'sc2'], openingsCheck: WorkshopStore.cardCheck('G1', 'G2', '{{user}}:\nHi')
+    });
+    const card = { description: 'D', personality: '', scenario: 'S', greetings: ['G1', 'G2'], examples: '{{user}}:\nHi' };
+    deepEq(WorkshopStore.fromCard(carried, card), JSON.parse(JSON.stringify(ws)), 'untouched: exactly as it was');
+
+    const back = WorkshopStore.fromCard(carried, { ...card, greetings: ['G1, edited elsewhere', 'G2'], examples: '{{user}}: Hi\n{{char}}: Hello.' }, 10);
+    assert.equal(back.commits.length, ws.commits.length + 1);
+    assert.equal(back.commits.at(-1).summary, 'Changed outside Rolecraft');
+    const state = WorkshopStore.active(back).state;
+    deepEq(state.openings.sc1, { name: 'At the bar', message: 'G1, edited elsewhere' }, 'the opening keeps its name');
+    deepEq(state.openings.sc2, { message: 'G2' });
+    assert.equal(state.examples, '{{user}}: Hi\n{{char}}: Hello.');
+    deepEq(state.sections, JSON.parse(JSON.stringify(WorkshopStore.active(ws).state.sections)), 'the description was not touched, so neither are the sections');
+
+    const renamed = WorkshopStore.renameOpenings(back, { sc1: 'new-1', sc2: 'new-2' });
+    deepEq(Object.keys(WorkshopStore.active(renamed).state.openings).sort(), ['new-1', 'new-2']);
+    assert.ok(!JSON.stringify(renamed).includes('"sc1"'), 'every mention moves, the history included');
+    deepEq(WorkshopStore.stateAt(renamed, 'c1').openings, { 'new-1': AT_THE_BAR });
+});
+
+test('WorkshopStore: the copy of the example dialogue that card import pasted into the instructions can be taken out, leaving the rest', () => {
+    const text = "Write the next response for {character}.\n\n### Author's Rules\nStay in character.\n\n### Example Dialogue\n{user}: Hi\nKael: Hello.";
+    assert.equal(WorkshopStore.hasExampleCopy(text), true);
+    assert.equal(WorkshopStore.withoutExampleCopy(text), "Write the next response for {character}.\n\n### Author's Rules\nStay in character.");
+    assert.equal(WorkshopStore.withoutExampleCopy('### Example Dialogue\nA: b\n\n### Later\nKeep.'), '### Later\nKeep.');
+    assert.equal(WorkshopStore.hasExampleCopy('No copy here.'), false);
+    assert.equal(WorkshopStore.withoutExampleCopy('No copy here.'), 'No copy here.');
+});
+
+test('Character cards: example dialogue comes in once, as hidden turns in each opening, not also pasted into the instructions', () => {
+    const IE = cardService();
+    const story = IE._convertV2toEllipsis({ name: 'Kael', description: 'A ranger.', first_mes: 'Hey.', alternate_greetings: ['Later.'], mes_example: '<START>\n{{user}}: Hi\n{{char}}: Hello, {{user}}.' });
+    const kael = story.characters.find(c => !c.is_user);
+    assert.ok(!kael.model_instructions.includes('Example Dialogue'), 'replies would read it twice: once here, once from the turns');
+    deepEq(story.scenarios.map(s => s.example_dialogue.map(t => t.content)), [['Hi', 'Hello, {user}.'], ['Hi', 'Hello, {user}.']]);
+    deepEq(story.narratives[0].state.chat_history.filter(m => m.isHidden).map(m => m.content), ['Hi', 'Hello, {user}.']);
+});
+
+test("Character cards: the lead's card takes its openings and examples from the Workshop, and importing it lines them up again", async () => {
+    const IE = cardService();
+    const scenarios = openingsStory();
+    const ws = openingsWorkshop(scenarios);
+    const kael = { id: 'ch1', name: 'Kael', description: WorkshopStore.compile(WorkshopStore.active(ws).state), model_instructions: 'Write as {character}.', tags: [], workshop: ws };
+    const story = { name: 'Kael', characters: [{ id: 'me', name: 'You', is_user: true }, kael], scenarios, dynamic_entries: [] };
+    const narrative = { active_character_ids: ['me', 'ch1'], state: { chat_history: [{ character_id: 'ch1', content: 'Something else entirely.', type: 'chat' }], static_entries: [], worldMap: { grid: [] } } };
+
+    const v2 = IE._convertEllipsistoV2(story, narrative, 'ch1');
+    assert.equal(v2.data.first_mes, AT_THE_BAR.message, 'the first opening, not whatever the open chat starts with');
+    deepEq(v2.data.alternate_greetings, ['Rain on the roof.']);
+    assert.equal(v2.data.mes_example, "{{user}}:\nThanks.\n{{char}}:\nDon't. You paid.");
+    deepEq(v2.data.extensions.rolecraft_workshop.exported.openings, ['sc1', 'sc2']);
+    const original = IE._convertEllipsistoV2(story, narrative, 'ch1', 'original');
+    assert.equal(original.data.first_mes, 'Kael slides a mug across the bar. "On the house, {{user}}."');
+    assert.equal(original.data.mes_example, "{{user}}:\nThanks for the other night.\n{{char}}:\nDon't. You paid your tab.");
+
+    const png = await (await IE._injectDataIntoPng(arrayBufferOf(tinyPng()), v2)).arrayBuffer();
+    const back = IE._convertV2toEllipsis(JSON.parse(IE._b64_to_utf8(await IE._extractV2Data(png))).data);
+    const kaelBack = back.characters.find(c => !c.is_user);
+    const youBack = back.characters.find(c => c.is_user);
+    const ids = back.scenarios.map(s => s.id);
+    assert.ok(!ids.includes('sc1'), 'the new story has openings of its own');
+    deepEq(Object.keys(WorkshopStore.active(kaelBack.workshop).state.openings), [ids[0]], "the Workshop's openings point at the new story's");
+    deepEq([back.scenarios[0].name, back.scenarios[0].message], ['At the bar', `Kael doesn't look up. "Coin first, {user}."`]);
+    deepEq(back.scenarios[1].example_dialogue.map(t => [t.character_id, t.content]), [[youBack.id, 'Thanks.'], [kaelBack.id, "Don't. You paid."]]);
+    assert.equal(kaelBack.workshop.commits.length, ws.commits.length, 'nothing was changed in another app, so no new step');
+
+    story.scenarios = scenarios.map(sc => ({ ...sc, opening_character_id: 'ch2' }));
+    story.characters.push({ id: 'ch2', name: 'Elara', description: 'An elf.' });
+    const notLead = IE._convertEllipsistoV2(story, narrative, 'ch1');
+    assert.equal(notLead.data.first_mes, 'Something else entirely.', "a character who isn't the lead exports as before");
+    assert.equal(notLead.data.extensions.rolecraft_workshop.exported.openings, undefined);
+});
+
+test('Character cards: {{user}} already in the text is written as {{user}}, never {{{user}}}', () => {
+    const IE = cardService();
+    const kael = { id: 'ch1', name: 'Kael', description: 'Owes {{user}} a favour. Waves at {user}.', model_instructions: 'Write as {character} for {{user}}.', tags: [] };
+    const story = { name: 'Kael', characters: [{ id: 'me', name: 'You', is_user: true }, kael], scenarios: [{ id: 'sc1', message: 'Hello, {{user}}.' }], dynamic_entries: [] };
+    const narrative = { active_character_ids: ['me', 'ch1'], state: { chat_history: [{ character_id: 'ch1', content: 'Hello, {{user}}.', type: 'chat' }], static_entries: [], worldMap: { grid: [] } } };
+    const card = IE._convertEllipsistoV2(story, narrative, 'ch1').data;
+    assert.equal(card.description, 'Owes {{user}} a favour. Waves at {{user}}.', "the {user} inside {{user}} is not Rolecraft's own placeholder");
+    assert.equal(card.first_mes, 'Hello, {{user}}.');
+    assert.equal(card.system_prompt, 'Write as {{char}} for {{user}}.');
+});
+
+test('WorkshopPrompts: openings and examples are written from the whole character, an opening as the first message of a chat', () => {
+    const extras = {
+        openings: [{ id: 'sc1', label: 'O1', name: 'At the bar', message: 'Coin first.' }, { id: 'sc2', label: 'O2', name: 'Storm night', message: '' }],
+        examples: '{{user}}: Hi\n{{char}}: Hello.'
+    };
+    const ask = WorkshopPrompts.writeOpening({ name: 'Kael', state: pinnedState(), extras, openingId: 'sc1', reweave: true });
+    const sent = ask.messages[1].content;
+    assert.match(sent, /OPENINGS/);
+    assert.match(sent, /O1 "At the bar":\nCoin first\./);
+    assert.match(sent, /EXAMPLE DIALOGUE[^\n]*\n\{\{user\}\}: Hi/);
+    assert.match(sent, /TASK: Re-weave the opening "At the bar"/);
+    assert.match(sent, /first message of a new roleplay chat/);
+    assert.match(sent, /Never write what \{\{user\}\} does/);
+    assert.ok(sent.includes('"slow to trust"'), 'the pins are there too');
+    deepEq(ask.read({ text: '  A new opening.  ' }), { text: 'A new opening.' });
+    assert.throws(() => ask.read({}), /no text/);
+    assert.match(WorkshopPrompts.writeOpening({ name: 'Kael', state: pinnedState(), extras, openingId: 'sc2' }).messages[1].content, /TASK: Write the opening "Storm night"/);
+
+    const takes = WorkshopPrompts.openingTakes({ name: 'Kael', state: pinnedState(), extras, openingId: 'sc2', avoid: ['At the docks'], creativity: 5 });
+    assert.equal(takes.temperature, 1.3);
+    assert.match(takes.messages[1].content, /turned these down before.*- At the docks/s);
+    deepEq(takes.read({ takes: [{ angle: 'In the rain', text: 'One.' }, { text: 'Two.' }] }).map(t => [t.angle, t.text]), [['In the rain', 'One.'], ['A different take', 'Two.']]);
+
+    const examples = WorkshopPrompts.writeExamples({ name: 'Kael', state: pinnedState(), extras, reweave: true });
+    assert.match(examples.messages[1].content, /TASK: Re-weave the example dialogue/);
+    deepEq(examples.read({ text: '{{user}}: Hi\n{{char}}: Hello.' }), { text: '{{user}}: Hi\n{{char}}: Hello.' });
+    assert.throws(() => examples.read({ text: 'No one speaks here.' }), /dialogue/);
+
+    assert.match(WorkshopPrompts.writeSection({ name: 'Kael', state: pinnedState(), sectionId: 'personality', extras }).messages[1].content, /OPENINGS/,
+        'sections are written knowing the openings');
+    assert.ok(!WorkshopPrompts.writeSection({ name: 'Kael', state: pinnedState(), sectionId: 'personality' }).messages[1].content.includes('OPENINGS'),
+        "and a character without them doesn't get the heading");
+});
+
+/** The Workshop on screen for Kael, the lead of a story with two openings, kept in a stand-in database. */
+function openingsPage(answers = [], { lead = true } = {}) {
+    const events = [];
+    const notices = [];
+    const calls = [];
+    const handlers = {};
+    const elements = {};
+    const element = () => ({
+        innerHTML: '', outerHTML: '', value: '', textContent: '', style: {}, dataset: {},
+        classList: { add() { }, remove() { }, toggle() { }, contains: () => false },
+        querySelector: () => null, querySelectorAll: () => [], contains: () => false, focus() { }, setAttribute() { }, addEventListener() { }
+    });
+    const byId = id => elements[id] || (elements[id] = element());
+    const characters = [
+        { id: 'me', name: 'You', is_user: true },
+        { id: 'ch1', name: 'Kael', description: '', model_instructions: "Write as {character}.\n\n### Example Dialogue\n{user}: Thanks.\nKael: Don't." },
+        { id: 'ch2', name: 'Elara', description: '' }
+    ];
+    const scenarios = openingsStory().map(sc => (lead ? sc : { ...sc, opening_character_id: 'ch2' }));
+    let saved = { id: 's1', name: 'Kael', characters, scenarios };
+    const library = { active_story_id: 's1', stories: [JSON.parse(JSON.stringify(saved))] };
+    const chat = [...scenarios[0].example_dialogue, { character_id: 'ch1', content: 'Hello again.', type: 'chat' }];
+    const store = {
+        state: { characters, evolved_characters: {}, chat_history: JSON.parse(JSON.stringify(chat)) },
+        _isSaving: false,
+        _isSavingPaused: false,
+        async forceSave() { events.push('save'); },
+        pauseSaving() { this._isSavingPaused = true; events.push('pause'); },
+        resumeSaving() { this._isSavingPaused = false; events.push('resume'); }
+    };
+    const DBService = {
+        async getStory(id) { return id === saved.id ? JSON.parse(JSON.stringify(saved)) : null; },
+        async saveStory(story) { events.push('story'); saved = JSON.parse(JSON.stringify(story)); }
+    };
+    const WorkshopAI = {
+        async chat(opts) {
+            calls.push(opts);
+            const next = answers.shift();
+            if (next instanceof Error) throw next;
+            return { text: JSON.stringify(next), thinking: '', finishReason: 'stop', provider: 'Test', data: next, attempts: 1 };
+        }
+    };
+    const source = ['js/core/dom.js', 'js/services/workshop-store.js', 'js/util/workshop-prompts.js', 'js/controllers/workshop.js']
+        .map(file => fs.readFileSync(path.join(__dirname, file), 'utf8')).join('\n');
+    const WC = vm.runInNewContext(source + '\nWorkshopController', {
+        document: { getElementById: byId, querySelector: element, querySelectorAll: () => [], activeElement: null },
+        ReactiveStore: store, WorkshopAI, AbortController, setTimeout, UTILITY, DBService,
+        StateManager: { getLibrary: () => library },
+        UIManager: { showNotification: (text, type) => notices.push([text, type]) },
+        ActionHandler: { register: (name, fn) => { handlers[name] = fn; } }, window: { addEventListener() { } }, debounce: fn => fn,
+        LibraryController: { async exportCharacterCard() { } }
+    });
+    WC.registerActions();
+    WC.RUNTIME.view = { charId: 'ch1', ws: WorkshopStore.create({ now: 1, commitId: 'c0' }), tab: 'sections', editing: null, addingPin: null };
+    return {
+        WC, events, notices, calls, characters, library, store, elements, el: byId,
+        act: (name, dataset = {}, value) => handlers[name](dataset, value),
+        view: () => WC.RUNTIME.view,
+        saved: () => saved,
+        openings: () => {
+            WC.renderOpenings();
+            return byId('ws-openings-wrap').innerHTML;
+        }
+    };
+}
+
+test("Openings in the Workshop: only the lead's Workshop shows them, and editing one by hand is a step the story follows", async () => {
+    assert.equal(openingsPage([], { lead: false }).openings(), '', "a character who isn't the story's lead has no Openings card");
+
+    const p = openingsPage();
+    const html = p.openings();
+    assert.match(html, /Openings/);
+    assert.ok(html.indexOf('Default Start') < html.indexOf('Storm night'), "every opening, in the story's order");
+    assert.ok(html.includes('Kael slides a mug across the bar. &quot;On the house, {{user}}.&quot;'), 'shown in card wording');
+    assert.ok(html.includes('{{user}}: Thanks for the other night.'), 'and the example dialogue');
+    assert.match(html, /Remove the copy/, "the copy in Kael's instructions can be taken out");
+
+    await p.WC._fieldDone({ dataset: { wsField: 'opening', opening: 'sc1' }, value: AT_THE_BAR.message, classList: { contains: () => false } });
+    await settle();
+    assert.equal(p.view().ws.commits.at(-1).summary, 'Edited the opening "Default Start"');
+    deepEq(WorkshopStore.active(p.view().ws).state.openings.sc1, { name: 'Default Start', message: AT_THE_BAR.message });
+    deepEq(p.view().ws.original.openings.sc1, { name: 'Default Start', message: 'Kael slides a mug across the bar. "On the house, {{user}}."' },
+        "the story's text from before is kept, for The original card");
+    assert.equal(p.saved().scenarios[0].message, `Kael doesn't look up. "Coin first, {user}."`, 'the story has it');
+    assert.equal(p.library.stories[0].scenarios[0].message, p.saved().scenarios[0].message, "and so does the Library's copy");
+    deepEq(p.saved().scenarios[0].static_entries, openingsStory()[0].static_entries);
+    deepEq(p.events.slice(-3), ['pause', 'story', 'resume'], 'autosave waits while the story is written');
+
+    await p.WC._fieldDone({ dataset: { wsField: 'opening-name', opening: 'sc1' }, value: 'At the bar', classList: { contains: () => false } });
+    await settle();
+    assert.equal(p.saved().scenarios[0].name, 'At the bar', 'renamed too');
+
+    p.WC.renderCard();
+    const card = p.elements['ws-card'].innerHTML;
+    assert.ok(card.includes('First message') && card.includes('Coin first, {{user}}.'), "the Card tab shows the card's first message");
+    assert.ok(card.includes('Alternate greetings') && card.includes('Rain on the roof.'));
+    assert.ok(card.includes('Example dialogue'));
+});
+
+test('Openings in the Workshop: written and taken with the AI from the whole character, and a take can become a new opening', async () => {
+    const p = openingsPage([
+        { text: AT_THE_BAR.message },
+        { takes: [{ angle: 'At the docks', text: '{{char}} waits at the docks.' }, { angle: 'In the rain', text: 'Rain. {{char}} at the door.' }, { angle: 'At dawn', text: 'Dawn.' }] }
+    ]);
+    await p.WC._ask('opening-reweave', null, null, 'sc1');
+    const sent = p.calls[0].messages[1].content;
+    assert.match(sent, /OPENINGS/);
+    assert.match(sent, /TASK: Re-weave the opening "Default Start"/);
+    const pending = p.view().ws.pending['o:sc1'];
+    deepEq([pending.kind, pending.mode, pending.text], ['opening', 'reweave', AT_THE_BAR.message]);
+    assert.equal(p.view().ws.commits.length, 1, 'nothing changed yet');
+    p.act('workshop-opening-accept', { opening: 'sc1' });
+    await settle();
+    assert.equal(p.view().ws.commits.at(-1).summary, 'Re-wove the opening "Default Start" with the AI');
+    assert.equal(p.saved().scenarios[0].message, `Kael doesn't look up. "Coin first, {user}."`);
+    assert.equal(p.view().ws.pending['o:sc1'], undefined);
+
+    await p.WC._ask('opening-takes', null, 4, 'sc2');
+    assert.equal(p.calls[1].temperature, 1.15);
+    await p.act('workshop-opening-take-new', { opening: 'sc2', index: '1' });
+    await settle();
+    const added = p.saved().scenarios[2];
+    assert.ok(added, 'a new opening in the story');
+    deepEq([added.name, added.message], ['In the rain', 'Rain. Kael at the door.']);
+    deepEq(added.active_character_ids, ['me', 'ch1'], "with the first opening's cast");
+    assert.equal(p.view().ws.commits.at(-1).summary, 'Added the opening "In the rain"');
+    assert.equal(p.view().ws.pending['o:sc2'].takes.length, 2, 'the other takes still wait');
+    p.act('workshop-opening-take-reject', { opening: 'sc2', index: '0' });
+    await settle();
+    deepEq(p.view().ws.avoid['o:sc2'], ['At the docks'], 'and the next takes steer clear of one turned down');
+});
+
+test('Openings in the Workshop: example dialogue goes into every opening, can be used in the open chat with Undo, and the copy in the instructions can go', async () => {
+    const p = openingsPage([{ text: "{{user}}: Thanks.\n{{char}}: Don't. You paid." }]);
+    await p.WC._ask('examples-reweave');
+    p.act('workshop-examples-accept');
+    await settle();
+    assert.equal(p.view().ws.commits.at(-1).summary, 'Re-wove the example dialogue with the AI');
+    deepEq(p.saved().scenarios.map(sc => sc.example_dialogue.map(t => [t.character_id, t.content])),
+        [[['me', 'Thanks.'], ['ch1', "Don't. You paid."]], [['me', 'Thanks.'], ['ch1', "Don't. You paid."]]]);
+    assert.equal(p.view().ws.original.examples, "{{user}}: Thanks for the other night.\n{{char}}: Don't. You paid your tab.");
+
+    p.act('workshop-examples-to-chat');
+    deepEq(p.store.state.chat_history.map(m => [m.content, !!m.isHidden]), [['Thanks.', true], ["Don't. You paid.", true], ['Hello again.', false]],
+        "the open chat reads the new examples, and its messages stay");
+    p.act('workshop-examples-undo');
+    deepEq(p.store.state.chat_history.map(m => m.content), ['Thanks for the other night.', "Don't. You paid your tab.", 'Hello again.']);
+
+    p.act('workshop-examples-uncopy');
+    assert.equal(p.characters[1].model_instructions, 'Write as {character}.');
+    assert.ok(!p.openings().includes('Remove the copy'));
+});
+
+test("Openings in the Workshop: switching variants puts that variant's openings into the story", async () => {
+    const p = openingsPage();
+    p.view().ws = openingsWorkshop(p.saved().scenarios);
+    await p.WC._saveWs(p.view());
+    assert.equal(p.saved().scenarios[0].name, 'At the bar');
+    p.act('workshop-variant-switch', { variant: 'v_before' });
+    await settle();
+    deepEq([p.saved().scenarios[0].name, p.saved().scenarios[0].message], ['Default Start', 'Kael slides a mug across the bar. "On the house, {user}."']);
+});
