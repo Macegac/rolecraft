@@ -211,6 +211,8 @@ function start({ port = DEFAULT_PORT, log = DEFAULT_LOG, quiet = false, host = '
     const server = http.createServer(async (req, res) => {
         const headers = corsHeaders(req);
         const route = req.url.split('?')[0].replace(/^\/api(?=\/v1\/)/, '');
+        // Every request, browser checks included, so a blocked call from a phone shows how far it got.
+        if (!quiet) console.log(`${req.method} ${req.url} from ${req.socket.remoteAddress} origin=${req.headers.origin || '-'}${req.headers['access-control-request-private-network'] ? ' private-network-check' : ''}`);
         if (req.method === 'OPTIONS') {
             res.writeHead(204, headers);
             return res.end();
