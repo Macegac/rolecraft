@@ -140,6 +140,7 @@
                 HistoryController.init();
                 Diagnostics.registerActions();
                 WorkshopController.registerActions();
+                CardcraftMove.registerActions();
                 UIManager.initChatScrollListener(); // Manages the scroll-to-bottom button visibility
                 if (typeof CropController !== 'undefined') CropController.init();
 

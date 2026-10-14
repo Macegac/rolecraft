@@ -4909,6 +4909,18 @@
                                     Select Folder
                                 </button>
                             </div>
+
+                            <!-- Cardcraft's cards, from the same site -->
+                            <div class="bg-black/20 p-5 rounded-lg border border-gray-700/50 flex flex-col">
+                                <h3 class="font-bold mb-2 flex items-center gap-2">
+                                    <svg class="w-5 h-5 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16l-4-4m0 0l4-4m-4 4h18"></path></svg>
+                                    Cardcraft Cards
+                                </h3>
+                                <p class="text-xs text-gray-400 flex-grow mb-4">Bring over the cards Cardcraft keeps on this device. Each becomes a story; Cardcraft keeps its copies.</p>
+                                <button data-action="cardcraft-open" class="w-full bg-teal-600/20 hover:bg-teal-600/40 text-teal-200 border border-teal-600/50 font-bold py-2 px-3 rounded-lg transition-colors text-sm">
+                                    Bring Over Cards
+                                </button>
+                            </div>
                         </div>
 
                         <!-- Full Restore -->

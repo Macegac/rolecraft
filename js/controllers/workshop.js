@@ -242,23 +242,9 @@
                 return !!(character && !character.is_user && !character.is_narrator);
             },
 
-            /**
-             * A Workshop for a character that has none yet, made from its card without any AI. Text
-             * under headings the Workshop knows goes to those sections; the rest stays unsorted, so
-             * the description keeps every word. Nothing is saved until the first change.
-             */
+            /** A Workshop for a character that has none yet, made from its card. Nothing is saved until the first change. */
             _fromCard(character) {
-                const description = String(character.description || '');
-                const state = WorkshopStore.blankState();
-                const split = WorkshopStore.splitCard(description);
-                state.unsorted = split.unsorted;
-                state.sections.forEach(s => { if (split.sections[s.id]) s.text = split.sections[s.id]; });
-                return WorkshopStore.create({
-                    state,
-                    original: { description, scenario: '' },
-                    origin: description.trim() ? 'card' : 'you',
-                    summary: description.trim() ? 'Taken from the card' : 'Started'
-                });
+                return WorkshopStore.fromDescription(character.description);
             },
 
             open(charId) {

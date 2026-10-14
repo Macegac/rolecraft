@@ -4156,3 +4156,157 @@ test('Character cards: a card saved as JSON (V1, V2 or V3) imports like a PNG ca
     assert.equal(nikki.name, 'Nikki');
     assert.equal(nikki.description, 'Nikki fixes bikes.');
 });
+
+// ─── Bringing Cardcraft's cards over ──────────────────────────────────────────
+
+test('WorkshopStore: a Workshop starts from a card description, keeping every word, and can carry a concept', () => {
+    const description = 'Loose intro.\n\n## Appearance\nTall.';
+    const ws = WorkshopStore.fromDescription(description, { concept: 'A medic on nights.', summary: 'Brought over from Cardcraft', now: 1, commitId: 'c0' });
+    const state = WorkshopStore.active(ws).state;
+    assert.equal(state.concept, 'A medic on nights.');
+    assert.equal(state.unsorted, 'Loose intro.');
+    assert.equal(state.sections.find(s => s.id === 'appearance').text, 'Tall.');
+    deepEq([ws.commits[0].origin, ws.commits[0].summary], ['card', 'Brought over from Cardcraft']);
+    deepEq(ws.original, { description, scenario: '' });
+    assert.equal(WorkshopStore.fromDescription('Some text.').commits[0].summary, 'Taken from the card');
+    assert.equal(WorkshopStore.fromDescription('').commits[0].summary, 'Started');
+});
+
+/**
+ * Cardcraft's IndexedDB as Rolecraft sees it. With rows null, Cardcraft was never used on this
+ * device: opening its database would create an empty one unless the upgrade is stopped.
+ */
+function fakeCardcraftDB(rows) {
+    const created = [];
+    return {
+        created,
+        open(name) {
+            const request = {};
+            setTimeout(() => {
+                if (rows === null) {
+                    let stopped = false;
+                    request.transaction = { abort: () => { stopped = true; } };
+                    request.onupgradeneeded();
+                    if (!stopped) created.push(name);
+                    request.onerror({ preventDefault() { } });
+                    return;
+                }
+                request.result = {
+                    objectStoreNames: { contains: store => store === 'cards' },
+                    transaction: () => ({
+                        objectStore: () => ({
+                            getAll() {
+                                const read = {};
+                                setTimeout(() => { read.result = rows; read.onsuccess(); });
+                                return read;
+                            }
+                        })
+                    }),
+                    close() { }
+                };
+                request.onsuccess();
+            });
+            return request;
+        }
+    };
+}
+
+/** CardcraftMove on a page that is never drawn, with Cardcraft's database standing in. */
+function cardcraftPage(rows, moved = {}) {
+    const elements = {};
+    const byId = id => elements[id] || (elements[id] = { innerHTML: '' });
+    const db = fakeCardcraftDB(rows);
+    const storage = { 'rolecraft-cardcraft-moved': JSON.stringify(moved) };
+    const saved = [];
+    const notices = [];
+    const closed = [];
+    const urls = { made: 0, revoked: 0 };
+    const source = ['js/core/dom.js', 'js/controllers/cardcraft-move.js'].map(file => fs.readFileSync(path.join(__dirname, file), 'utf8')).join('\n');
+    const CM = vm.runInNewContext(source + '\nCardcraftMove', {
+        indexedDB: db, ImportExportService: cardService(), WorkshopStore, Blob, setTimeout, console: { error() { } },
+        ImageProcessor: { processImageAsBlob: async blob => ({ portraitBytes: blob.size }) },
+        localStorage: { getItem: key => (key in storage ? storage[key] : null), setItem: (key, value) => { storage[key] = value; } },
+        LibraryController: {
+            async addImportedStory(story, image) {
+                if (story.characters.some(c => c.name === 'Broken')) throw new Error('disk full');
+                saved.push({ story, image });
+            }
+        },
+        StateManager: { updateTagCache() { }, saveLibrary() { } },
+        UIManager: { showNotification: (text, type) => notices.push([text, type]), showLoadingSpinner() { }, hideLoadingSpinner() { }, renderLibraryInterface() { }, renderIOHubModal() { } },
+        AppController: { closeModal: id => closed.push(id) },
+        URL: { createObjectURL: () => `blob:thumb-${++urls.made}`, revokeObjectURL: () => { urls.revoked++; } },
+        document: { getElementById: byId, querySelectorAll: () => [] }
+    });
+    return { CM, db, storage, saved, notices, closed, urls, content: () => byId('io-hub-modal-content').innerHTML };
+}
+
+test("Cardcraft move: finds Cardcraft's cards on this device, newest first, and never creates its database by looking", async () => {
+    const none = cardcraftPage(null);
+    deepEq(await none.CM.findCards(), []);
+    deepEq(none.db.created, [], 'a device that never had Cardcraft gets no empty Cardcraft database');
+
+    const page = cardcraftPage([{ id: 'a', updated: 1, data: { name: 'Old' } }, { id: 'b', updated: 5, data: { name: 'New' } }, { id: 'c', updated: 9 }]);
+    deepEq((await page.CM.findCards()).map(r => r.id), ['b', 'a'], 'newest first, and a row with no card data is skipped');
+});
+
+test("Cardcraft move: a card becomes a story with Cardcraft's edits, its portrait, and its concept in the Workshop", async () => {
+    const { CM } = cardcraftPage([]);
+    const row = {
+        id: 'n1', updated: 5, concept: 'A mechanic who trusts no one.', png: new Uint8Array(tinyPng()),
+        data: { name: 'Nikki', description: '## Appearance\nBuilt thick.\n\n## Personality\nGuarded.', first_mes: 'Hey.' }
+    };
+    const { story, imageBlob } = await CM.toStory(row);
+    const nikki = story.characters.find(c => !c.is_user);
+    assert.equal(nikki.name, 'Nikki');
+    assert.equal(WorkshopStore.active(nikki.workshop).state.concept, 'A mechanic who trusts no one.', 'the concept goes into the Workshop');
+    assert.equal(nikki.workshop.commits[0].summary, 'Brought over from Cardcraft');
+    assert.equal(nikki.description, '## Appearance & body\nBuilt thick.\n\n## Personality\nGuarded.', 'replies read what the Workshop builds');
+    deepEq(imageBlob, { portraitBytes: tinyPng().length }, 'the portrait, through the same processing as any import');
+
+    const plain = (await CM.toStory({ id: 'p1', data: { name: 'Kael', description: '{{char}} keeps watch.' } })).story.characters.find(c => !c.is_user);
+    assert.equal(plain.workshop, undefined, 'without a concept, the Workshop starts from the card when first opened, as for any character');
+    assert.equal(plain.description, 'Kael keeps watch.');
+});
+
+test('Cardcraft move: the ticked cards come over, the ones already moved start unticked, and a failure is named', async () => {
+    const rows = [
+        { id: 'a', updated: 9, data: { name: 'Nikki <3' }, png: new Uint8Array(tinyPng()) },
+        { id: 'b', updated: 5, data: { name: 'Kael' } },
+        { id: 'c', updated: 1, data: { name: 'Broken' } }
+    ];
+    const page = cardcraftPage(rows, { b: 1 });
+    await page.CM.open();
+    const html = page.content();
+    assert.match(html, /value="a" checked>/);
+    assert.match(html, /value="b">/, 'one already brought over starts unticked');
+    assert.ok(html.includes('already brought over'));
+    assert.ok(html.includes('Nikki &lt;3') && !html.includes('Nikki <3'), 'names are shown as text');
+    assert.ok(html.includes('src="blob:thumb-1"'), 'a thumbnail of the portrait');
+    assert.ok(html.includes('data-action="cardcraft-bring"'));
+
+    await page.CM.bringOver(['a', 'c']);
+    deepEq(page.saved.map(s => s.story.characters.find(c => !c.is_user).name), ['Nikki <3']);
+    deepEq(Object.keys(JSON.parse(page.storage['rolecraft-cardcraft-moved'])).sort(), ['a', 'b'], 'remembered, so a second run starts it unticked');
+    deepEq(page.notices, [['Brought over 1 card from Cardcraft.', 'success'], ['Could not bring over: Broken.', 'error']]);
+    deepEq(page.closed, ['io-hub-modal']);
+    assert.equal(page.urls.revoked, page.urls.made, 'thumbnails are let go');
+
+    await page.CM.bringOver([]);
+    assert.equal(page.notices.at(-1)[0], 'Tick at least one card.');
+
+    const empty = cardcraftPage(null);
+    await empty.CM.open();
+    assert.match(empty.content(), /No Cardcraft cards on this device/);
+});
+
+test('Cardcraft move: wired into Library Management', () => {
+    const ui = fs.readFileSync(path.join(__dirname, 'js', 'ui', 'ui-manager.js'), 'utf8');
+    const hub = ui.slice(ui.indexOf('renderIOHubModal() {'), ui.indexOf('showConfirmationPromise'));
+    assert.ok(hub.includes('data-action="cardcraft-open"'), 'next to Import File and Bulk Import');
+    const move = fs.readFileSync(path.join(__dirname, 'js', 'controllers', 'cardcraft-move.js'), 'utf8');
+    for (const action of ['cardcraft-open', 'cardcraft-back', 'cardcraft-bring']) {
+        assert.ok(move.includes(`ActionHandler.register('${action}'`), `${action} has a handler`);
+    }
+    assert.ok(fs.readFileSync(path.join(__dirname, 'js', 'boot.js'), 'utf8').includes('CardcraftMove.registerActions();'));
+});

@@ -2148,56 +2148,7 @@ OPENING SCENE: ${firstMsg.substring(0, 200)}`;
                 try {
                     // Accept backgroundImageBlob from the parser
                     const { story: newStory, imageBlob, backgroundImageBlob } = await ImportExportService.parseUploadedFile(file);
-                    const library = StateManager.getLibrary();
-
-                    // Duplicate Name Check
-                    const existingStory = library.stories.find(s => s.name && newStory.name && s.name.toLowerCase() === newStory.name.toLowerCase());
-                    if (existingStory) {
-                        const now = new Date();
-                        // Simple timestamp
-                        newStory.name = `${newStory.name} - ${Date.now()}`;
-                    }
-
-                    // Separating Narratives from the Story Object
-                    const narratives = newStory.narratives || [];
-                    const narrativeStubs = narratives.map(n => ({ id: n.id, name: n.name, last_modified: n.last_modified }));
-                    newStory.narratives = narrativeStubs;
-
-                    // 1. Save Story to DB
-                    await DBService.saveStory(newStory);
-
-                    // 2. Save Narratives to DB (Sequentially for memory safety)
-                    if (narratives.length > 0) {
-                        for (const n of narratives) {
-                            await DBService.saveNarrative(n);
-                        }
-                    }
-
-                    // 3. Update In-Memory Library
-                    library.stories.push(newStory);
-
-                    // 4. Save Primary Image to DB
-                    const primaryAiChar = newStory.characters?.find(c => !c.is_user);
-                    if (imageBlob && primaryAiChar && primaryAiChar.id) {
-                        await DBService.saveImage(primaryAiChar.id, imageBlob);
-
-                        // Update Cache
-                        UIManager.RUNTIME.characterImageCache = UIManager.RUNTIME.characterImageCache || {};
-                        if (UIManager.RUNTIME.characterImageCache[primaryAiChar.id]) URL.revokeObjectURL(UIManager.RUNTIME.characterImageCache[primaryAiChar.id]);
-                        UIManager.RUNTIME.characterImageCache[primaryAiChar.id] = URL.createObjectURL(imageBlob);
-                    }
-
-                    // Save Background Image if the parser found one (BYAF or JSON)
-                    if (backgroundImageBlob) {
-                        const bgKey = `bg_${newStory.id}`;
-                        await DBService.saveImage(bgKey, backgroundImageBlob);
-
-                        // Update the story setting to use local background
-                        newStory.backgroundImageURL = 'local_idb_background';
-                        await DBService.saveStory(newStory);
-                    }
-
-                    await this.updateSearchIndex(newStory);
+                    await this.addImportedStory(newStory, imageBlob, backgroundImageBlob);
                     StateManager.updateTagCache();
                     StateManager.saveLibrary();
                     UIManager.hideLoadingSpinner();
@@ -2211,6 +2162,67 @@ OPENING SCENE: ${firstMsg.substring(0, 200)}`;
                 } finally {
                     event.target.value = '';
                 }
+            },
+
+            /**
+             * Saves an imported story into the library: the story, its chats, its main character's
+             * portrait and any background. A name already in the library gets a number added.
+             * The caller saves the library and redraws it.
+             * @param {Object} newStory - As an importer returns it, with its chats in narratives.
+             * @param {Blob} [imageBlob] - The main character's portrait.
+             * @param {Blob} [backgroundImageBlob]
+             */
+            async addImportedStory(newStory, imageBlob = null, backgroundImageBlob = null) {
+                const library = StateManager.getLibrary();
+
+                // Duplicate Name Check
+                const existingStory = library.stories.find(s => s.name && newStory.name && s.name.toLowerCase() === newStory.name.toLowerCase());
+                if (existingStory) {
+                    // Simple timestamp
+                    newStory.name = `${newStory.name} - ${Date.now()}`;
+                }
+
+                // Separating Narratives from the Story Object
+                const narratives = newStory.narratives || [];
+                const narrativeStubs = narratives.map(n => ({ id: n.id, name: n.name, last_modified: n.last_modified }));
+                newStory.narratives = narrativeStubs;
+
+                // 1. Save Story to DB
+                await DBService.saveStory(newStory);
+
+                // 2. Save Narratives to DB (Sequentially for memory safety)
+                if (narratives.length > 0) {
+                    for (const n of narratives) {
+                        await DBService.saveNarrative(n);
+                    }
+                }
+
+                // 3. Update In-Memory Library
+                library.stories.push(newStory);
+
+                // 4. Save Primary Image to DB
+                const primaryAiChar = newStory.characters?.find(c => !c.is_user);
+                if (imageBlob && primaryAiChar && primaryAiChar.id) {
+                    await DBService.saveImage(primaryAiChar.id, imageBlob);
+
+                    // Update Cache
+                    UIManager.RUNTIME.characterImageCache = UIManager.RUNTIME.characterImageCache || {};
+                    if (UIManager.RUNTIME.characterImageCache[primaryAiChar.id]) URL.revokeObjectURL(UIManager.RUNTIME.characterImageCache[primaryAiChar.id]);
+                    UIManager.RUNTIME.characterImageCache[primaryAiChar.id] = URL.createObjectURL(imageBlob);
+                }
+
+                // Save Background Image if the parser found one (BYAF or JSON)
+                if (backgroundImageBlob) {
+                    const bgKey = `bg_${newStory.id}`;
+                    await DBService.saveImage(bgKey, backgroundImageBlob);
+
+                    // Update the story setting to use local background
+                    newStory.backgroundImageURL = 'local_idb_background';
+                    await DBService.saveStory(newStory);
+                }
+
+                await this.updateSearchIndex(newStory);
+                return newStory;
             },
 
             /**

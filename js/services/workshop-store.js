@@ -98,6 +98,27 @@
                 };
             },
 
+            /**
+             * A Workshop started from a card's description, without any AI. Text under headings the
+             * Workshop knows goes to those sections; the rest stays unsorted, so the description keeps
+             * every word.
+             * @param {string} description
+             * @param {{concept?: string, summary?: string, now?: number, commitId?: string}} [opts]
+             */
+            fromDescription(description, { concept = '', summary, now, commitId } = {}) {
+                const text = String(description || '');
+                const state = this.blankState();
+                const split = this.splitCard(text);
+                state.concept = concept;
+                state.unsorted = split.unsorted;
+                state.sections.forEach(s => { if (split.sections[s.id]) s.text = split.sections[s.id]; });
+                const fromCard = !!text.trim();
+                return this.create({
+                    state, original: { description: text, scenario: '' }, origin: fromCard ? 'card' : 'you',
+                    summary: summary || (fromCard ? 'Taken from the card' : 'Started'), now, commitId
+                });
+            },
+
             /** The variant being worked on. */
             active(ws) {
                 return ws.variants.find(v => v.id === ws.active) || ws.variants[0];
