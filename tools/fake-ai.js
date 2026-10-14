@@ -37,8 +37,10 @@
 // Usage:
 //   node tools/fake-ai.js                          port 8786, log at tools/fake-ai.log
 //   node tools/fake-ai.js --port 9000 --log x.log
+//   node tools/fake-ai.js --host 0.0.0.0           reachable from a phone on the home
+//                                                  network or Tailscale, to test that path
 //
-// It only listens on 127.0.0.1. Tests require() it and call start({ port: 0 }).
+// It listens on 127.0.0.1 unless told otherwise. Tests require() it and call start({ port: 0 }).
 
 'use strict';
 
@@ -202,7 +204,7 @@ async function streamReply(res, headers, meta, reply, usage, opts) {
 }
 
 /** Starts the server. Resolves to { port, close } once it's listening. */
-function start({ port = DEFAULT_PORT, log = DEFAULT_LOG, quiet = false } = {}) {
+function start({ port = DEFAULT_PORT, log = DEFAULT_LOG, quiet = false, host = '127.0.0.1' } = {}) {
     if (log) fs.writeFileSync(log, '');
     let count = 0;
 
@@ -264,7 +266,7 @@ function start({ port = DEFAULT_PORT, log = DEFAULT_LOG, quiet = false } = {}) {
         });
     });
 
-    return new Promise(resolve => server.listen(port, '127.0.0.1', () => resolve({
+    return new Promise(resolve => server.listen(port, host, () => resolve({
         port: server.address().port,
         close: () => new Promise(done => {
             server.close(done);
@@ -279,8 +281,9 @@ if (require.main === module) {
         return i === -1 ? undefined : process.argv[i + 1];
     };
     const log = arg('--log') ? path.resolve(arg('--log')) : DEFAULT_LOG;
-    start({ port: Number(arg('--port') || DEFAULT_PORT), log })
-        .then(({ port }) => console.log(`Fake AI server on http://127.0.0.1:${port} (log: ${log})`));
+    const host = arg('--host') || '127.0.0.1';
+    start({ port: Number(arg('--port') || DEFAULT_PORT), log, host })
+        .then(({ port }) => console.log(`Fake AI server on http://${host}:${port} (log: ${log})`));
 }
 
 module.exports = { start };
