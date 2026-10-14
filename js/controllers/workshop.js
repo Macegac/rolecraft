@@ -186,6 +186,48 @@
                 }
             },
 
+            /** One of the open story's characters. Location characters live in the map and stay out of the Workshop. */
+            _character(charId) {
+                const state = ReactiveStore.state;
+                return (state && Array.isArray(state.characters)) ? (state.characters.find(c => c.id === charId) || null) : null;
+            },
+
+            /** A character's Workshop as a plain copy that is safe to change, or null when it has none. */
+            workshopOf(charId) {
+                const character = this._character(charId);
+                return (character && character.workshop) ? JSON.parse(JSON.stringify(character.workshop)) : null;
+            },
+
+            /**
+             * Puts an accepted change on the character and saves the story at once: the Workshop
+             * itself, and the description every reply reads, compiled from the active variant.
+             * @returns {Promise<{evolvedPersona: boolean}>} Whether the open chat has an evolved persona
+             *          for this character. That replaces the description in that chat, so the change
+             *          does not show there until it is reset.
+             */
+            async applyWorkshop(charId, workshop) {
+                const character = this._character(charId);
+                if (!character) throw new Error('That character is not in the open story.');
+                // A plain copy: the story's state is a Proxy, and a Proxy cannot be stored.
+                const plain = JSON.parse(JSON.stringify(workshop));
+                character.workshop = plain;
+                character.description = WorkshopStore.compile(WorkshopStore.active(plain).state);
+                await this._saveNow();
+                const evolved = ReactiveStore.state.evolved_characters;
+                return { evolvedPersona: !!(evolved && evolved[charId]) };
+            },
+
+            /**
+             * Saves the story now. forceSave returns at once while another save is running, and that
+             * save may have copied the story before this change, so wait for it, then save.
+             */
+            async _saveNow() {
+                for (let waited = 0; ReactiveStore._isSaving && waited < 10000; waited += 100) {
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                }
+                await ReactiveStore.forceSave();
+            },
+
             registerActions() {
                 ActionHandler.register('workshop-backend-change', () => this.updateSettingsVisibility());
                 ActionHandler.register('workshop-fields-change', () => this.renderSetups());

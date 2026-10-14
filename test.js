@@ -3079,3 +3079,176 @@ test('Workshop setups: saved by name, switched with one tap, replaced only when 
     p.WC.saveSetup();
     assert.equal(p.toasts.at(-1)[0], 'Give the setup a name first.');
 });
+
+// ─── WorkshopStore: sections, history and variants ───────────────────────────
+
+const WorkshopStore = vm.runInNewContext(
+    fs.readFileSync(path.join(__dirname, 'js', 'services', 'workshop-store.js'), 'utf8') + '\nWorkshopStore', {});
+
+/** The state with these section texts set, keyed by section id. */
+function withTexts(state, texts) {
+    return { ...state, sections: state.sections.map(s => (s.id in texts ? { ...s, text: texts[s.id] } : s)) };
+}
+
+test('WorkshopStore: eleven sections in card order, with Scenario aimed at the scenario field', () => {
+    deepEq(WorkshopStore.sectionDefs.map(d => d.title), ['Appearance & body', 'Personality', 'Sexuality', 'Relationship to {{user}}',
+        'Background', 'Voice', 'Scenario', 'Kinks & limits', 'Secrets & wants', 'Wardrobe', 'Likes & dislikes']);
+    assert.equal(new Set(WorkshopStore.sectionDefs.map(d => d.id)).size, 11, 'every id is different');
+    deepEq(WorkshopStore.sectionDefs.filter(d => d.target === 'scenario').map(d => d.id), ['scenario']);
+    assert.ok(WorkshopStore.blankState().sections.every(s => s.text === '' && s.pins.length === 0 && !s.locked));
+});
+
+test('WorkshopStore: a commit holds only what changed, before and after, and stamps that section', () => {
+    const ws0 = WorkshopStore.create({ state: { ...WorkshopStore.blankState(), concept: 'A medic on the night shift.' },
+        original: { description: 'Old card text.', scenario: 'Old scenario.' }, now: 100, commitId: 'c0' });
+    assert.equal(ws0.commits[0].changes.length, 13, 'the first commit holds every part: concept, notes and eleven sections');
+    deepEq(ws0.original, { description: 'Old card text.', scenario: 'Old scenario.' });
+
+    const untouched = JSON.stringify(ws0);
+    const ws1 = WorkshopStore.commit(ws0, withTexts(WorkshopStore.active(ws0).state, { appearance: 'Tall, with ink-stained hands.' }),
+        { summary: 'Wrote Appearance', now: 200, commitId: 'c1' });
+    assert.equal(JSON.stringify(ws0), untouched, 'the Workshop passed in is left as it was');
+    const c1 = ws1.commits.at(-1);
+    deepEq(c1.changes.map(ch => ch.section), ['appearance']);
+    assert.equal(c1.changes[0].before.text, '');
+    assert.equal(c1.changes[0].after.text, 'Tall, with ink-stained hands.');
+    assert.equal(c1.parent, 'c0');
+    assert.equal(WorkshopStore.active(ws1).head, 'c1');
+    const sections = WorkshopStore.active(ws1).state.sections;
+    assert.equal(sections.find(s => s.id === 'appearance').at, 200, 'the changed section carries the time');
+    assert.equal(sections.find(s => s.id === 'voice').at, 0, 'the others keep theirs');
+
+    assert.equal(WorkshopStore.commit(ws1, WorkshopStore.active(ws1).state, { now: 300 }), ws1, 'nothing changed, nothing recorded');
+    const timeOnly = { ...WorkshopStore.active(ws1).state, sections: sections.map(s => ({ ...s, at: 999 })) };
+    assert.equal(WorkshopStore.commit(ws1, timeOnly, { now: 300 }), ws1, 'a time alone is not a change');
+});
+
+test('WorkshopStore: every point in the history rebuilds exactly as it was', () => {
+    let ws = WorkshopStore.create({ now: 1, commitId: 'c0' });
+    const seen = { c0: JSON.stringify(WorkshopStore.active(ws).state) };
+    [{ appearance: 'Tall.' }, { personality: 'Wry.' }, { appearance: 'Tall and lean.' }, { voice: 'Clipped.' }].forEach((texts, i) => {
+        let next = withTexts(WorkshopStore.active(ws).state, texts);
+        if (i === 1) next = { ...next, concept: 'A medic.', notes: 'Slow burn.' };
+        ws = WorkshopStore.commit(ws, next, { now: 10 + i, commitId: `c${i + 1}` });
+        seen[`c${i + 1}`] = JSON.stringify(WorkshopStore.active(ws).state);
+    });
+    for (const [id, state] of Object.entries(seen)) deepEq(WorkshopStore.stateAt(ws, id), JSON.parse(state), `${id} rebuilds`);
+    assert.equal(WorkshopStore.stateAt(ws, 'nope'), null);
+});
+
+test('WorkshopStore: going back is a new commit, so the steps in between are kept', () => {
+    let ws = WorkshopStore.create({ now: 1, commitId: 'c0' });
+    ws = WorkshopStore.commit(ws, withTexts(WorkshopStore.active(ws).state, { appearance: 'First take.' }), { now: 2, commitId: 'c1', summary: 'First take' });
+    ws = WorkshopStore.commit(ws, withTexts(WorkshopStore.active(ws).state, { appearance: 'Second take.' }), { now: 3, commitId: 'c2' });
+    const back = WorkshopStore.restore(ws, 'c1', { now: 4, commitId: 'c3' });
+    assert.equal(back.commits.length, 4, 'nothing removed');
+    const c3 = back.commits.at(-1);
+    assert.equal(c3.origin, 'restore');
+    assert.equal(c3.from, 'c1');
+    assert.equal(c3.parent, 'c2');
+    assert.match(c3.summary, /First take/);
+    assert.equal(WorkshopStore.active(back).state.sections[0].text, 'First take.');
+    assert.equal(WorkshopStore.stateAt(back, 'c2').sections[0].text, 'Second take.', 'the later take can still be gone back to');
+});
+
+test('WorkshopStore: a variant branches from any point and grows on its own', () => {
+    let ws = WorkshopStore.create({ now: 1, commitId: 'c0' });
+    ws = WorkshopStore.commit(ws, withTexts(WorkshopStore.active(ws).state, { personality: 'Guarded.' }), { now: 2, commitId: 'c1' });
+    ws = WorkshopStore.commit(ws, withTexts(WorkshopStore.active(ws).state, { personality: 'Guarded, then reckless.' }), { now: 3, commitId: 'c2' });
+
+    ws = WorkshopStore.branch(ws, 'c1', { name: 'Softer', now: 4, variantId: 'v_soft' });
+    assert.equal(ws.active, 'v_soft', 'the new variant is the one being worked on');
+    assert.equal(WorkshopStore.active(ws).head, 'c1');
+    assert.equal(WorkshopStore.active(ws).state.sections[1].text, 'Guarded.');
+
+    ws = WorkshopStore.commit(ws, withTexts(WorkshopStore.active(ws).state, { personality: 'Guarded, then gentle.' }), { now: 5, commitId: 'c3' });
+    assert.equal(ws.commits.at(-1).parent, 'c1', 'its history forks at the branch point');
+    assert.equal(ws.commits.at(-1).variant, 'v_soft');
+    deepEq(WorkshopStore.lineage(ws, 'c3').map(c => c.id), ['c0', 'c1', 'c3']);
+
+    ws = WorkshopStore.switchVariant(ws, 'v_main');
+    assert.equal(WorkshopStore.active(ws).state.sections[1].text, 'Guarded, then reckless.', 'the main line is untouched');
+    for (const v of ws.variants) deepEq(WorkshopStore.stateAt(ws, v.head), JSON.parse(JSON.stringify(v.state)), `${v.name} rebuilds from its head`);
+    assert.equal(WorkshopStore.switchVariant(ws, 'nope'), ws);
+});
+
+test('WorkshopStore: the description is each filled section under its heading, with Scenario left out', () => {
+    const state = withTexts(WorkshopStore.blankState(), {
+        appearance: '  Tall, ink-stained hands.  ', voice: 'Clipped and dry.', scenario: 'A storm traps you both at the clinic.', sexuality: '   '
+    });
+    assert.equal(WorkshopStore.compile(state), '## Appearance & body\nTall, ink-stained hands.\n\n## Voice\nClipped and dry.');
+});
+
+test('WorkshopStore: pins are found despite curly quotes, line breaks, case and dashes, and say where they landed', () => {
+    const text = 'She says “never again” to\nanyone who asks — and means it… mostly.\n\nHer   scar is OLD.';
+    const pinMap = {
+        p1: '"never again" to anyone', // straight quotes, and a space where the text breaks the line
+        p2: 'and means it... mostly', // three dots for the ellipsis character
+        p3: 'her scar is old.', // case and spacing differ, with a full stop at the end
+        p4: 'she hates the sea' // not in the text
+    };
+    const { landed, missing } = WorkshopStore.verifyPins(text, pinMap, ['p1', 'p2', 'p3', 'p4', 'p5']);
+    deepEq(missing, ['p4', 'p5'], 'a phrase that is not there, and a pin the model never placed');
+    deepEq(Object.fromEntries(landed.map(l => [l.id, text.slice(l.start, l.end)])),
+        { p1: 'never again” to\nanyone', p2: 'and means it… mostly', p3: 'Her   scar is OLD' }, 'each span is the original text, ready to highlight');
+    deepEq(WorkshopStore.verifyPins('', { p1: 'anything' }).missing, ['p1']);
+});
+
+test('WorkshopStore: 100 changes stay small, because commits hold only what changed', () => {
+    const para = 'She keeps her hair cropped short and her boots laced tight, and she watches doors before faces. ';
+    const start = WorkshopStore.blankState();
+    const state = { ...start, concept: 'A medic on the night shift.',
+        sections: start.sections.map((s, i) => ({ ...s, text: para.repeat(12), pins: [{ id: `p${i}`, text: 'watches doors', origin: 'you', state: 'kept', at: 1 }] })) };
+    let ws = WorkshopStore.create({ state, original: { description: para.repeat(40), scenario: '' }, now: 1, commitId: 'c0' });
+    for (let i = 1; i <= 100; i++) {
+        const current = WorkshopStore.active(ws).state;
+        const next = { ...current, sections: current.sections.map((s, j) => (j === i % 11 ? { ...s, text: `${para.repeat(12)}Edit ${i}.` } : s)) };
+        ws = WorkshopStore.commit(ws, next, { now: 1 + i, commitId: `c${i}`, summary: `Edit ${i}` });
+    }
+    const kb = JSON.stringify(ws).length / 1024;
+    assert.equal(ws.commits.length, 101);
+    assert.ok(kb < 400, `about 315 KB for 100 edits to 1,150-character sections; got ${Math.round(kb)} KB`);
+    deepEq(WorkshopStore.stateAt(ws, 'c100'), JSON.parse(JSON.stringify(WorkshopStore.active(ws).state)), 'and the newest point still rebuilds');
+});
+
+function workshopApplyPage({ saving = false } = {}) {
+    const events = [];
+    const characters = [{ id: 'ch1', name: 'Test', description: 'Old description.' }];
+    const state = { characters, evolved_characters: {} };
+    const store = {
+        state,
+        _isSaving: saving,
+        async forceSave() { events.push(this._isSaving ? 'skipped' : 'saved'); }
+    };
+    const source = ['js/core/dom.js', 'js/services/workshop-ai.js', 'js/services/workshop-store.js', 'js/controllers/workshop.js']
+        .map(file => fs.readFileSync(path.join(__dirname, file), 'utf8')).join('\n');
+    const WC = vm.runInNewContext(source + '\nWorkshopController', { ReactiveStore: store, setTimeout });
+    return { WC, store, state, characters, events };
+}
+
+test('Workshop changes: put on the character as plain data, the description compiled, saved straight away', async () => {
+    const p = workshopApplyPage();
+    let ws = WorkshopStore.create({ now: 1, commitId: 'c0' });
+    ws = WorkshopStore.commit(ws, withTexts(WorkshopStore.active(ws).state, { appearance: 'Tall.', scenario: 'A storm.' }), { now: 2, commitId: 'c1' });
+    const result = await p.WC.applyWorkshop('ch1', ws);
+    const character = p.characters[0];
+    assert.equal(character.description, '## Appearance & body\nTall.');
+    assert.notEqual(character.workshop, ws, 'a copy, never the object passed in');
+    deepEq(character.workshop, JSON.parse(JSON.stringify(ws)));
+    deepEq(p.events, ['saved']);
+    assert.equal(result.evolvedPersona, false);
+    deepEq(p.WC.workshopOf('ch1'), JSON.parse(JSON.stringify(ws)));
+    assert.notEqual(p.WC.workshopOf('ch1'), character.workshop, 'read back as a copy that is safe to change');
+
+    p.state.evolved_characters.ch1 = 'A persona grown in this chat.';
+    assert.equal((await p.WC.applyWorkshop('ch1', ws)).evolvedPersona, true, 'the chat has its own persona, which hides the change there');
+    await assert.rejects(p.WC.applyWorkshop('somewhere-on-the-map', ws), /not in the open story/);
+    assert.equal(p.WC.workshopOf('somewhere-on-the-map'), null);
+});
+
+test('Workshop changes: when a save is already running, wait for it, then save again', async () => {
+    const p = workshopApplyPage({ saving: true });
+    setTimeout(() => { p.store._isSaving = false; }, 150);
+    await p.WC.applyWorkshop('ch1', WorkshopStore.create({ now: 1, commitId: 'c0' }));
+    deepEq(p.events, ['saved'], 'saved after the other save finished, not skipped while it ran');
+});
