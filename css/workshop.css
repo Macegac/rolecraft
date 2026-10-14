@@ -431,6 +431,19 @@
             outline: none;
         }
 
+        /* A pin being reworded: the whole pin on show, as many lines as it needs. */
+        textarea.ws-pin-input {
+            flex-basis: 100%;
+            border-radius: 0.9rem;
+            line-height: 1.35;
+            resize: none;
+            field-sizing: content;
+        }
+
+        button.ws-pin-text {
+            text-align: left;
+        }
+
         /* --- Section text, with each pin that made it in highlighted ------------------ */
 
         .ws-text {

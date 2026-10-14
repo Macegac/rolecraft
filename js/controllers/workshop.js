@@ -499,7 +499,10 @@
                 const lengths = ['short', 'medium', 'long'].map(len => DOM.html`
                     <button type="button" class="ws-length-btn${s.length === len ? ' is-on' : ''}" data-action="workshop-length"
                         data-section="${s.id}" data-length="${len}" aria-pressed="${s.length === len ? 'true' : 'false'}" title="${len[0].toUpperCase() + len.slice(1)}">${len[0].toUpperCase()}</button>`);
-                const pins = s.pins.map(p => this._pinChip(s.id, p, missing.has(p.id)));
+                const editingPin = view.editingPin && view.editingPin.section === s.id ? view.editingPin.pin : null;
+                const pins = s.pins.map(p => (p.id === editingPin
+                    ? DOM.html`<textarea class="ws-pin-input" data-section="${s.id}" data-pin="${p.id}" rows="1" maxlength="200" enterkeyhint="done" aria-label="Change this pin">${p.text}</textarea>`
+                    : this._pinChip(s.id, p, missing.has(p.id))));
                 const adding = view.addingPin === s.id
                     ? DOM.html`<input type="text" class="ws-pin-input" data-section="${s.id}" maxlength="200" placeholder="Something it must keep" aria-label="New pin for ${s.title}">`
                     : DOM.html`<button type="button" class="ws-pin-add" data-action="workshop-pin-add" data-section="${s.id}">+ Pin</button>`;
@@ -532,7 +535,8 @@
                 const keep = pin.state === 'suggested'
                     ? DOM.html`<button type="button" class="ws-pin-btn" data-action="workshop-pin-keep" data-section="${sectionId}" data-pin="${pin.id}" aria-label="Keep this pin">✓</button>` : '';
                 return DOM.html`
-                    <span class="ws-pin ${look}" title="${label}">${keep}<span class="ws-pin-text">${pin.text}</span><button type="button" class="ws-pin-btn"
+                    <span class="ws-pin ${look}" title="${label}">${keep}<button type="button" class="ws-pin-text" data-action="workshop-pin-edit"
+                        data-section="${sectionId}" data-pin="${pin.id}" title="Change the words">${pin.text}</button><button type="button" class="ws-pin-btn"
                         data-action="workshop-pin-remove" data-section="${sectionId}" data-pin="${pin.id}" aria-label="Remove this pin">×</button></span>`;
             },
 
@@ -568,7 +572,7 @@
             },
 
             _growAll(root) {
-                if (root) root.querySelectorAll('textarea.ws-field').forEach(el => this._grow(el));
+                if (root) root.querySelectorAll('textarea.ws-field, textarea.ws-pin-input').forEach(el => this._grow(el));
             },
 
             /**
@@ -963,8 +967,29 @@
                     const what = { concept: 'the concept', notes: 'the story notes', unsorted: 'the unsorted card text' }[field];
                     this._change(`Edited ${what}`, next => { next[field] = value; });
                 } else if (el.classList.contains('ws-pin-input')) {
-                    this.addPin(el.dataset.section, el.value);
+                    if (el.dataset.pin) this.editPin(el.dataset.section, el.dataset.pin, el.value);
+                    else this.addPin(el.dataset.section, el.value);
                 }
+            },
+
+            /**
+             * Rewords a pin. The new words are yours, so a suggested pin is kept, and the phrase the AI
+             * said carried it is forgotten. Empty or unchanged words change nothing.
+             */
+            editPin(sectionId, pinId, text) {
+                const view = this.RUNTIME.view;
+                view.editingPin = null;
+                const wording = String(text || '').replace(/\s+/g, ' ').trim();
+                const pin = this._section(WorkshopStore.active(view.ws).state, sectionId).pins.find(p => p.id === pinId);
+                if (!pin || !wording || wording === pin.text) {
+                    this.renderSection(sectionId);
+                    return;
+                }
+                this._change(`Reworded the pin "${wording}"`, next => {
+                    const s = this._section(next, sectionId);
+                    Object.assign(s.pins.find(p => p.id === pinId), { text: wording, state: 'kept', origin: 'you' });
+                    delete s.pinMap[pinId];
+                }, () => this.renderSection(sectionId));
             },
 
             addPin(sectionId, text) {
@@ -1097,8 +1122,12 @@
                 const pinsAfter = new Map((b.pins || []).map(p => [p.id, p]));
                 for (const [id, p] of pinsAfter) {
                     const old = pinsBefore.get(id);
-                    if (!old) notes.push(`Pin added: ${p.text}${p.state === 'suggested' ? ' (suggested)' : ''}`);
-                    else if (old.state !== p.state) notes.push(`Pin kept: ${p.text}`);
+                    if (!old) {
+                        notes.push(`Pin added: ${p.text}${p.state === 'suggested' ? ' (suggested)' : ''}`);
+                        continue;
+                    }
+                    if (old.text !== p.text) notes.push(`Pin reworded from "${old.text}" to "${p.text}"`);
+                    if (old.state !== p.state) notes.push(`Pin kept: ${p.text}`);
                 }
                 for (const [id, p] of pinsBefore) if (!pinsAfter.has(id)) notes.push(`Pin removed: ${p.text}`);
                 const textChanged = (a.text || '') !== (b.text || '');
@@ -1221,6 +1250,11 @@
                 ActionHandler.register('workshop-discard-all', () => this.discardAll());
                 ActionHandler.register('workshop-take-use', (ds) => this.useTake(ds.section, Number(ds.index)));
                 ActionHandler.register('workshop-take-reject', (ds) => this.rejectTake(ds.section, Number(ds.index)));
+                ActionHandler.register('workshop-pin-edit', (ds) => {
+                    if (!this.RUNTIME.view) return;
+                    this.RUNTIME.view.editingPin = { section: ds.section, pin: ds.pin };
+                    this.renderSection(ds.section);
+                });
                 ActionHandler.register('workshop-pin-keep', (ds) => this._pinAction(ds, 'keep'));
                 ActionHandler.register('workshop-pin-remove', (ds) => this._pinAction(ds, 'remove'));
                 ActionHandler.register('workshop-lock', (ds) => {
@@ -1239,7 +1273,7 @@
                 const root = document.getElementById('character-workshop');
                 if (root) {
                     root.addEventListener('focusout', (e) => this._fieldDone(e.target));
-                    root.addEventListener('input', (e) => { if (e.target.matches('textarea.ws-field')) this._grow(e.target); });
+                    root.addEventListener('input', (e) => { if (e.target.matches('textarea.ws-field, textarea.ws-pin-input')) this._grow(e.target); });
                     root.addEventListener('keydown', (e) => {
                         if (e.target.classList.contains('ws-variant-name') && e.key === 'Enter') {
                             e.preventDefault();

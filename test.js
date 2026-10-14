@@ -3812,3 +3812,52 @@ test('History: nothing switches while the AI is writing, and closing the Worksho
     p.WC.close();
     assert.ok(p.elements['ws-history'].classList.contains('hidden'), 'so it is not left open for the next character');
 });
+
+test("Workshop screen: tapping a pin's words rewords it, and a reworded suggestion is kept", async () => {
+    const state = pinnedState();
+    const personality = state.sections.find(s => s.id === 'personality');
+    personality.text = 'Wry, and slow to trust anyone new.';
+    personality.pinMap = { pa: 'slow to trust anyone new' };
+    const p = workshopAiPage([], state);
+    const card = () => p.elements['ws-sec-personality'].outerHTML;
+    const pin = id => WorkshopStore.active(p.view().ws).state.sections.find(s => s.id === 'personality').pins.find(x => x.id === id);
+    const done = (id, value) => p.WC._fieldDone({ dataset: { section: 'personality', pin: id }, value, classList: { contains: c => c === 'ws-pin-input' } });
+
+    p.WC.renderSection('personality');
+    assert.match(card(), /<button type="button" class="ws-pin-text" data-action="workshop-pin-edit"\s+data-section="personality" data-pin="pa"[^>]*>slow to trust<\/button>/,
+        "a pin's words are a button");
+
+    p.act('workshop-pin-edit', { section: 'personality', pin: 'pc' });
+    assert.match(card(), /<textarea class="ws-pin-input" data-section="personality" data-pin="pc"[^>]*>an idea not kept yet<\/textarea>/,
+        'tapping them shows the whole pin in a box');
+    done('pc', '  Hums when\nshe lies  ');
+    await settle();
+    assert.equal(pin('pc').text, 'Hums when she lies', 'on one line, trimmed');
+    assert.equal(pin('pc').state, 'kept', 'a suggestion you reword is kept');
+    assert.equal(pin('pc').origin, 'you');
+    const reworded = p.view().ws.commits.at(-1);
+    assert.equal(reworded.summary, 'Reworded the pin "Hums when she lies"');
+    assert.equal(p.view().editingPin, null);
+    assert.ok(!card().includes('<textarea'), 'and it is a pin again');
+
+    p.act('workshop-pin-edit', { section: 'personality', pin: 'pa' });
+    done('pa', 'Trusts no one at first');
+    await settle();
+    assert.equal(WorkshopStore.active(p.view().ws).state.sections.find(s => s.id === 'personality').pinMap.pa, undefined,
+        'the phrase the AI said carried the old words is forgotten');
+
+    const commits = p.view().ws.commits.length;
+    for (const value of ['', '   ', 'Trusts no one at first']) {
+        p.act('workshop-pin-edit', { section: 'personality', pin: 'pa' });
+        done('pa', value);
+    }
+    await settle();
+    assert.equal(p.view().ws.commits.length, commits, 'empty or unchanged words change nothing');
+    assert.equal(pin('pa').text, 'Trusts no one at first');
+
+    p.act('workshop-history-open');
+    p.act('workshop-commit-toggle', { commit: reworded.id });
+    const html = p.elements['ws-history-body'].innerHTML;
+    assert.ok(html.includes('Pin reworded from &quot;an idea not kept yet&quot; to &quot;Hums when she lies&quot;'), 'the history shows the old words');
+    assert.ok(html.includes('Pin kept: Hums when she lies'));
+});
