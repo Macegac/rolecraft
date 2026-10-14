@@ -3365,7 +3365,7 @@ test('Workshop screen: a character without a Workshop starts from its card, and 
 test('Workshop screen: wired in, with every way in and every button handled', () => {
     const html = fs.readFileSync(HTML_PATH, 'utf8');
     const controller = fs.readFileSync(path.join(__dirname, 'js', 'controllers', 'workshop.js'), 'utf8');
-    for (const id of ['character-workshop', 'ws-name', 'ws-variant', 'ws-notice', 'ws-sections', 'ws-card', 'ws-history', 'ws-history-body']) {
+    for (const id of ['character-workshop', 'ws-name', 'ws-variant', 'ws-notice', 'ws-progress', 'ws-sections', 'ws-card', 'ws-history', 'ws-history-body']) {
         assert.ok(html.includes(`id="${id}"`), `${id} is in the page`);
     }
     assert.match(html, /<link rel="stylesheet" href="css\/workshop\.css\?v=[0-9a-f]+">/, 'its stylesheet is linked');
@@ -3860,4 +3860,23 @@ test("Workshop screen: tapping a pin's words rewords it, and a reworded suggesti
     const html = p.elements['ws-history-body'].innerHTML;
     assert.ok(html.includes('Pin reworded from &quot;an idea not kept yet&quot; to &quot;Hums when she lies&quot;'), 'the history shows the old words');
     assert.ok(html.includes('Pin kept: Hums when she lies'));
+});
+
+test('Workshop AI: while it works, a strip under the tabs says what it is doing, with Stop, and goes when it is done', async () => {
+    const p = workshopAiPage([{ takes: [{ angle: 'A', text: 'One.' }, { angle: 'B', text: 'Two.' }, { angle: 'C', text: 'Three.' }] }]);
+    const job = p.WC._ask('takes', 'appearance');
+    const strip = p.elements['ws-progress'];
+    assert.equal(strip.classList.contains('hidden'), false, 'it shows as soon as the AI starts');
+    assert.match(strip.innerHTML, /3 takes for Appearance &amp; body/);
+    assert.match(strip.innerHTML, /id="ws-busy-status"[^>]*>Asking the Workshop model\.\.\.</, 'the count of what has arrived goes here');
+    assert.ok(strip.innerHTML.includes('data-action="workshop-ai-stop"'), 'with Stop');
+    assert.ok(!p.elements['ws-sec-appearance'].outerHTML.includes('ws-busy-status'), 'and not in the section as well');
+    await job;
+    assert.ok(strip.classList.contains('hidden'), 'gone when the AI is done');
+    assert.equal(strip.innerHTML, '');
+
+    const title = (kind, sectionId) => p.WC._busyTitle({ kind, sectionId });
+    deepEq([title('write', 'voice'), title('reweave', 'voice'), title('suggest'), title('write-all'), title('sort')],
+        ['Writing Voice', 'Re-weaving Voice', 'Suggesting pins', 'Writing the empty sections', 'Drafting pins from the text']);
+    assert.equal(workshopAiPage([], looseState()).WC._busyTitle({ kind: 'sort' }), 'Sorting the card into sections');
 });

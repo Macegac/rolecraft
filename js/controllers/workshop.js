@@ -364,6 +364,7 @@
                 const character = this._character(view.charId);
                 document.getElementById('ws-name').value = character ? character.name : '';
                 document.getElementById('ws-variant').textContent = WorkshopStore.active(view.ws).name;
+                this.renderProgress();
                 this.renderNotice();
                 this.renderTabs();
                 this.renderSections();
@@ -630,9 +631,7 @@
                     && state.sections.some(s => !s.locked && String(s.text || '').trim() && s.pins.length === 0);
                 const draft = unpinned ? DOM.html`<button type="button" class="ws-ai-btn" data-action="workshop-sort" ${busy ? 'disabled' : ''}
                     title="Read each section's text and suggest the pins it clearly wants kept">✦ Draft pins from the text</button>` : '';
-                let status = '';
-                if (busy && !busy.sectionId) status = this._busyLine(busy);
-                else if ((view.errors || {})._all) status = DOM.html`<span class="ws-status is-error">${view.errors._all}</span>`;
+                const status = (view.errors || {})._all ? DOM.html`<span class="ws-status is-error">${view.errors._all}</span>` : '';
                 const waitingBar = waiting.length > 1 ? DOM.html`
                     <div class="ws-waiting">
                         <span>${waiting.length} proposals are waiting.</span>
@@ -719,9 +718,33 @@
                 if (wrap && this.RUNTIME.view) wrap.innerHTML = this._aiBar(WorkshopStore.active(this.RUNTIME.view.ws).state);
             },
 
-            _busyLine(busy) {
-                return DOM.html`<span class="ws-status"><span id="ws-busy-status">${busy.status}</span>
-                    <button type="button" class="ws-link" data-action="workshop-ai-stop">Stop</button></span>`;
+            /**
+             * What the AI is doing, in a strip under the tabs that stays put while the sections scroll,
+             * so it can be seen wherever the screen is. Stop ends it. Gone when the AI is idle.
+             */
+            renderProgress() {
+                const view = this.RUNTIME.view;
+                const strip = document.getElementById('ws-progress');
+                if (!strip) return;
+                const busy = view && view.busy;
+                if (busy) strip.classList.remove('hidden');
+                else strip.classList.add('hidden');
+                strip.innerHTML = !busy ? '' : DOM.html`
+                    <div class="ws-progress-text">
+                        <span class="ws-progress-what">${this._busyTitle(busy)}</span>
+                        <span id="ws-busy-status" class="ws-status">${busy.status}</span>
+                    </div>
+                    <button type="button" class="ws-btn" data-action="workshop-ai-stop">Stop</button>`.toString();
+            },
+
+            _busyTitle(busy) {
+                const state = WorkshopStore.active(this.RUNTIME.view.ws).state;
+                const title = busy.sectionId ? this._section(state, busy.sectionId).title : '';
+                if (busy.kind === 'sort') return String(state.unsorted || '').trim() ? 'Sorting the card into sections' : 'Drafting pins from the text';
+                return {
+                    write: `Writing ${title}`, reweave: `Re-weaving ${title}`, takes: `3 takes for ${title}`,
+                    suggest: 'Suggesting pins', 'write-all': 'Writing the empty sections'
+                }[busy.kind] || 'The AI is working';
             },
 
             /** A section's AI buttons, with what the AI is doing for it, or why it failed. */
@@ -730,9 +753,7 @@
                 if (s.locked) return '';
                 const busy = view.busy;
                 const hasText = !!String(s.text || '').trim();
-                let status = '';
-                if (busy && busy.sectionId === s.id) status = this._busyLine(busy);
-                else if ((view.errors || {})[s.id]) status = DOM.html`<span class="ws-status is-error">${view.errors[s.id]}</span>`;
+                const status = (view.errors || {})[s.id] ? DOM.html`<span class="ws-status is-error">${view.errors[s.id]}</span>` : '';
                 return DOM.html`
                     <div class="ws-ai-row">
                         <button type="button" class="ws-ai-btn" data-action="workshop-write" data-section="${s.id}" data-mode="${hasText ? 'reweave' : 'write'}"
@@ -837,6 +858,7 @@
             },
 
             _redrawFor(sectionId) {
+                this.renderProgress();
                 this.renderAiBar();
                 if (sectionId) {
                     this.renderSection(sectionId);

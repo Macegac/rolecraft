@@ -540,6 +540,68 @@
             color: #fca5a5;
         }
 
+        /* What the AI is doing: a strip under the tabs, outside the scrolling panes, so it is always in view. */
+        .ws-progress {
+            position: relative;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.5rem 1rem;
+            border-bottom: 1px solid rgba(20, 184, 166, 0.35);
+            background: rgba(20, 184, 166, 0.1);
+            overflow: hidden;
+        }
+
+        .ws-progress.hidden {
+            display: none;
+        }
+
+        .ws-progress-text {
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .ws-progress-what {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #ccfbf1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        /* A line that keeps moving, so it's plain the AI is at work even before any words arrive. */
+        .ws-progress::after {
+            content: '';
+            position: absolute;
+            left: 0;
+            bottom: 0;
+            width: 35%;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, #2dd4bf, transparent);
+            animation: ws-progress-slide 1.4s ease-in-out infinite;
+        }
+
+        @keyframes ws-progress-slide {
+            from {
+                transform: translateX(-100%);
+            }
+
+            to {
+                transform: translateX(300%);
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .ws-progress::after {
+                width: 100%;
+                opacity: 0.5;
+                animation: none;
+            }
+        }
+
         .ws-link {
             color: #5eead4;
             font-size: 0.78rem;
