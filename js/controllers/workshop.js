@@ -293,6 +293,7 @@
                 if (document.activeElement && root.contains(document.activeElement)) document.activeElement.blur();
                 this.RUNTIME.view = null;
                 root.classList.add('hidden');
+                document.getElementById('ws-history').classList.add('hidden');
                 if (view.pushed && !fromBack) history.back();
                 // Reopened, not just shown, so the character editor shows the new description.
                 if (view.editorWasOpen) UIManager.openCharacterDetailModal(view.charId);
@@ -998,7 +999,182 @@
                 }, () => this.renderSection(ds.section));
             },
 
+            // ---------------------------------------------------------------------------------------
+            // History and variants: every accepted change, and other versions of the whole character.
+            // ---------------------------------------------------------------------------------------
+
+            openHistory() {
+                const view = this.RUNTIME.view;
+                if (!view) return;
+                view.historyOpen = true;
+                view.expanded = null;
+                this.renderHistory();
+                document.getElementById('ws-history').classList.remove('hidden');
+            },
+
+            closeHistory() {
+                if (this.RUNTIME.view) this.RUNTIME.view.historyOpen = false;
+                document.getElementById('ws-history').classList.add('hidden');
+            },
+
+            /** The variants, then the steps that led to the one in use, newest first. */
+            renderHistory() {
+                const view = this.RUNTIME.view;
+                const body = document.getElementById('ws-history-body');
+                if (!view || !body || !view.historyOpen) return;
+                const ws = view.ws;
+                const active = WorkshopStore.active(ws);
+                const live = ws.variants.filter(v => !v.deletedAt);
+                const hidden = ws.variants.filter(v => v.deletedAt);
+                const variants = live.map(v => DOM.html`
+                    <div class="ws-variant-row${v.id === ws.active ? ' is-active' : ''}">
+                        <input type="text" class="ws-variant-name" value="${v.name}" data-variant="${v.id}" data-action-change="workshop-variant-rename"
+                            maxlength="60" aria-label="Name of this variant">
+                        ${v.id === ws.active
+                            ? DOM.html`<span class="ws-variant-tag">In use</span>`
+                            : DOM.html`<button type="button" class="ws-btn" data-action="workshop-variant-switch" data-variant="${v.id}">Use this one</button>`}
+                        ${live.length > 1 ? DOM.html`<button type="button" class="ws-link" data-action="workshop-variant-delete" data-variant="${v.id}">Delete</button>` : ''}
+                    </div>`);
+                const back = hidden.length ? DOM.html`
+                    <p class="ws-hint">Deleted: ${hidden.map(v => DOM.html`<button type="button" class="ws-link" data-action="workshop-variant-restore" data-variant="${v.id}">bring back ${v.name}</button> `)}</p>` : '';
+                const steps = WorkshopStore.lineage(ws, active.head).reverse().map(c => this._commitRow(c, c.id === active.head));
+                body.innerHTML = DOM.html`
+                    <section class="ws-history-block">
+                        <h3 class="ws-label">Variants</h3>
+                        <p class="ws-hint">Whole versions of the character. The one in use is what replies read.</p>
+                        ${variants}${back}
+                    </section>
+                    <section class="ws-history-block">
+                        <h3 class="ws-label">History of ${active.name}</h3>
+                        <p class="ws-hint">Newest first. Tap a step to see what changed. Going back is a new step, so nothing here is ever lost.</p>
+                        ${steps}
+                    </section>`.toString();
+            },
+
+            _commitRow(c, isHead) {
+                const open = this.RUNTIME.view.expanded === c.id;
+                const who = { you: 'You', ai: 'AI', card: 'Card', restore: 'Went back', unflatten: 'AI' }[c.origin] || 'You';
+                const changes = c.parent ? c.changes : c.changes.filter(ch => this._hasContent(ch.after));
+                const detail = !open ? '' : DOM.html`
+                    <div class="ws-commit-detail">
+                        ${changes.length ? changes.map(ch => this._changeView(ch)) : DOM.html`<p class="ws-hint">An empty character.</p>`}
+                        <div class="ws-proposal-actions">
+                            ${isHead
+                                ? DOM.html`<span class="ws-hint">This is where the character is now.</span>`
+                                : DOM.html`<button type="button" class="ws-btn is-primary" data-action="workshop-restore" data-commit="${c.id}">Go back to here</button>`}
+                            <button type="button" class="ws-btn" data-action="workshop-branch" data-commit="${c.id}">New variant from here</button>
+                        </div>
+                    </div>`;
+                return DOM.html`
+                    <div class="ws-commit${open ? ' is-open' : ''}">
+                        <button type="button" class="ws-commit-head" data-action="workshop-commit-toggle" data-commit="${c.id}" aria-expanded="${open ? 'true' : 'false'}">
+                            <span class="ws-commit-who is-${c.origin}">${who}</span>
+                            <span class="ws-commit-summary">${c.summary || 'A change'}</span>
+                            <span class="ws-commit-when">${this._when(c.at)}</span>
+                        </button>
+                        ${detail}
+                    </div>`;
+            },
+
+            _hasContent(value) {
+                if (!value) return false;
+                if (typeof value === 'string') return !!value.trim();
+                return !!String(value.text || '').trim() || (value.pins || []).length > 0;
+            },
+
+            /** One part of a step: what its text was and became, and what happened to its pins, lock and length. */
+            _changeView(ch) {
+                const named = { _concept: 'Concept', _notes: 'Story notes', _unsorted: 'Card text not in a section' }[ch.section];
+                if (named) {
+                    return DOM.html`<div class="ws-change"><div class="ws-sort-title">${named}</div>${this._beforeAfter(ch.before || '', ch.after || '')}</div>`;
+                }
+                const a = ch.before || {};
+                const b = ch.after || {};
+                const notes = [];
+                if (ch.before && !!a.locked !== !!b.locked) notes.push(b.locked ? 'Locked' : 'Unlocked');
+                if (ch.before && a.length !== b.length) notes.push(`Length: ${a.length} to ${b.length}`);
+                const pinsBefore = new Map((a.pins || []).map(p => [p.id, p]));
+                const pinsAfter = new Map((b.pins || []).map(p => [p.id, p]));
+                for (const [id, p] of pinsAfter) {
+                    const old = pinsBefore.get(id);
+                    if (!old) notes.push(`Pin added: ${p.text}${p.state === 'suggested' ? ' (suggested)' : ''}`);
+                    else if (old.state !== p.state) notes.push(`Pin kept: ${p.text}`);
+                }
+                for (const [id, p] of pinsBefore) if (!pinsAfter.has(id)) notes.push(`Pin removed: ${p.text}`);
+                const textChanged = (a.text || '') !== (b.text || '');
+                return DOM.html`
+                    <div class="ws-change">
+                        <div class="ws-sort-title">${b.title || a.title || ch.section}</div>
+                        ${notes.map(n => DOM.html`<p class="ws-hint">${n}</p>`)}
+                        ${textChanged ? this._beforeAfter(a.text || '', b.text || '') : ''}
+                    </div>`;
+            },
+
+            _beforeAfter(before, after) {
+                const was = String(before || '').trim();
+                return DOM.html`
+                    ${was ? DOM.html`<div class="ws-ba"><span class="ws-ba-tag">Before</span><div class="ws-text is-before">${was}</div></div>` : ''}
+                    <div class="ws-ba"><span class="ws-ba-tag">${was ? 'After' : 'Now'}</span><div class="ws-text is-proposal">${String(after || '').trim() || '(empty)'}</div></div>`;
+            },
+
+            /** A short time: the hour today, the date before that. */
+            _when(at) {
+                const d = new Date(at);
+                if (d.toDateString() === new Date().toDateString()) return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+                return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+            },
+
+            /**
+             * Any change to which variant is in use, or its history: redraw everything, the description
+             * included. Not while the AI is writing, because its answer lands on the variant in use.
+             */
+            _variantChange(ws) {
+                if (this.RUNTIME.view.busy) {
+                    UIManager.showNotification('Wait for the AI to finish, or stop it, first.', 'info');
+                    return;
+                }
+                return this._commitWs(ws, () => {
+                    this.render();
+                    this.renderHistory();
+                });
+            },
+
             registerActions() {
+                ActionHandler.register('workshop-history-open', () => this.openHistory());
+                ActionHandler.register('workshop-history-close', () => this.closeHistory());
+                ActionHandler.register('workshop-commit-toggle', (ds) => {
+                    const view = this.RUNTIME.view;
+                    if (!view) return;
+                    view.expanded = view.expanded === ds.commit ? null : ds.commit;
+                    this.renderHistory();
+                });
+                ActionHandler.register('workshop-restore', (ds) => {
+                    const view = this.RUNTIME.view;
+                    if (view) this._variantChange(WorkshopStore.restore(view.ws, ds.commit));
+                });
+                ActionHandler.register('workshop-branch', (ds) => {
+                    const view = this.RUNTIME.view;
+                    if (view) this._variantChange(WorkshopStore.branch(view.ws, ds.commit));
+                });
+                ActionHandler.register('workshop-variant-switch', (ds) => {
+                    const view = this.RUNTIME.view;
+                    if (view) this._variantChange(WorkshopStore.switchVariant(view.ws, ds.variant));
+                });
+                ActionHandler.register('workshop-variant-delete', (ds) => {
+                    const view = this.RUNTIME.view;
+                    if (view) this._variantChange(WorkshopStore.deleteVariant(view.ws, ds.variant));
+                });
+                ActionHandler.register('workshop-variant-restore', (ds) => {
+                    const view = this.RUNTIME.view;
+                    if (view) this._variantChange(WorkshopStore.restoreVariant(view.ws, ds.variant));
+                });
+                ActionHandler.register('workshop-variant-rename', (ds, val) => {
+                    const view = this.RUNTIME.view;
+                    if (view) this._commitWs(WorkshopStore.renameVariant(view.ws, ds.variant, val), () => {
+                        this.render();
+                        this.renderHistory();
+                    });
+                });
                 ActionHandler.register('open-workshop', (ds) => {
                     const menu = document.getElementById('character-context-menu');
                     if (menu) menu.classList.add('hidden');
@@ -1065,6 +1241,11 @@
                     root.addEventListener('focusout', (e) => this._fieldDone(e.target));
                     root.addEventListener('input', (e) => { if (e.target.matches('textarea.ws-field')) this._grow(e.target); });
                     root.addEventListener('keydown', (e) => {
+                        if (e.target.classList.contains('ws-variant-name') && e.key === 'Enter') {
+                            e.preventDefault();
+                            e.target.blur();
+                            return;
+                        }
                         if (!e.target.classList.contains('ws-pin-input')) return;
                         if (e.key === 'Escape') e.target.value = '';
                         if (e.key === 'Enter' || e.key === 'Escape') {

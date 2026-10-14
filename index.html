@@ -87,7 +87,7 @@
     <link rel="stylesheet" href="css/agents.css?v=3e3df3752b">
     <link rel="stylesheet" href="css/history.css?v=e70592d647">
     <link rel="stylesheet" href="css/diagnostics.css?v=7068132bb0">
-    <link rel="stylesheet" href="css/workshop.css?v=3f68d24937">
+    <link rel="stylesheet" href="css/workshop.css?v=9ebb5b09c2">
 
 
 
@@ -1258,7 +1258,8 @@
                 <input type="text" id="ws-name" class="ws-name" data-action-change="workshop-rename" maxlength="80"
                     aria-label="Character name" autocomplete="off">
             </div>
-            <span id="ws-variant" class="ws-variant" title="The version of the character being worked on">Main</span>
+            <button type="button" id="ws-variant" class="ws-variant" data-action="workshop-history-open"
+                title="History and variants: go back to any point, or work on another version">Main</button>
         </header>
         <div id="ws-notice"></div>
         <nav class="ws-tabs" role="tablist" aria-label="Workshop">
@@ -1270,6 +1271,17 @@
             <section id="ws-sections" class="ws-pane" data-pane="sections" aria-label="Sections"></section>
             <aside id="ws-card" class="ws-pane" data-pane="card" aria-label="Card"></aside>
         </div>
+        <aside id="ws-history" class="ws-history hidden" aria-label="History and variants">
+            <div class="ws-history-head">
+                <span class="ws-kicker">History and variants</span>
+                <button type="button" class="ws-icon-btn" data-action="workshop-history-close" aria-label="Close the history" title="Close">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+            <div id="ws-history-body" class="ws-history-body"></div>
+        </aside>
     </div>
 
     <!-- AI Character Generation Modal -->
@@ -4333,7 +4345,7 @@
 
     <!-- [SEC:JS:CORE] -->
     <!-- Application Logic -->
-    <script src="js/core/build-info.js?v=25fd394a77"></script>
+    <script src="js/core/build-info.js?v=87423f39e1"></script>
     <script src="js/core/dom.js?v=63eb132604"></script>
     <script src="js/core/action-handler.js?v=0db5af7600"></script>
     <script src="js/core/debounce.js?v=dce774dcea"></script>
@@ -4348,7 +4360,7 @@
     <script src="js/services/tts.js?v=b5903b4d34"></script>
     <script src="js/services/music.js?v=6de37ebcdc"></script>
     <script src="js/services/workshop-ai.js?v=92d01952d5"></script>
-    <script src="js/services/workshop-store.js?v=1d8769d517"></script>
+    <script src="js/services/workshop-store.js?v=bf035e56b0"></script>
     <script src="js/ui/modal-manager.js?v=eedc205bd3"></script>
     <script src="js/util/utility.js?v=c9359e724e"></script>
     <script src="js/util/agent-schema.js?v=21a243728f"></script>
@@ -4382,7 +4394,7 @@
     <script src="js/controllers/agents.js?v=6a67e60458"></script>
     <script src="js/controllers/history.js?v=ef41f00c31"></script>
     <script src="js/controllers/diagnostics.js?v=b96c876187"></script>
-    <script src="js/controllers/workshop.js?v=9884adb479"></script>
+    <script src="js/controllers/workshop.js?v=94dc094010"></script>
     <script src="js/controllers/action-dispatcher.js?v=0ec1c44d71"></script>
     <script src="js/boot.js?v=fdc6df7f3c"></script>
     <!-- Onboarding Welcome Modal: Shown on first launch to guide new users -->

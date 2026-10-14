@@ -668,3 +668,173 @@
         .ws-hint.is-warn {
             color: #fbbf24;
         }
+
+        /* --- History and variants: a panel over the Workshop ------------------------------ */
+
+        button.ws-variant {
+            cursor: pointer;
+            background: rgba(20, 184, 166, 0.08);
+        }
+
+        button.ws-variant:hover {
+            background: rgba(20, 184, 166, 0.22);
+        }
+
+        .ws-history {
+            position: absolute;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 2;
+            width: min(30rem, 100%);
+            display: flex;
+            flex-direction: column;
+            background: #111827;
+            border-left: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: -12px 0 32px rgba(0, 0, 0, 0.45);
+            padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) 0;
+        }
+
+        .ws-history.hidden {
+            display: none;
+        }
+
+        .ws-history-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+        }
+
+        .ws-history-body {
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            padding: 1rem;
+        }
+
+        .ws-history-block + .ws-history-block {
+            margin-top: 1.4rem;
+        }
+
+        .ws-variant-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 0.6rem;
+            margin-top: 0.45rem;
+            border-radius: 0.65rem;
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            background: rgba(31, 41, 55, 0.55);
+        }
+
+        .ws-variant-row.is-active {
+            border-color: rgba(20, 184, 166, 0.55);
+        }
+
+        .ws-variant-name {
+            flex: 1 1 9rem;
+            min-width: 0;
+            padding: 0.35rem 0.5rem;
+            border-radius: 0.45rem;
+            border: 1px solid transparent;
+            background: rgba(0, 0, 0, 0.25);
+            color: #fff;
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .ws-variant-name:focus {
+            outline: none;
+            border-color: rgba(20, 184, 166, 0.6);
+        }
+
+        .ws-variant-tag {
+            font-size: 0.72rem;
+            font-weight: 700;
+            color: #5eead4;
+        }
+
+        .ws-commit {
+            margin-top: 0.4rem;
+            border-radius: 0.65rem;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            background: rgba(31, 41, 55, 0.45);
+        }
+
+        .ws-commit.is-open {
+            border-color: rgba(20, 184, 166, 0.4);
+        }
+
+        .ws-commit-head {
+            width: 100%;
+            display: flex;
+            align-items: baseline;
+            gap: 0.6rem;
+            padding: 0.6rem 0.75rem;
+            text-align: left;
+        }
+
+        .ws-commit-who {
+            flex-shrink: 0;
+            min-width: 4.2rem;
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: #94a3b8;
+        }
+
+        .ws-commit-who.is-ai {
+            color: #5eead4;
+        }
+
+        .ws-commit-who.is-restore {
+            color: #fbbf24;
+        }
+
+        .ws-commit-summary {
+            flex: 1;
+            min-width: 0;
+            font-size: 0.85rem;
+            color: var(--text-primary);
+            overflow-wrap: anywhere;
+        }
+
+        .ws-commit-when {
+            flex-shrink: 0;
+            font-size: 0.72rem;
+            color: #6b7785;
+        }
+
+        .ws-commit-detail {
+            padding: 0 0.75rem 0.75rem;
+        }
+
+        .ws-change + .ws-change {
+            margin-top: 0.75rem;
+        }
+
+        .ws-ba {
+            margin-top: 0.35rem;
+        }
+
+        .ws-ba-tag {
+            display: inline-block;
+            margin-bottom: 0.2rem;
+            font-size: 0.68rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: #6b7785;
+        }
+
+        .ws-text.is-before {
+            cursor: default;
+            color: #94a3b8;
+            text-decoration: line-through;
+            text-decoration-color: rgba(148, 163, 184, 0.45);
+        }

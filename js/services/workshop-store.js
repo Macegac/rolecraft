@@ -179,11 +179,55 @@
                 const state = this.stateAt(ws, commitId);
                 if (!state) return ws;
                 const variant = { id: variantId, name: name.trim() || `Variant ${ws.variants.length + 1}`, head: commitId, at: now, state };
-                return { ...ws, active: variantId, variants: [...ws.variants, variant] };
+                return this._activate({ ...ws, variants: [...ws.variants, variant] }, variantId);
             },
 
             switchVariant(ws, variantId) {
-                return ws.variants.some(v => v.id === variantId) ? { ...ws, active: variantId } : ws;
+                return ws.variants.some(v => v.id === variantId && !v.deletedAt) ? this._activate(ws, variantId) : ws;
+            },
+
+            /**
+             * Makes another variant the one being worked on. Proposals were written for the variant
+             * they wait on, so they are set aside with it and come back when it is used again.
+             */
+            _activate(ws, variantId) {
+                if (ws.active === variantId) return ws;
+                const parked = { ...(ws.parked || {}) };
+                if (Object.keys(ws.pending || {}).length) parked[ws.active] = ws.pending;
+                const pending = parked[variantId] || {};
+                delete parked[variantId];
+                return { ...ws, active: variantId, pending, parked };
+            },
+
+            renameVariant(ws, variantId, name) {
+                const clean = String(name || '').trim().slice(0, 60);
+                if (!clean) return ws;
+                return { ...ws, variants: ws.variants.map(v => (v.id === variantId ? { ...v, name: clean } : v)) };
+            },
+
+            /**
+             * Hides a variant rather than deleting it, so it can be brought back. The last one left
+             * cannot go. Hiding the one being worked on switches to the newest of the others.
+             */
+            deleteVariant(ws, variantId, now = Date.now()) {
+                const live = ws.variants.filter(v => !v.deletedAt);
+                if (live.length < 2 || !live.some(v => v.id === variantId)) return ws;
+                const next = { ...ws, variants: ws.variants.map(v => (v.id === variantId ? { ...v, deletedAt: now } : v)) };
+                if (ws.active !== variantId) return next;
+                const others = live.filter(v => v.id !== variantId);
+                return this._activate(next, others[others.length - 1].id);
+            },
+
+            restoreVariant(ws, variantId) {
+                return {
+                    ...ws,
+                    variants: ws.variants.map(v => {
+                        if (v.id !== variantId) return v;
+                        const kept = { ...v };
+                        delete kept.deletedAt;
+                        return kept;
+                    })
+                };
             },
 
             /**

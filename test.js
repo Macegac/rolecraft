@@ -3172,6 +3172,53 @@ test('WorkshopStore: a variant branches from any point and grows on its own', ()
     assert.equal(WorkshopStore.switchVariant(ws, 'nope'), ws);
 });
 
+test('WorkshopStore: variants are renamed, hidden and brought back, and the last one cannot go', () => {
+    let ws = WorkshopStore.create({ now: 1, commitId: 'c0' });
+    ws = WorkshopStore.commit(ws, withTexts(WorkshopStore.active(ws).state, { personality: 'Guarded.' }), { now: 2, commitId: 'c1' });
+    ws = WorkshopStore.branch(ws, 'c1', { name: 'Softer', now: 3, variantId: 'v_soft' });
+
+    ws = WorkshopStore.renameVariant(ws, 'v_soft', '  Gentler  ');
+    assert.equal(WorkshopStore.active(ws).name, 'Gentler');
+    assert.equal(WorkshopStore.renameVariant(ws, 'v_soft', '   '), ws, 'an empty name changes nothing');
+    assert.equal(WorkshopStore.renameVariant(ws, 'v_soft', 'x'.repeat(80)).variants[1].name.length, 60);
+
+    const gone = WorkshopStore.deleteVariant(ws, 'v_soft', 9);
+    assert.equal(gone.variants.find(v => v.id === 'v_soft').deletedAt, 9, 'hidden, not removed');
+    assert.equal(gone.active, 'v_main', 'deleting the one in use moves to another');
+    assert.equal(gone.commits, ws.commits, 'its history stays');
+    assert.equal(WorkshopStore.deleteVariant(gone, 'v_main'), gone, 'the last one left cannot go');
+    assert.equal(WorkshopStore.switchVariant(gone, 'v_soft'), gone, 'a hidden variant cannot be used');
+
+    const back = WorkshopStore.restoreVariant(gone, 'v_soft');
+    assert.equal('deletedAt' in back.variants.find(v => v.id === 'v_soft'), false);
+    assert.equal(back.active, 'v_main', 'bringing it back does not switch to it');
+    assert.equal(WorkshopStore.active(WorkshopStore.switchVariant(back, 'v_soft')).state.sections[1].text, 'Guarded.');
+
+    assert.equal(WorkshopStore.deleteVariant(ws, 'v_main', 9).active, 'v_soft', 'deleting one not in use leaves the one in use alone');
+    let three = WorkshopStore.branch(ws, 'c0', { name: 'Darker', now: 4, variantId: 'v_dark' });
+    three = WorkshopStore.switchVariant(three, 'v_main');
+    assert.equal(WorkshopStore.deleteVariant(three, 'v_main', 9).active, 'v_dark', 'it moves to the newest of the others');
+});
+
+test('WorkshopStore: proposals stay with the variant they were written for', () => {
+    let ws = WorkshopStore.create({ now: 1, commitId: 'c0' });
+    ws = WorkshopStore.setPending(ws, 'appearance', { kind: 'write', text: 'For Main.', pinMap: {} });
+    ws = WorkshopStore.branch(ws, 'c0', { name: 'Darker', now: 2, variantId: 'v_dark' });
+    deepEq(ws.pending, {}, 'a new variant starts with none waiting');
+    ws = WorkshopStore.setPending(ws, '_sort', { kind: 'sort', leftover: 'For Darker.' });
+
+    ws = WorkshopStore.switchVariant(ws, 'v_main');
+    assert.equal(ws.pending.appearance.text, 'For Main.', "Main's proposal is back");
+    assert.equal(ws.pending._sort, undefined, "and Darker's sorting waits with Darker");
+    assert.equal(WorkshopStore.switchVariant(ws, 'v_main'), ws, 'switching to the one in use changes nothing');
+
+    ws = WorkshopStore.deleteVariant(ws, 'v_main', 3);
+    assert.equal(ws.pending._sort.leftover, 'For Darker.', 'deleting the one in use brings back the next one\'s proposals');
+    ws = WorkshopStore.switchVariant(WorkshopStore.restoreVariant(ws, 'v_main'), 'v_main');
+    assert.equal(ws.pending.appearance.text, 'For Main.', 'and a deleted variant kept its own');
+    deepEq(ws.parked, { v_dark: { _sort: { kind: 'sort', leftover: 'For Darker.' } } });
+});
+
 test('WorkshopStore: the description is each filled section under its heading, with Scenario left out', () => {
     const state = withTexts(WorkshopStore.blankState(), {
         appearance: '  Tall, ink-stained hands.  ', voice: 'Clipped and dry.', scenario: 'A storm traps you both at the clinic.', sexuality: '   '
@@ -3318,7 +3365,7 @@ test('Workshop screen: a character without a Workshop starts from its card, and 
 test('Workshop screen: wired in, with every way in and every button handled', () => {
     const html = fs.readFileSync(HTML_PATH, 'utf8');
     const controller = fs.readFileSync(path.join(__dirname, 'js', 'controllers', 'workshop.js'), 'utf8');
-    for (const id of ['character-workshop', 'ws-name', 'ws-variant', 'ws-notice', 'ws-sections', 'ws-card']) {
+    for (const id of ['character-workshop', 'ws-name', 'ws-variant', 'ws-notice', 'ws-sections', 'ws-card', 'ws-history', 'ws-history-body']) {
         assert.ok(html.includes(`id="${id}"`), `${id} is in the page`);
     }
     assert.match(html, /<link rel="stylesheet" href="css\/workshop\.css\?v=[0-9a-f]+">/, 'its stylesheet is linked');
@@ -3445,11 +3492,18 @@ test('WorkshopStore: proposals wait outside the history, and accepting them is o
 /** The Workshop controller with a stand-in model that answers from a list, on a page that is never drawn. */
 function workshopAiPage(answers, state = pinnedState()) {
     const calls = [];
-    const element = () => ({
-        innerHTML: '', outerHTML: '', value: '', textContent: '', style: {}, dataset: {},
-        classList: { add() { }, remove() { }, toggle() { }, contains: () => false },
-        querySelector: () => null, querySelectorAll: () => [], contains: () => false, focus() { }, setAttribute() { }
-    });
+    const notices = [];
+    const element = () => {
+        const classes = new Set();
+        return {
+            innerHTML: '', outerHTML: '', value: '', textContent: '', style: {}, dataset: {},
+            classList: { add: c => classes.add(c), remove: c => classes.delete(c), toggle() { }, contains: c => classes.has(c) },
+            querySelector: () => null, querySelectorAll: () => [], contains: () => false, focus() { }, setAttribute() { }, addEventListener() { }
+        };
+    };
+    const elements = {};
+    const handlers = {};
+    const byId = id => elements[id] || (elements[id] = element());
     const characters = [{ id: 'ch1', name: 'Test', description: '' }];
     const store = { state: { characters, evolved_characters: {} }, _isSaving: false, async forceSave() { } };
     const WorkshopAI = {
@@ -3463,12 +3517,16 @@ function workshopAiPage(answers, state = pinnedState()) {
     const source = ['js/core/dom.js', 'js/services/workshop-store.js', 'js/util/workshop-prompts.js', 'js/controllers/workshop.js']
         .map(file => fs.readFileSync(path.join(__dirname, file), 'utf8')).join('\n');
     const WC = vm.runInNewContext(source + '\nWorkshopController', {
-        document: { getElementById: element, querySelector: element, querySelectorAll: () => [], activeElement: null },
+        document: { getElementById: byId, querySelector: element, querySelectorAll: () => [], activeElement: null },
         ReactiveStore: store, WorkshopAI, AbortController, setTimeout, UTILITY,
-        UIManager: { showNotification() { } }
+        UIManager: { showNotification: (text, type) => notices.push([text, type]) },
+        ActionHandler: { register: (name, fn) => { handlers[name] = fn; } }, window: { addEventListener() { } }, debounce: fn => fn
     });
+    WC.registerActions();
     WC.RUNTIME.view = { charId: 'ch1', ws: WorkshopStore.create({ state, now: 1, commitId: 'c0' }), tab: 'sections', editing: null, addingPin: null };
-    return { WC, calls, characters, view: () => WC.RUNTIME.view };
+    /** Presses a button on the screen: the action's handler, with the button's data-* values. */
+    const act = (name, dataset = {}, value) => handlers[name](dataset, value);
+    return { WC, calls, characters, elements, notices, act, view: () => WC.RUNTIME.view };
 }
 
 const settle = () => new Promise(resolve => setTimeout(resolve, 0));
@@ -3654,4 +3712,103 @@ test('Workshop screen: sorting is offered on the unsorted card, and pins are off
     for (const action of ['workshop-sort', 'workshop-sort-accept', 'workshop-sort-discard']) {
         assert.ok(controller.includes(`ActionHandler.register('${action}'`), `${action} has a handler`);
     }
+});
+
+// ─── History and variants ────────────────────────────────────────────────────
+
+/** A Workshop page with two steps on Main after the start: Personality drafted, then redrafted. */
+function historyPage() {
+    const p = workshopAiPage([]);
+    let ws = p.view().ws;
+    ws = WorkshopStore.commit(ws, withTexts(WorkshopStore.active(ws).state, { personality: 'Guarded.' }), { now: 2, commitId: 'c1', summary: 'First draft' });
+    ws = WorkshopStore.commit(ws, withTexts(WorkshopStore.active(ws).state, { personality: 'Guarded, then reckless.' }), { now: 3, commitId: 'c2', summary: 'Second draft' });
+    p.view().ws = ws;
+    p.drawer = () => p.elements['ws-history-body'].innerHTML;
+    return p;
+}
+
+test('History: the drawer lists the variants and the steps that led here, newest first, and a step opens to show what changed', () => {
+    const p = historyPage();
+    p.act('workshop-history-open');
+    assert.equal(p.elements['ws-history'].classList.contains('hidden'), false, 'the drawer opens');
+    let html = p.drawer();
+    assert.ok(html.indexOf('Second draft') < html.indexOf('First draft') && html.indexOf('First draft') < html.indexOf('Started'), 'newest first');
+    assert.ok(html.includes('value="Main"') && html.includes('In use'));
+    assert.ok(!html.includes('data-action="workshop-variant-delete"'), 'the only variant has no Delete');
+    assert.ok(!html.includes('Go back to here'), 'steps start closed');
+
+    p.act('workshop-commit-toggle', { commit: 'c1' });
+    html = p.drawer();
+    assert.ok(html.includes('data-action="workshop-restore" data-commit="c1"'), 'an earlier step can be gone back to');
+    assert.ok(html.includes('data-action="workshop-branch" data-commit="c1"'), 'or branched from');
+    assert.match(html, /Personality<\/div>[\s\S]*?Now<\/span><div class="ws-text is-proposal">Guarded\.<\/div>/, 'what the section became');
+
+    p.act('workshop-commit-toggle', { commit: 'c2' });
+    html = p.drawer();
+    assert.ok(!html.includes('data-action="workshop-branch" data-commit="c1"'), 'one step open at a time');
+    assert.ok(html.includes('This is where the character is now.') && !html.includes('Go back to here'), 'the newest step is where it is now');
+    assert.match(html, /Before<\/span><div class="ws-text is-before">Guarded\.<\/div>[\s\S]*?After<\/span><div class="ws-text is-proposal">Guarded, then reckless\.<\/div>/);
+
+    p.act('workshop-commit-toggle', { commit: 'c2' });
+    assert.equal(p.view().expanded, null, 'tapping it again closes it');
+    p.act('workshop-history-close');
+    assert.ok(p.elements['ws-history'].classList.contains('hidden'));
+});
+
+test('History: going back is a new step, variants branch, switch, rename, delete and come back, and the card follows', async () => {
+    const p = historyPage();
+    const card = () => p.characters[0].description;
+    p.act('workshop-history-open');
+
+    p.act('workshop-restore', { commit: 'c1' });
+    await settle();
+    assert.equal(p.view().ws.commits.length, 4, 'nothing removed');
+    assert.equal(p.view().ws.commits.at(-1).origin, 'restore');
+    assert.ok(card().includes('## Personality\nGuarded.\n'), 'the card is back at that point');
+    assert.ok(p.drawer().includes('Went back to: First draft'));
+
+    p.act('workshop-branch', { commit: 'c2' });
+    await settle();
+    const variant = WorkshopStore.active(p.view().ws);
+    assert.equal(variant.name, 'Variant 2');
+    assert.equal(p.elements['ws-variant'].textContent, 'Variant 2', 'the header shows the variant in use');
+    assert.ok(card().includes('Guarded, then reckless.'), 'the card is now the new variant');
+    assert.equal((p.drawer().match(/data-action="workshop-variant-delete"/g) || []).length, 2, 'with two, either can go');
+
+    p.act('workshop-variant-rename', { variant: variant.id }, '  Reckless  ');
+    await settle();
+    assert.equal(WorkshopStore.active(p.view().ws).name, 'Reckless');
+    assert.equal(p.elements['ws-variant'].textContent, 'Reckless');
+
+    p.act('workshop-variant-switch', { variant: 'v_main' });
+    await settle();
+    assert.ok(card().includes('## Personality\nGuarded.\n'), 'switching recompiles the description');
+    assert.ok(p.drawer().includes(`data-action="workshop-variant-switch" data-variant="${variant.id}"`));
+
+    p.act('workshop-variant-delete', { variant: 'v_main' });
+    await settle();
+    assert.equal(p.view().ws.active, variant.id, 'deleting the one in use moves to the other');
+    assert.ok(card().includes('Guarded, then reckless.'));
+    assert.ok(p.drawer().includes('bring back Main'));
+    assert.ok(!p.drawer().includes('data-action="workshop-variant-delete"'), 'the last one left has no Delete');
+
+    p.act('workshop-variant-restore', { variant: 'v_main' });
+    await settle();
+    assert.ok(!p.drawer().includes('bring back'));
+    assert.equal(p.view().ws.active, variant.id, 'bringing it back does not switch to it');
+    assert.equal(p.characters[0].workshop.variants.filter(v => !v.deletedAt).length, 2, 'and every change was saved');
+});
+
+test('History: nothing switches while the AI is writing, and closing the Workshop closes the drawer', () => {
+    const p = historyPage();
+    p.act('workshop-history-open');
+    const before = p.view().ws;
+    p.view().busy = { kind: 'write' };
+    p.act('workshop-branch', { commit: 'c1' });
+    p.act('workshop-restore', { commit: 'c1' });
+    assert.equal(p.view().ws, before, 'nothing changed');
+    assert.match(p.notices.at(-1)[0], /Wait for the AI to finish/);
+    p.view().busy = null;
+    p.WC.close();
+    assert.ok(p.elements['ws-history'].classList.contains('hidden'), 'so it is not left open for the next character');
 });
