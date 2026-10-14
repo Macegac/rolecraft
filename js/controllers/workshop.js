@@ -407,6 +407,7 @@
                 const state = WorkshopStore.active(this.RUNTIME.view.ws).state;
                 document.getElementById('ws-sections').innerHTML = [
                     this._conceptCard(state),
+                    `<div id="ws-aibar-wrap">${this._aiBar(state)}</div>`,
                     String(state.unsorted || '').trim() ? this._unsortedCard(state) : '',
                     ...state.sections.map(s => this._sectionCard(s)),
                     this._notesCard(state)
@@ -419,6 +420,9 @@
                 const card = document.getElementById(`ws-sec-${id}`);
                 const section = this._section(WorkshopStore.active(this.RUNTIME.view.ws).state, id);
                 if (!card || !section) return;
+                // Never while someone is typing in it: redrawing would throw away what they typed.
+                const typing = document.activeElement;
+                if (typing && card.contains(typing) && typing.matches('textarea, input')) return;
                 card.outerHTML = this._sectionCard(section);
                 const fresh = document.getElementById(`ws-sec-${id}`);
                 this._growAll(fresh);
@@ -497,6 +501,8 @@
                 const body = view.editing === s.id
                     ? DOM.html`<textarea class="ws-field ws-section-text" data-ws-field="section" data-section="${s.id}" rows="5" aria-label="${s.title}">${s.text}</textarea>`
                     : this._textView(s, check.landed);
+                const pending = (view.ws.pending || {})[s.id];
+                const proposal = !pending ? '' : (pending.kind === 'takes' ? this._takesBlock(s, pending) : this._proposalBlock(s, pending));
                 return DOM.html`
                     <article class="ws-card ws-section${s.locked ? ' is-locked' : ''}" id="ws-sec-${s.id}" data-section="${s.id}">
                         <header class="ws-section-head">
@@ -510,6 +516,8 @@
                         </header>
                         <div class="ws-pins">${pins}${adding}</div>
                         ${body}
+                        ${this._aiRow(s)}
+                        ${proposal}
                     </article>`.toString();
             },
 
@@ -528,15 +536,7 @@
                 if (!String(s.text || '').trim()) {
                     return DOM.html`<div class="ws-text is-empty" data-action="workshop-edit" data-section="${s.id}" role="button" tabindex="0">Empty. Tap to write it yourself.</div>`;
                 }
-                let html = '';
-                let at = 0;
-                for (const span of landed.slice().sort((a, b) => a.start - b.start)) {
-                    if (span.start < at) continue;
-                    html += this._esc(s.text.slice(at, span.start)) + `<mark class="ws-mark">${this._esc(s.text.slice(span.start, span.end))}</mark>`;
-                    at = span.end;
-                }
-                html += this._esc(s.text.slice(at));
-                return DOM.html`<div class="ws-text" data-action="workshop-edit" data-section="${s.id}" role="button" tabindex="0" aria-label="Edit ${s.title}">${DOM.unsafe(html)}</div>`;
+                return DOM.html`<div class="ws-text" data-action="workshop-edit" data-section="${s.id}" role="button" tabindex="0" aria-label="Edit ${s.title}">${DOM.unsafe(this._markHtml(s.text, landed))}</div>`;
             },
 
             _esc(text) {
@@ -570,23 +570,294 @@
              * Applies one change to the variant being worked on as a "you" commit, redraws what it
              * touched and saves it. Nothing changed means no commit and no save.
              */
-            async _change(summary, mutate, redraw) {
+            async _change(summary, mutate, redraw, origin = 'you') {
                 const view = this.RUNTIME.view;
                 if (!view) return;
                 const next = JSON.parse(JSON.stringify(WorkshopStore.active(view.ws).state));
                 mutate(next);
-                const ws = WorkshopStore.commit(view.ws, next, { origin: 'you', summary });
+                await this._commitWs(WorkshopStore.commit(view.ws, next, { origin, summary }), redraw);
+            },
+
+            /** Puts a new version of the Workshop on screen and saves it. The same version back means nothing changed. */
+            async _commitWs(ws, redraw) {
+                const view = this.RUNTIME.view;
+                if (!view) return;
                 const changed = ws !== view.ws;
                 view.ws = ws;
                 if (redraw) redraw();
                 if (!changed) return;
                 this.renderCard();
+                this.renderAiBar();
+                await this._saveWs(view);
+            },
+
+            async _saveWs(view) {
                 try {
-                    await this.applyWorkshop(view.charId, ws);
+                    await this.applyWorkshop(view.charId, view.ws);
                     if (this.RUNTIME.view === view) this.renderNotice();
                 } catch (err) {
                     UIManager.showNotification(`The Workshop could not save that change: ${err.message}`, 'error');
                 }
+            },
+
+            // ---------------------------------------------------------------------------------------
+            // Writing with the Workshop's AI. Every answer is a proposal; nothing changes until it is used.
+            // ---------------------------------------------------------------------------------------
+
+            /** The bar under the concept: pins and text for every empty section, and proposals waiting. */
+            _aiBar(state) {
+                const view = this.RUNTIME.view;
+                const busy = view.busy;
+                const empty = state.sections.filter(s => !s.locked && !String(s.text || '').trim());
+                const waiting = Object.values(view.ws.pending || {}).filter(p => p && p.kind !== 'takes');
+                const off = (busy || empty.length === 0) ? 'disabled' : '';
+                let status = '';
+                if (busy && !busy.sectionId) status = this._busyLine(busy);
+                else if ((view.errors || {})._all) status = DOM.html`<span class="ws-status is-error">${view.errors._all}</span>`;
+                const waitingBar = waiting.length > 1 ? DOM.html`
+                    <div class="ws-waiting">
+                        <span>${waiting.length} proposals are waiting.</span>
+                        <button type="button" class="ws-btn is-primary" data-action="workshop-accept-all" ${busy ? 'disabled' : ''}>Use all</button>
+                        <button type="button" class="ws-btn" data-action="workshop-discard-all" ${busy ? 'disabled' : ''}>Discard all</button>
+                    </div>` : '';
+                return DOM.html`
+                    <div class="ws-aibar">
+                        <button type="button" class="ws-ai-btn" data-action="workshop-suggest-pins" ${off}>✦ Suggest pins</button>
+                        <button type="button" class="ws-ai-btn" data-action="workshop-write-all" ${off}>✦ Write the empty sections</button>
+                        ${status}
+                    </div>${waitingBar}`.toString();
+            },
+
+            renderAiBar() {
+                const wrap = document.getElementById('ws-aibar-wrap');
+                if (wrap && this.RUNTIME.view) wrap.innerHTML = this._aiBar(WorkshopStore.active(this.RUNTIME.view.ws).state);
+            },
+
+            _busyLine(busy) {
+                return DOM.html`<span class="ws-status"><span id="ws-busy-status">${busy.status}</span>
+                    <button type="button" class="ws-link" data-action="workshop-ai-stop">Stop</button></span>`;
+            },
+
+            /** A section's AI buttons, with what the AI is doing for it, or why it failed. */
+            _aiRow(s) {
+                const view = this.RUNTIME.view;
+                if (s.locked) return '';
+                const busy = view.busy;
+                const hasText = !!String(s.text || '').trim();
+                let status = '';
+                if (busy && busy.sectionId === s.id) status = this._busyLine(busy);
+                else if ((view.errors || {})[s.id]) status = DOM.html`<span class="ws-status is-error">${view.errors[s.id]}</span>`;
+                return DOM.html`
+                    <div class="ws-ai-row">
+                        <button type="button" class="ws-ai-btn" data-action="workshop-write" data-section="${s.id}" data-mode="${hasText ? 'reweave' : 'write'}"
+                            title="${hasText ? 'Rewrite it around its pins, keeping what still fits' : 'Write it from its pins and the rest of the character'}" ${busy ? 'disabled' : ''}>${hasText ? '✦ Re-weave' : '✦ Write'}</button>
+                        <button type="button" class="ws-ai-btn" data-action="workshop-takes" data-section="${s.id}"
+                            title="Three really different versions to choose from" ${busy ? 'disabled' : ''}>✦ 3 takes</button>
+                        ${status}
+                    </div>`;
+            },
+
+            /** Text with the pins that made it in highlighted, as HTML. */
+            _markHtml(text, landed) {
+                let html = '';
+                let at = 0;
+                for (const span of landed.slice().sort((a, b) => a.start - b.start)) {
+                    if (span.start < at) continue;
+                    html += this._esc(text.slice(at, span.start)) + `<mark class="ws-mark">${this._esc(text.slice(span.start, span.end))}</mark>`;
+                    at = span.end;
+                }
+                return html + this._esc(text.slice(at));
+            },
+
+            _tally(s, check) {
+                const kept = s.pins.filter(p => p.state === 'kept').length;
+                return kept ? DOM.html`<span class="ws-tally${check.missing.length ? ' is-short' : ''}">${check.landed.length} of ${kept} pins in</span>` : '';
+            },
+
+            /** A written or re-woven section waiting to be used, under the text it would replace. */
+            _proposalBlock(s, p) {
+                const check = WorkshopStore.checkPins({ ...s, text: p.text, pinMap: p.pinMap });
+                const label = p.kind === 'reweave' ? 'Re-woven by the AI' : 'Written by the AI';
+                return DOM.html`
+                    <div class="ws-proposal">
+                        <div class="ws-proposal-head"><span>${label}. Nothing changes until you use it.</span>${this._tally(s, check)}</div>
+                        <div class="ws-text is-proposal">${DOM.unsafe(this._markHtml(p.text, check.landed))}</div>
+                        <div class="ws-proposal-actions">
+                            <button type="button" class="ws-btn is-primary" data-action="workshop-accept" data-section="${s.id}">Use it</button>
+                            <button type="button" class="ws-btn" data-action="workshop-discard" data-section="${s.id}">Discard</button>
+                        </div>
+                    </div>`;
+            },
+
+            /** Three takes to choose from, and a dial for how far the next batch may wander. */
+            _takesBlock(s, p) {
+                const busy = !!this.RUNTIME.view.busy;
+                const names = ['Safest', 'Grounded', 'Inventive', 'Bold', 'Wildest'];
+                const dial = names.map((name, i) => DOM.html`
+                    <button type="button" class="ws-dial-btn${i + 1 === p.creativity ? ' is-on' : ''}" data-action="workshop-takes" data-section="${s.id}"
+                        data-creativity="${i + 1}" title="${name}" aria-label="Three new takes, ${name.toLowerCase()}" ${busy ? 'disabled' : ''}>${i + 1}</button>`);
+                const takes = p.takes.map((t, i) => {
+                    const check = WorkshopStore.checkPins({ ...s, text: t.text, pinMap: t.pinMap });
+                    return DOM.html`
+                        <div class="ws-take">
+                            <div class="ws-proposal-head"><span class="ws-take-angle">${t.angle}</span>${this._tally(s, check)}</div>
+                            <div class="ws-text is-proposal">${DOM.unsafe(this._markHtml(t.text, check.landed))}</div>
+                            <div class="ws-proposal-actions">
+                                <button type="button" class="ws-btn is-primary" data-action="workshop-take-use" data-section="${s.id}" data-index="${i}">Use this</button>
+                                <button type="button" class="ws-btn" data-action="workshop-take-reject" data-section="${s.id}" data-index="${i}"
+                                    title="Drop it, and steer the next takes away from it">Not this</button>
+                            </div>
+                        </div>`;
+                });
+                return DOM.html`
+                    <div class="ws-takes">
+                        <div class="ws-proposal-head">
+                            <span>${p.takes.length === 1 ? 'One take left.' : `${p.takes.length} takes.`} Nothing changes until you use one.</span>
+                            <button type="button" class="ws-link" data-action="workshop-discard" data-section="${s.id}">Close</button>
+                        </div>
+                        ${takes}
+                        <div class="ws-dial-row"><span>Three new takes, from safest to wildest:</span><span class="ws-dial" role="group">${dial}</span></div>
+                    </div>`;
+            },
+
+            /**
+             * Runs one AI job: write or re-weave a section, three takes, suggested pins, or writing
+             * every empty section. One job at a time; Stop ends it.
+             */
+            async _ask(kind, sectionId = null, creativity = null) {
+                const view = this.RUNTIME.view;
+                if (!view || view.busy) return;
+                const character = this._character(view.charId);
+                const name = character ? character.name : '';
+                view.errors = {};
+                view.busy = { kind, sectionId, controller: new AbortController(), status: 'Asking the Workshop model...', label: '' };
+                this._redrawFor(sectionId);
+                const onDelta = ({ text, thinking }) => {
+                    const el = document.getElementById('ws-busy-status');
+                    if (el && view.busy) el.textContent = `${view.busy.label}${text ? `Writing... ${text.length} characters` : `Thinking... ${thinking.length} characters`}`;
+                };
+                try {
+                    if (kind === 'suggest') await this._suggestPins(view, name, onDelta);
+                    else if (kind === 'write-all') await this._writeAll(view, name, onDelta);
+                    else if (kind === 'takes') await this._takes(view, name, sectionId, creativity, onDelta);
+                    else await this._write(view, name, sectionId, kind === 'reweave', onDelta);
+                } catch (err) {
+                    if (!(err && err.name === 'AbortError')) view.errors = { [sectionId || '_all']: (err && err.message) || 'The Workshop model did not answer.' };
+                } finally {
+                    view.busy = null;
+                    if (this.RUNTIME.view === view) this._redrawFor(sectionId);
+                }
+            },
+
+            _redrawFor(sectionId) {
+                this.renderAiBar();
+                if (sectionId) this.renderSection(sectionId);
+                else WorkshopStore.active(this.RUNTIME.view.ws).state.sections.forEach(s => this.renderSection(s.id));
+            },
+
+            _chat(view, ask, onDelta) {
+                return WorkshopAI.chat({ messages: ask.messages, json: true, temperature: ask.temperature, signal: view.busy.controller.signal, onDelta });
+            },
+
+            async _write(view, name, sectionId, reweave, onDelta) {
+                const ask = WorkshopPrompts.writeSection({ name, state: WorkshopStore.active(view.ws).state, sectionId, reweave });
+                const result = ask.read((await this._chat(view, ask, onDelta)).data);
+                view.ws = WorkshopStore.setPending(view.ws, sectionId, { kind: reweave ? 'reweave' : 'write', text: result.text, pinMap: result.pinMap, at: Date.now() });
+                await this._saveWs(view);
+            },
+
+            async _takes(view, name, sectionId, creativity, onDelta) {
+                const previous = (view.ws.pending || {})[sectionId];
+                const level = creativity || (previous && previous.creativity) || 3;
+                const ask = WorkshopPrompts.takes({
+                    name, state: WorkshopStore.active(view.ws).state, sectionId, avoid: (view.ws.avoid || {})[sectionId] || [], creativity: level
+                });
+                const takes = ask.read((await this._chat(view, ask, onDelta)).data);
+                view.ws = WorkshopStore.setPending(view.ws, sectionId, { kind: 'takes', takes, creativity: level, at: Date.now() });
+                await this._saveWs(view);
+            },
+
+            async _suggestPins(view, name, onDelta) {
+                const state = WorkshopStore.active(view.ws).state;
+                const sectionIds = state.sections.filter(s => !s.locked && !String(s.text || '').trim()).map(s => s.id);
+                if (sectionIds.length === 0) return;
+                const ask = WorkshopPrompts.suggestPins({ name, state, sectionIds });
+                const suggestions = ask.read((await this._chat(view, ask, onDelta)).data);
+                const count = Object.keys(suggestions).length;
+                await this._change(`The AI suggested pins for ${count} section${count === 1 ? '' : 's'}`,
+                    next => { next.sections = WorkshopStore.addSuggestions(next, suggestions).sections; }, null, 'ai');
+            },
+
+            /** Writes every empty section in turn. Each one reads the ones written before it. */
+            async _writeAll(view, name, onDelta) {
+                const start = WorkshopStore.active(view.ws).state;
+                const targets = start.sections.filter(s => !s.locked && !String(s.text || '').trim() && !(view.ws.pending || {})[s.id]);
+                for (const [i, s] of targets.entries()) {
+                    view.busy.label = `${s.title} (${i + 1} of ${targets.length}): `;
+                    const el = document.getElementById('ws-busy-status');
+                    if (el) el.textContent = `${view.busy.label}starting...`;
+                    const written = Object.fromEntries(Object.entries(view.ws.pending || {}).filter(([, p]) => p && p.kind !== 'takes'));
+                    const ask = WorkshopPrompts.writeSection({ name, state: WorkshopStore.active(view.ws).state, sectionId: s.id, pending: written });
+                    const result = ask.read((await this._chat(view, ask, onDelta)).data);
+                    view.ws = WorkshopStore.setPending(view.ws, s.id, { kind: 'write', text: result.text, pinMap: result.pinMap, at: Date.now() });
+                    await this._saveWs(view);
+                    if (this.RUNTIME.view === view) {
+                        this.renderSection(s.id);
+                        this.renderAiBar();
+                    }
+                }
+            },
+
+            acceptProposal(sectionId) {
+                const view = this.RUNTIME.view;
+                const p = view && (view.ws.pending || {})[sectionId];
+                if (!p || p.kind === 'takes') return;
+                const title = this._section(WorkshopStore.active(view.ws).state, sectionId).title;
+                const summary = `${p.kind === 'reweave' ? 'Re-wove' : 'Wrote'} ${title} with the AI`;
+                this._commitWs(WorkshopStore.acceptMany(view.ws, { [sectionId]: p }, { origin: 'ai', summary }), () => this.renderSection(sectionId));
+            },
+
+            discardProposal(sectionId) {
+                const view = this.RUNTIME.view;
+                if (!view) return;
+                this._commitWs(WorkshopStore.setPending(view.ws, sectionId, null), () => this.renderSection(sectionId));
+            },
+
+            acceptAll() {
+                const view = this.RUNTIME.view;
+                const waiting = Object.fromEntries(Object.entries((view && view.ws.pending) || {}).filter(([, p]) => p && p.kind !== 'takes'));
+                const count = Object.keys(waiting).length;
+                if (count === 0) return;
+                this._commitWs(WorkshopStore.acceptMany(view.ws, waiting, { origin: 'ai', summary: `Wrote ${count} sections with the AI` }), () => this.renderSections());
+            },
+
+            discardAll() {
+                const view = this.RUNTIME.view;
+                if (!view) return;
+                let ws = view.ws;
+                for (const [id, p] of Object.entries(ws.pending || {})) if (p && p.kind !== 'takes') ws = WorkshopStore.setPending(ws, id, null);
+                this._commitWs(ws, () => this.renderSections());
+            },
+
+            useTake(sectionId, index) {
+                const view = this.RUNTIME.view;
+                const p = view && (view.ws.pending || {})[sectionId];
+                const take = p && p.kind === 'takes' && p.takes[index];
+                if (!take) return;
+                const title = this._section(WorkshopStore.active(view.ws).state, sectionId).title;
+                this._commitWs(WorkshopStore.acceptMany(view.ws, { [sectionId]: take }, { origin: 'ai', summary: `Took "${take.angle}" for ${title}` }),
+                    () => this.renderSection(sectionId));
+            },
+
+            /** Drops a take and remembers its angle, so the next takes steer clear of it. */
+            rejectTake(sectionId, index) {
+                const view = this.RUNTIME.view;
+                const p = view && (view.ws.pending || {})[sectionId];
+                const take = p && p.kind === 'takes' && p.takes[index];
+                if (!take) return;
+                const rest = p.takes.filter((t, i) => i !== index);
+                const ws = WorkshopStore.addAvoid(view.ws, sectionId, take.angle);
+                this._commitWs(WorkshopStore.setPending(ws, sectionId, rest.length ? { ...p, takes: rest } : null), () => this.renderSection(sectionId));
             },
 
             /** A field the Workshop types into lost focus: commit what was typed. */
@@ -671,6 +942,20 @@
                     this.RUNTIME.view.addingPin = ds.section;
                     this.renderSection(ds.section);
                 });
+                ActionHandler.register('workshop-write', (ds) => this._ask(ds.mode === 'reweave' ? 'reweave' : 'write', ds.section));
+                ActionHandler.register('workshop-takes', (ds) => this._ask('takes', ds.section, Number(ds.creativity) || null));
+                ActionHandler.register('workshop-suggest-pins', () => this._ask('suggest'));
+                ActionHandler.register('workshop-write-all', () => this._ask('write-all'));
+                ActionHandler.register('workshop-ai-stop', () => {
+                    const view = this.RUNTIME.view;
+                    if (view && view.busy) view.busy.controller.abort();
+                });
+                ActionHandler.register('workshop-accept', (ds) => this.acceptProposal(ds.section));
+                ActionHandler.register('workshop-discard', (ds) => this.discardProposal(ds.section));
+                ActionHandler.register('workshop-accept-all', () => this.acceptAll());
+                ActionHandler.register('workshop-discard-all', () => this.discardAll());
+                ActionHandler.register('workshop-take-use', (ds) => this.useTake(ds.section, Number(ds.index)));
+                ActionHandler.register('workshop-take-reject', (ds) => this.rejectTake(ds.section, Number(ds.index)));
                 ActionHandler.register('workshop-pin-keep', (ds) => this._pinAction(ds, 'keep'));
                 ActionHandler.register('workshop-pin-remove', (ds) => this._pinAction(ds, 'remove'));
                 ActionHandler.register('workshop-lock', (ds) => {

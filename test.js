@@ -3337,3 +3337,223 @@ test('Workshop screen: wired in, with every way in and every button handled', ()
     assert.ok(boot.includes('WorkshopController.openPending();'), 'a new character opens in the Workshop after its story loads');
     assert.ok(controller.includes("history.pushState(") && controller.includes("addEventListener('popstate'"), "Android's back button closes it");
 });
+
+// ─── Writing with the Workshop's AI ──────────────────────────────────────────
+
+const WorkshopPrompts = vm.runInNewContext(
+    fs.readFileSync(path.join(__dirname, 'js', 'util', 'workshop-prompts.js'), 'utf8') + '\nWorkshopPrompts', {});
+
+/** A state with pins on Personality (two kept, one only suggested) and Voice locked. */
+function pinnedState() {
+    const state = withTexts(WorkshopStore.blankState(), { appearance: 'Tall.', voice: 'Clipped.' });
+    state.concept = 'A medic on the night shift.';
+    state.notes = 'Slow burn.';
+    state.sections = state.sections.map(s => {
+        if (s.id === 'personality') {
+            return {
+                ...s, length: 'long', pins: [
+                    { id: 'pa', text: 'slow to trust', state: 'kept' },
+                    { id: 'pb', text: 'hums when nervous', state: 'kept' },
+                    { id: 'pc', text: 'an idea not kept yet', state: 'suggested' }]
+            };
+        }
+        return s.id === 'voice' ? { ...s, locked: true } : s;
+    });
+    return state;
+}
+
+test('WorkshopPrompts: every request carries the rules, the whole character and each kept pin by label', () => {
+    const ask = WorkshopPrompts.writeSection({ name: 'Test', state: pinnedState(), sectionId: 'personality' });
+    const [system, user] = ask.messages;
+    assert.equal(system.role, 'system');
+    for (const rule of [/fiction for adults/, /explicit themes/, /Do not soften, censor, moralize/, /\{\{char\}\}/, /\{\{user\}\}/,
+        /Never write a literal name/, /never contradict a pin/, /LOCKED is final/, /JSON only/]) {
+        assert.match(system.content, rule);
+    }
+    assert.match(user.content, /CHARACTER: Test \(always written as \{\{char\}\}\)/);
+    assert.match(user.content, /CONCEPT: A medic on the night shift\./);
+    assert.match(user.content, /STORY NOTES: Slow burn\./);
+    assert.match(user.content, /## Voice \[LOCKED: keep word for word\]\nClipped\./, 'locked text is marked to be kept word for word');
+    assert.match(user.content, /## Appearance & body\nTall\./);
+    const task = user.content.split('TASK:')[1];
+    assert.match(task, /P1: slow to trust\nP2: hums when nervous/, 'each kept pin, labelled');
+    assert.ok(!task.includes('an idea not kept yet'), 'a suggested pin is not a must-have');
+    assert.match(task, /about 300 to 450 words/, 'the length dial sets the target');
+    assert.match(task, /"P1": "the exact phrase from your text that carries it"/);
+    assert.equal(ask.temperature, undefined, "writing is left at the model's own temperature");
+
+    const reweave = WorkshopPrompts.writeSection({ name: 'Test', state: pinnedState(), sectionId: 'appearance', reweave: true });
+    assert.match(reweave.messages[1].content, /Re-weave the "Appearance & body" section.*keeping every sentence of the current text that still fits/s);
+});
+
+test('WorkshopPrompts: takes must differ, avoid what was turned down, and follow the creativity dial', () => {
+    const ask = WorkshopPrompts.takes({ name: 'Test', state: pinnedState(), sectionId: 'appearance', avoid: ['Told through old scars'], creativity: 5 });
+    const task = ask.messages[1].content.split('TASK:')[1];
+    assert.match(task, /different angle, a different structure and a different opening line/);
+    assert.match(task, /reuse the current text's angle/);
+    assert.match(task, /turned these down before.*\n- Told through old scars/s);
+    assert.match(task, /Go as far as you can/);
+    deepEq(WorkshopPrompts.CREATIVITY.map(c => c.temperature), [0.6, 0.8, 1.0, 1.15, 1.3]);
+    assert.equal(ask.temperature, 1.3);
+    assert.equal(WorkshopPrompts.takes({ name: 'T', state: pinnedState(), sectionId: 'appearance' }).temperature, 1.0, 'the middle of the dial by default');
+    assert.equal(WorkshopPrompts.takes({ name: 'T', state: pinnedState(), sectionId: 'appearance', creativity: 9 }).temperature, 1.3, 'kept on the dial');
+});
+
+test('WorkshopPrompts: answers are checked, and pin labels become pin ids', () => {
+    const pins = WorkshopPrompts.labels(pinnedState().sections.find(s => s.id === 'personality'));
+    deepEq(WorkshopPrompts.readSection({ text: ' Wry. ', pins: { P1: 'slow to trust', P2: '', P9: 'unknown' } }, pins), { text: 'Wry.', pinMap: { pa: 'slow to trust' } });
+    assert.throws(() => WorkshopPrompts.readSection({ text: '   ' }, pins), /no text/);
+
+    const takes = WorkshopPrompts.readTakes({ takes: [{ angle: 'Habits', text: 'A', pins: { P2: 'hums' } }, { text: 'B' }, { text: '' }, { text: 'C' }, { text: 'D' }] }, pins);
+    deepEq(takes.map(t => [t.angle, t.text]), [['Habits', 'A'], ['A different take', 'B'], ['A different take', 'C']], 'three at most, empty ones dropped, every one named');
+    deepEq(takes[0].pinMap, { pb: 'hums' });
+    assert.throws(() => WorkshopPrompts.readTakes({ takes: [] }, pins), /no takes/);
+
+    const sections = pinnedState().sections.filter(s => ['personality', 'background'].includes(s.id));
+    deepEq(WorkshopPrompts.readSuggestions({
+        pins: { personality: ['Slow to trust', 'Hates silence', 'hates silence', 'a', 'b', 'c'], background: ['  Grew up by the sea  '], kinks: ['not asked for'] }
+    }, sections), { personality: ['Hates silence', 'a', 'b', 'c'], background: ['Grew up by the sea'] },
+    'no repeats of each other or of pins it has, four at most, only the sections asked for');
+    assert.throws(() => WorkshopPrompts.readSuggestions({ pins: {} }, sections), /no pins/);
+});
+
+test('WorkshopStore: proposals wait outside the history, and accepting them is one commit', () => {
+    let ws = WorkshopStore.create({ state: pinnedState(), now: 1, commitId: 'c0' });
+    ws = WorkshopStore.setPending(ws, 'appearance', { kind: 'write', text: 'Lean and tall.', pinMap: {} });
+    ws = WorkshopStore.setPending(ws, 'voice', { kind: 'write', text: 'Should not land.', pinMap: {} });
+    ws = WorkshopStore.setPending(ws, 'personality', { kind: 'write', text: 'Wry and slow to trust.', pinMap: { pa: 'slow to trust' } });
+    assert.equal(ws.commits.length, 1, 'waiting proposals are not history');
+    const done = WorkshopStore.acceptMany(ws, { appearance: ws.pending.appearance, voice: ws.pending.voice, personality: ws.pending.personality },
+        { summary: 'Wrote 3 sections', now: 2, commitId: 'c1' });
+    assert.equal(done.commits.length, 2, 'one commit for all of them');
+    const sections = WorkshopStore.active(done).state.sections;
+    assert.equal(sections.find(s => s.id === 'appearance').text, 'Lean and tall.');
+    assert.equal(sections.find(s => s.id === 'voice').text, 'Clipped.', 'a locked section keeps its text');
+    deepEq(sections.find(s => s.id === 'personality').pinMap, { pa: 'slow to trust' });
+    deepEq(done.pending, {}, 'and every proposal is cleared');
+
+    let avoided = WorkshopStore.addAvoid(ws, 'voice', 'Told through letters');
+    avoided = WorkshopStore.addAvoid(avoided, 'voice', 'Told through letters');
+    deepEq(avoided.avoid.voice, ['Told through letters'], 'remembered once');
+    for (let i = 0; i < 25; i++) avoided = WorkshopStore.addAvoid(avoided, 'voice', `angle ${i}`);
+    assert.equal(avoided.avoid.voice.length, 20, 'the newest twenty');
+
+    const suggested = WorkshopStore.addSuggestions(WorkshopStore.blankState(), { kinks: ['one', 'two'] }, 5);
+    deepEq(suggested.sections.find(s => s.id === 'kinks').pins.map(p => [p.text, p.state, p.origin, p.at]), [['one', 'suggested', 'ai', 5], ['two', 'suggested', 'ai', 5]]);
+});
+
+/** The Workshop controller with a stand-in model that answers from a list, on a page that is never drawn. */
+function workshopAiPage(answers, state = pinnedState()) {
+    const calls = [];
+    const element = () => ({
+        innerHTML: '', outerHTML: '', value: '', textContent: '', style: {}, dataset: {},
+        classList: { add() { }, remove() { }, toggle() { }, contains: () => false },
+        querySelector: () => null, querySelectorAll: () => [], contains: () => false, focus() { }, setAttribute() { }
+    });
+    const characters = [{ id: 'ch1', name: 'Test', description: '' }];
+    const store = { state: { characters, evolved_characters: {} }, _isSaving: false, async forceSave() { } };
+    const WorkshopAI = {
+        async chat(opts) {
+            calls.push(opts);
+            const next = answers.shift();
+            if (next instanceof Error) throw next;
+            return { text: JSON.stringify(next), thinking: '', finishReason: 'stop', provider: 'Test', data: next, attempts: 1 };
+        }
+    };
+    const source = ['js/core/dom.js', 'js/services/workshop-store.js', 'js/util/workshop-prompts.js', 'js/controllers/workshop.js']
+        .map(file => fs.readFileSync(path.join(__dirname, file), 'utf8')).join('\n');
+    const WC = vm.runInNewContext(source + '\nWorkshopController', {
+        document: { getElementById: element, querySelector: element, querySelectorAll: () => [], activeElement: null },
+        ReactiveStore: store, WorkshopAI, AbortController, setTimeout, UTILITY,
+        UIManager: { showNotification() { } }
+    });
+    WC.RUNTIME.view = { charId: 'ch1', ws: WorkshopStore.create({ state, now: 1, commitId: 'c0' }), tab: 'sections', editing: null, addingPin: null };
+    return { WC, calls, characters, view: () => WC.RUNTIME.view };
+}
+
+const settle = () => new Promise(resolve => setTimeout(resolve, 0));
+
+test('Workshop AI: a written section waits as a proposal, and using it is a commit that rewrites the card', async () => {
+    const p = workshopAiPage([{ text: 'Wry, guarded, and slow to trust.', pins: { P1: 'slow to trust' } }]);
+    await p.WC._ask('write', 'personality');
+    assert.equal(p.calls.length, 1);
+    assert.equal(p.calls[0].json, true);
+    const pending = p.view().ws.pending.personality;
+    deepEq({ kind: pending.kind, text: pending.text, pinMap: pending.pinMap }, { kind: 'write', text: 'Wry, guarded, and slow to trust.', pinMap: { pa: 'slow to trust' } });
+    assert.equal(p.view().ws.commits.length, 1, 'nothing changed yet');
+    assert.ok(p.characters[0].workshop.pending.personality, 'the proposal is saved, so closing the Workshop keeps it');
+
+    p.WC.acceptProposal('personality');
+    await settle();
+    const last = p.view().ws.commits.at(-1);
+    assert.equal(last.summary, 'Wrote Personality with the AI');
+    assert.equal(last.origin, 'ai');
+    assert.match(p.characters[0].description, /## Personality\nWry, guarded, and slow to trust\./);
+    assert.equal(p.view().busy, null);
+});
+
+test('Workshop AI: takes at a chosen creativity, "Not this" steers the next batch, and one is used', async () => {
+    const batch = angle => ({ takes: [{ angle, text: `${angle} text.` }, { angle: `${angle} two`, text: 'Two.' }, { angle: `${angle} three`, text: 'Three.' }] });
+    const p = workshopAiPage([batch('Through habits'), batch('Through history')]);
+    await p.WC._ask('takes', 'appearance', 4);
+    assert.equal(p.calls[0].temperature, 1.15);
+    assert.equal(p.view().ws.pending.appearance.takes.length, 3);
+
+    p.WC.rejectTake('appearance', 0);
+    await settle();
+    deepEq(p.view().ws.avoid.appearance, ['Through habits']);
+    assert.equal(p.view().ws.pending.appearance.takes.length, 2);
+
+    await p.WC._ask('takes', 'appearance');
+    assert.match(p.calls[1].messages[1].content, /turned these down before.*- Through habits/s);
+    assert.equal(p.calls[1].temperature, 1.15, 'the next batch keeps the dial where it was');
+
+    p.WC.useTake('appearance', 0);
+    await settle();
+    assert.equal(WorkshopStore.active(p.view().ws).state.sections[0].text, 'Through history text.');
+    assert.equal(p.view().ws.commits.at(-1).summary, 'Took "Through history" for Appearance & body');
+    assert.equal(p.view().ws.pending.appearance, undefined);
+});
+
+test('Workshop AI: writing the empty sections builds each one on those before it, and they are used together', async () => {
+    const state = pinnedState();
+    state.sections = state.sections.map(s => (['background', 'wardrobe'].includes(s.id) ? s : { ...s, locked: true }));
+    const p = workshopAiPage([{ text: 'Raised in a port town.' }, { text: 'Scrubs and a battered coat.' }], state);
+    await p.WC._ask('write-all');
+    assert.equal(p.calls.length, 2, 'one request per empty, unlocked section');
+    assert.match(p.calls[1].messages[1].content, /## Background\nRaised in a port town\./, 'the second section reads the first');
+    p.WC.acceptAll();
+    await settle();
+    assert.equal(p.view().ws.commits.at(-1).summary, 'Wrote 2 sections with the AI');
+    assert.match(p.characters[0].description, /## Background\nRaised in a port town\./);
+    assert.match(p.characters[0].description, /## Wardrobe\nScrubs and a battered coat\./);
+});
+
+test('Workshop AI: suggested pins arrive as suggestions; failures show on the section; Stop is quiet', async () => {
+    const stopped = new Error('stopped');
+    stopped.name = 'AbortError';
+    const state = pinnedState();
+    state.sections = state.sections.map(s => (s.id === 'kinks' ? s : { ...s, text: s.text || 'Written.' }));
+    const p = workshopAiPage([{ pins: { kinks: ['Likes being chased'] } }, new Error('Too many requests right now.'), stopped], state);
+    await p.WC._ask('suggest');
+    const kinks = WorkshopStore.active(p.view().ws).state.sections.find(s => s.id === 'kinks');
+    deepEq(kinks.pins.map(x => [x.text, x.state]), [['Likes being chased', 'suggested']]);
+    assert.equal(p.view().ws.commits.at(-1).origin, 'ai');
+
+    await p.WC._ask('write', 'kinks');
+    assert.equal(p.view().errors.kinks, 'Too many requests right now.');
+    assert.equal(p.view().busy, null, 'and the buttons are free again');
+    await p.WC._ask('write', 'kinks');
+    deepEq(p.view().errors, {}, 'a stopped request is not an error');
+});
+
+test('fake AI server: replies can be queued, to drive a screen through real-looking answers', async () => {
+    await withFakeAI(async ({ url, ask }) => {
+        const queued = await (await fetch(`${url}/fake/next`, { method: 'POST', body: JSON.stringify({ replies: [{ text: 'Queued.' }, 'Second.'] }) })).json();
+        assert.equal(queued.queued, 2);
+        assert.equal((await (await ask({ messages: [{ role: 'user', content: 'Hi' }] })).json()).choices[0].message.content, '{"text":"Queued."}');
+        const second = sseData(await (await ask({ stream: true, messages: [{ role: 'user', content: 'Hi [[fake delay=0]]' }] })).text());
+        assert.equal(second.slice(0, -1).map(c => c.choices[0].delta.content || '').join(''), 'Second.', 'and still streams');
+        assert.match((await (await ask({ messages: [{ role: 'user', content: 'Hi' }] })).json()).choices[0].message.content, /made-up reply/, 'then back to normal');
+    });
+});

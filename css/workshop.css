@@ -476,3 +476,167 @@
             border-radius: 0.6rem;
             background: rgba(0, 0, 0, 0.25);
         }
+
+        /* --- Writing with the AI: buttons, status, proposals and takes ------------------ */
+
+        .ws-aibar,
+        .ws-ai-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.4rem 0.5rem;
+        }
+
+        .ws-aibar {
+            max-width: 46rem;
+            margin: 0 auto 0.85rem;
+        }
+
+        .ws-ai-row {
+            margin-top: 0.6rem;
+        }
+
+        .ws-ai-btn {
+            padding: 0.4rem 0.8rem;
+            border-radius: 999px;
+            border: 1px solid rgba(20, 184, 166, 0.55);
+            background: rgba(20, 184, 166, 0.1);
+            color: #99f6e4;
+            font-size: 0.8rem;
+            font-weight: 600;
+            transition: background var(--transition-fast);
+        }
+
+        .ws-ai-btn:hover:not(:disabled) {
+            background: rgba(20, 184, 166, 0.25);
+        }
+
+        .ws-ai-btn:disabled,
+        .ws-btn:disabled,
+        .ws-dial-btn:disabled {
+            opacity: 0.45;
+            cursor: default;
+        }
+
+        .ws-status {
+            font-size: 0.78rem;
+            color: #8b98a9;
+        }
+
+        .ws-status.is-error {
+            color: #fca5a5;
+        }
+
+        .ws-link {
+            color: #5eead4;
+            font-size: 0.78rem;
+            font-weight: 600;
+            text-decoration: underline;
+            text-underline-offset: 2px;
+        }
+
+        .ws-btn.is-primary {
+            background: rgba(20, 184, 166, 0.45);
+        }
+
+        .ws-btn.is-primary:hover {
+            background: rgba(20, 184, 166, 0.65);
+        }
+
+        .ws-waiting {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.5rem;
+            max-width: 46rem;
+            margin: -0.35rem auto 0.85rem;
+            padding: 0.55rem 0.8rem;
+            border-radius: 0.75rem;
+            border: 1px solid rgba(20, 184, 166, 0.4);
+            background: rgba(20, 184, 166, 0.08);
+            font-size: 0.82rem;
+        }
+
+        .ws-waiting span {
+            flex: 1 1 10rem;
+        }
+
+        .ws-proposal,
+        .ws-takes {
+            margin-top: 0.75rem;
+            padding-top: 0.75rem;
+            border-top: 1px dashed rgba(20, 184, 166, 0.45);
+        }
+
+        .ws-take + .ws-take {
+            margin-top: 0.85rem;
+            padding-top: 0.85rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .ws-proposal-head {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.3rem 0.6rem;
+            margin-bottom: 0.45rem;
+            font-size: 0.78rem;
+            color: #8b98a9;
+        }
+
+        .ws-proposal-head > span:first-child {
+            flex: 1 1 12rem;
+        }
+
+        .ws-take-angle {
+            color: #fff;
+            font-weight: 700;
+            font-size: 0.85rem;
+        }
+
+        .ws-text.is-proposal {
+            cursor: default;
+            border-color: rgba(20, 184, 166, 0.25);
+            background: rgba(20, 184, 166, 0.05);
+        }
+
+        .ws-proposal-actions {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 0.55rem;
+        }
+
+        .ws-dial-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.4rem 0.6rem;
+            margin-top: 0.85rem;
+            font-size: 0.78rem;
+            color: #8b98a9;
+        }
+
+        .ws-dial {
+            display: inline-flex;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 0.5rem;
+            overflow: hidden;
+        }
+
+        .ws-dial-btn {
+            min-width: 2rem;
+            height: 2rem;
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: #8b98a9;
+            background: rgba(0, 0, 0, 0.2);
+        }
+
+        .ws-dial-btn + .ws-dial-btn {
+            border-left: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .ws-dial-btn.is-on {
+            color: #fff;
+            background: rgba(20, 184, 166, 0.35);
+        }

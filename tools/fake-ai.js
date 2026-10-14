@@ -31,6 +31,10 @@
 //                      models send it
 //   nothink            no thinking. It's also left out when the request turns reasoning off.
 //
+// POST /fake/next {"replies": ["...", "..."]} queues exact reply texts for the next chat
+// requests, in order, so a screen can be driven through real-looking answers in the browser.
+// A queued reply still streams and thinks like any other.
+//
 // Every chat request is added to the log, one JSON object per line, with the key hidden. The
 // log is emptied each time the server starts.
 //
@@ -79,8 +83,10 @@ function readMarker(messages) {
     return { opts, inLast };
 }
 
-/** What to answer: the thinking, the reply and the finish reason. */
-function compose(body, n, { opts, inLast }) {
+/** What to answer: the thinking, the reply and the finish reason. A queued reply is used as it is. */
+function compose(body, n, { opts, inLast }, queued = null) {
+    const reasoningOff = opts.nothink || (body.reasoning || {}).enabled === false || (body.reasoning || {}).effort === 'none';
+    if (queued !== null) return { thinking: reasoningOff ? '' : THINKING, content: String(queued), finish: 'stop' };
     const lastUser = body.messages.filter(m => m && m.role === 'user').pop();
     const quote = textOf(lastUser && lastUser.content).replace(MARKER, '').replace(/\s+/g, ' ').trim().slice(0, 60);
     const format = body.response_format && body.response_format.type;
@@ -207,6 +213,7 @@ async function streamReply(res, headers, meta, reply, usage, opts) {
 function start({ port = DEFAULT_PORT, log = DEFAULT_LOG, quiet = false, host = '127.0.0.1' } = {}) {
     if (log) fs.writeFileSync(log, '');
     let count = 0;
+    const queue = [];
 
     const server = http.createServer(async (req, res) => {
         const headers = corsHeaders(req);
@@ -219,6 +226,13 @@ function start({ port = DEFAULT_PORT, log = DEFAULT_LOG, quiet = false, host = '
         }
         if (req.method === 'GET' && route === '/v1/models') {
             return sendJson(res, 200, headers, { object: 'list', data: [{ id: 'fake/model', object: 'model', owned_by: 'fake-ai', context_length: 1048576 }] });
+        }
+        if (req.method === 'POST' && route === '/fake/next') {
+            let asked = {};
+            try { asked = JSON.parse(await readBody(req)); } catch { /* an empty queue request */ }
+            const replies = Array.isArray(asked.replies) ? asked.replies : [];
+            queue.push(...replies.map(r => (typeof r === 'string' ? r : JSON.stringify(r))));
+            return sendJson(res, 200, headers, { queued: queue.length });
         }
         if (req.method === 'GET' && route === '/') {
             res.writeHead(200, { ...headers, 'Content-Type': 'text/plain; charset=utf-8' });
@@ -249,7 +263,7 @@ function start({ port = DEFAULT_PORT, log = DEFAULT_LOG, quiet = false, host = '
             return sendJson(res, code, headers, { error: { code, message: `Fake error ${code}, asked for by the marker.`, metadata: { provider_name: provider } } });
         }
 
-        const reply = compose(body, n, marker);
+        const reply = compose(body, n, marker, queue.length ? queue.shift() : null);
         const usage = usageOf(body, reply);
         const meta = { id: `gen-fake-${n}`, created: Math.floor(Date.now() / 1000), model: body.model || 'fake/model', provider };
         const replyHeaders = { ...headers, 'X-Provider-Name': provider, 'X-Generation-Id': meta.id };

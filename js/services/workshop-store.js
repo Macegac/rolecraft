@@ -187,6 +187,54 @@
             },
 
             /**
+             * Puts a proposal on a section, or takes it off with null. Proposals wait in the Workshop,
+             * outside the history, so closing the Workshop does not lose them; nothing in the card
+             * changes until one is accepted.
+             */
+            setPending(ws, sectionId, proposal) {
+                const pending = { ...(ws.pending || {}) };
+                if (proposal) pending[sectionId] = proposal;
+                else delete pending[sectionId];
+                return { ...ws, pending };
+            },
+
+            /**
+             * Accepts proposals, by section id: each section takes its proposal's text and pin places,
+             * all in one commit, and those proposals are cleared. A locked section keeps its text and
+             * just loses the proposal.
+             */
+            acceptMany(ws, proposals, { origin = 'ai', summary = '', now = Date.now(), commitId = this.newId('c') } = {}) {
+                const state = this.active(ws).state;
+                const next = {
+                    ...state,
+                    sections: state.sections.map(s => ((proposals[s.id] && !s.locked)
+                        ? { ...s, text: proposals[s.id].text, pinMap: { ...(proposals[s.id].pinMap || {}) } }
+                        : s))
+                };
+                let out = this.commit(ws, next, { origin, summary, now, commitId });
+                for (const id of Object.keys(proposals)) out = this.setPending(out, id, null);
+                return out;
+            },
+
+            /** Remembers a take that was turned down, in a line, so later takes steer clear of it. */
+            addAvoid(ws, sectionId, gist) {
+                const line = String(gist || '').trim();
+                if (!line) return ws;
+                const list = ((ws.avoid || {})[sectionId] || []).filter(g => g !== line);
+                return { ...ws, avoid: { ...(ws.avoid || {}), [sectionId]: [...list, line].slice(-20) } };
+            },
+
+            /** The state with suggested pins added to each section named, marked as suggestions. */
+            addSuggestions(state, bySection, now = Date.now()) {
+                return {
+                    ...state,
+                    sections: state.sections.map(s => (bySection[s.id]
+                        ? { ...s, pins: [...s.pins, ...bySection[s.id].map(text => ({ id: this.newId('p'), text, origin: 'ai', state: 'suggested', at: now }))] }
+                        : s))
+                };
+            },
+
+            /**
              * The description every reply reads: card text not yet sorted into a section, as it was,
              * then each section with words in it, under its heading. Scenario is left out; it goes to
              * the card's scenario field instead.
