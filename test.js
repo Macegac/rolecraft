@@ -4300,6 +4300,21 @@ test('Cardcraft move: the ticked cards come over, the ones already moved start u
     assert.match(empty.content(), /No Cardcraft cards on this device/);
 });
 
+test("the service worker clears only its own old caches, never another app's at the same address", async () => {
+    const deleted = [];
+    const listeners = {};
+    const context = {
+        self: { addEventListener: (type, fn) => { listeners[type] = fn; }, registration: { scope: 'https://macegac.github.io/rolecraft/' } },
+        caches: { keys: async () => ['rolecraft-v2', 'rolecraft-v1', 'ellipsis-v3', 'gcs-v5', 'other-app-v1'], delete: async key => { deleted.push(key); return true; } },
+        clients: { claim: async () => { } }, URL, fetch: async () => { throw new Error('offline'); }, Response
+    };
+    vm.runInNewContext(fs.readFileSync(path.join(__dirname, 'sw.js'), 'utf8'), context);
+    let done;
+    listeners.activate({ waitUntil: promise => { done = promise; } });
+    await done;
+    deepEq(deleted.sort(), ['ellipsis-v3', 'rolecraft-v1'], "Cardcraft's and other apps' caches stay");
+});
+
 test('Cardcraft move: wired into Library Management', () => {
     const ui = fs.readFileSync(path.join(__dirname, 'js', 'ui', 'ui-manager.js'), 'utf8');
     const hub = ui.slice(ui.indexOf('renderIOHubModal() {'), ui.indexOf('showConfirmationPromise'));
