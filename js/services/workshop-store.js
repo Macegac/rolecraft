@@ -67,6 +67,8 @@
                     openings: {},
                     // The example dialogue as '{{user}}: …' and '{{char}}: …' lines; null reads as the story's own.
                     examples: null,
+                    // What was decided about the character, and why: the co-writer reads it at the start of every chat.
+                    notebook: [],
                     sections: this.sectionDefs.map(d => ({
                         id: d.id, title: d.title, target: d.target, pins: [], text: '', pinMap: {}, locked: false, length: d.length, at: 0
                     }))
@@ -88,6 +90,7 @@
             create({ state = this.blankState(), original = {}, origin = 'you', summary = 'Started', now = Date.now(), commitId = this.newId('c') } = {}) {
                 const openings = this._copy(state.openings || {});
                 const examples = state.examples ?? null;
+                const notebook = this._copy(state.notebook || []);
                 const changes = [
                     { section: '_concept', before: null, after: state.concept || '' },
                     { section: '_notes', before: null, after: state.notes || '' },
@@ -95,9 +98,12 @@
                     // Only when there are some, so a character that starts without them starts as before.
                     ...(Object.keys(openings).length ? [{ section: '_openings', before: null, after: this._copy(openings) }] : []),
                     ...(examples !== null ? [{ section: '_examples', before: null, after: examples }] : []),
+                    ...(notebook.length ? [{ section: '_notebook', before: null, after: this._copy(notebook) }] : []),
                     ...state.sections.map(s => ({ section: s.id, before: null, after: this._copy(s) }))
                 ];
-                const start = { concept: state.concept || '', notes: state.notes || '', unsorted: state.unsorted || '', openings, examples, sections: this._copy(state.sections) };
+                const start = {
+                    concept: state.concept || '', notes: state.notes || '', unsorted: state.unsorted || '', openings, examples, notebook, sections: this._copy(state.sections)
+                };
                 return {
                     v: this.VERSION,
                     active: 'v_main',
@@ -166,6 +172,7 @@
                 // A Workshop from before openings were kept has neither, which reads as none.
                 if (!this._same(a.openings || {}, b.openings || {})) changes.push({ section: '_openings', before: this._copy(a.openings || {}), after: this._copy(b.openings || {}) });
                 if ((a.examples ?? null) !== (b.examples ?? null)) changes.push({ section: '_examples', before: a.examples ?? null, after: b.examples ?? null });
+                if (!this._same(a.notebook || [], b.notebook || [])) changes.push({ section: '_notebook', before: this._copy(a.notebook || []), after: this._copy(b.notebook || []) });
                 const before = new Map(a.sections.map(s => [s.id, s]));
                 const after = new Map(b.sections.map(s => [s.id, s]));
                 for (const id of new Set([...before.keys(), ...after.keys()])) {
@@ -192,7 +199,7 @@
             stateAt(ws, commitId) {
                 const path = this.lineage(ws, commitId);
                 if (path.length === 0) return null;
-                return path.reduce((state, c) => this._apply(state, c.changes), { concept: '', notes: '', unsorted: '', openings: {}, examples: null, sections: [] });
+                return path.reduce((state, c) => this._apply(state, c.changes), { concept: '', notes: '', unsorted: '', openings: {}, examples: null, notebook: [], sections: [] });
             },
 
             /**
@@ -331,6 +338,123 @@
                         ? { ...s, pins: [...s.pins, ...bySection[s.id].map(text => ({ id: this.newId('p'), text, origin: 'ai', state: 'suggested', at: now }))] }
                         : s))
                 };
+            },
+
+            /** The state with a decision added to the notebook. An empty one adds nothing. */
+            addDecision(state, { text, why = '', origin = 'you', now = Date.now(), id = this.newId('n') } = {}) {
+                const clean = String(text || '').trim();
+                if (!clean) return state;
+                return { ...state, notebook: [...(state.notebook || []), { id, text: clean, why: String(why || '').trim(), at: now, origin }] };
+            },
+
+            /** The state with a decision's words or why changed. */
+            changeDecision(state, id, { text, why } = {}, now = Date.now()) {
+                return {
+                    ...state,
+                    notebook: (state.notebook || []).map(d => (d.id !== id ? d : {
+                        ...d,
+                        text: text !== undefined && String(text).trim() ? String(text).trim() : d.text,
+                        why: why !== undefined ? String(why).trim() : d.why,
+                        at: now
+                    }))
+                };
+            },
+
+            removeDecision(state, id) {
+                return { ...state, notebook: (state.notebook || []).filter(d => d.id !== id) };
+            },
+
+            // The co-writer's chats live on the Workshop, outside the history, the way proposals do:
+            // talking about a character doesn't change it. Each chat keeps its messages, and each
+            // reply's cards are kept by id, so a card can be used, changed or turned down later.
+
+            /** The chats and cards, with gaps filled. A Workshop from before the co-writer has none. */
+            cowriterOf(ws) {
+                const cw = (ws && ws.cowriter) || {};
+                return {
+                    open: cw.open || null,
+                    chats: Array.isArray(cw.chats) ? cw.chats : [],
+                    cards: (cw.cards && typeof cw.cards === 'object') ? cw.cards : {}
+                };
+            },
+
+            /** A new, empty chat, first in the list and open. */
+            newChat(ws, { id = this.newId('k'), now = Date.now(), title = 'New chat' } = {}) {
+                const cw = this.cowriterOf(ws);
+                return { ...ws, cowriter: { ...cw, open: id, chats: [{ id, title, at: now, updated: now, messages: [] }, ...cw.chats] } };
+            },
+
+            openChat(ws, chatId) {
+                const cw = this.cowriterOf(ws);
+                if (!cw.chats.some(c => c.id === chatId && !c.hiddenAt)) return ws;
+                return { ...ws, cowriter: { ...cw, open: chatId } };
+            },
+
+            renameChat(ws, chatId, title) {
+                const clean = String(title || '').trim().slice(0, 80);
+                return clean ? this._mapChat(ws, chatId, c => ({ ...c, title: clean })) : ws;
+            },
+
+            /** Hides a chat rather than deleting it. Hiding the open one opens the next one still shown. */
+            hideChat(ws, chatId, now = Date.now()) {
+                const cw = this.cowriterOf(ws);
+                const chats = cw.chats.map(c => (c.id === chatId ? { ...c, hiddenAt: now } : c));
+                const open = cw.open === chatId ? ((chats.find(c => !c.hiddenAt) || {}).id || null) : cw.open;
+                return { ...ws, cowriter: { ...cw, chats, open } };
+            },
+
+            unhideChat(ws, chatId) {
+                return this._mapChat(ws, chatId, c => {
+                    const shown = { ...c };
+                    delete shown.hiddenAt;
+                    return shown;
+                });
+            },
+
+            /** Adds a message to a chat. A chat still called "New chat" is named after the first thing you say in it. */
+            addMessage(ws, chatId, message, now = Date.now()) {
+                const entry = { id: this.newId('m'), at: now, ...message };
+                return this._mapChat(ws, chatId, c => ({
+                    ...c,
+                    updated: entry.at,
+                    title: (c.title === 'New chat' && entry.role === 'you') ? this.chatTitle(entry.text) : c.title,
+                    messages: [...c.messages, entry]
+                }));
+            },
+
+            /** A chat's name from its first message: its first six words, without the "About …:" a Talk it over button starts it with. */
+            chatTitle(text) {
+                const words = String(text || '').replace(/^About [^:]+:\s*/i, '').split(/\s+/).filter(Boolean);
+                const title = words.slice(0, 6).join(' ');
+                if (!title) return 'New chat';
+                return `${title.charAt(0).toUpperCase()}${title.slice(1)}${words.length > 6 ? '…' : ''}`;
+            },
+
+            updateMessage(ws, chatId, messageId, patch) {
+                return this._mapChat(ws, chatId, c => ({ ...c, messages: c.messages.map(m => (m.id === messageId ? { ...m, ...patch } : m)) }));
+            },
+
+            /** Keeps a reply's cards, each waiting for an answer and marked with the variant it was written for. */
+            addCards(ws, chatId, messageId, cards, { variant, now = Date.now() } = {}) {
+                const made = (cards || []).map(card => ({ ...card, id: this.newId('card'), status: 'waiting', variant, at: now }));
+                if (made.length === 0) return ws;
+                const cw = this.cowriterOf(ws);
+                const kept = { ...cw.cards };
+                made.forEach(card => { kept[card.id] = card; });
+                const withCards = { ...ws, cowriter: { ...cw, cards: kept } };
+                return this.updateMessage(withCards, chatId, messageId, { cards: made.map(card => card.id) });
+            },
+
+            setCard(ws, cardId, patch) {
+                const cw = this.cowriterOf(ws);
+                if (!cw.cards[cardId]) return ws;
+                return { ...ws, cowriter: { ...cw, cards: { ...cw.cards, [cardId]: { ...cw.cards[cardId], ...patch } } } };
+            },
+
+            _mapChat(ws, chatId, change) {
+                const cw = this.cowriterOf(ws);
+                if (!cw.chats.some(c => c.id === chatId)) return ws;
+                return { ...ws, cowriter: { ...cw, chats: cw.chats.map(c => (c.id === chatId ? change(c) : c)) } };
             },
 
             /**
@@ -768,6 +892,7 @@
                 let { concept, notes, unsorted } = state;
                 let openings = this._copy(state.openings || {});
                 let examples = state.examples ?? null;
+                let notebook = this._copy(state.notebook || []);
                 const sections = state.sections.slice();
                 for (const ch of changes) {
                     if (ch.section === '_concept') concept = ch.after;
@@ -775,6 +900,7 @@
                     else if (ch.section === '_unsorted') unsorted = ch.after;
                     else if (ch.section === '_openings') openings = this._copy(ch.after || {});
                     else if (ch.section === '_examples') examples = ch.after ?? null;
+                    else if (ch.section === '_notebook') notebook = this._copy(ch.after || []);
                     else {
                         const i = sections.findIndex(s => s.id === ch.section);
                         if (ch.after === null) {
@@ -786,7 +912,7 @@
                         }
                     }
                 }
-                return { concept, notes, unsorted: unsorted || '', openings, examples, sections };
+                return { concept, notes, unsorted: unsorted || '', openings, examples, notebook, sections };
             },
 
             /**
@@ -801,6 +927,7 @@
                     unsorted: next.unsorted || '',
                     openings: this._copy(next.openings || {}),
                     examples: next.examples ?? null,
+                    notebook: this._copy(next.notebook || []),
                     sections: next.sections.map(s => {
                         const copy = this._copy(s);
                         const old = before.get(s.id);

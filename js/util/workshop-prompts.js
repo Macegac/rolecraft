@@ -47,9 +47,11 @@
              * text not sorted yet, and every section with its kept pins and text. Proposals waiting
              * for an answer count as written, so "Write all" builds each section on the ones before.
              * For the story's lead, extras adds the openings, labelled O1, O2…, and the example dialogue.
+             * The co-writer also reads each section's id, and every pin by a label it can point at.
              * @param {{openings?: Array<{id: string, label: string, name: string, message: string}>, examples?: string|null}} [extras]
+             * @param {{pinLabels?: Object<string, string>}} [view] - Pin id to label, for every pin, suggested ones included.
              */
-            sheet(name, state, pending = {}, extras = null) {
+            sheet(name, state, pending = {}, extras = null, view = {}) {
                 const lines = [
                     `CHARACTER: ${String(name || '').trim() || 'unnamed'} (always written as {{char}})`,
                     `CONCEPT: ${String(state.concept || '').trim() || '(none yet)'}`
@@ -60,8 +62,10 @@
                 for (const s of state.sections) {
                     const proposal = pending[s.id];
                     const text = String((proposal && proposal.text) || s.text || '').trim();
-                    const pins = s.pins.filter(p => p.state === 'kept').map(p => `"${p.text}"`);
-                    lines.push(`## ${s.title}${s.locked ? ' [LOCKED: keep word for word]' : ''}`);
+                    const pins = view.pinLabels
+                        ? s.pins.map(p => `${view.pinLabels[p.id]} "${p.text}"${p.state === 'kept' ? '' : ' (suggested, not kept yet)'}`)
+                        : s.pins.filter(p => p.state === 'kept').map(p => `"${p.text}"`);
+                    lines.push(`## ${s.title}${view.pinLabels ? ` [id: ${s.id}]` : ''}${s.locked ? ' [LOCKED: keep word for word]' : ''}`);
                     if (pins.length) lines.push(`Pins: ${pins.join('; ')}`);
                     lines.push(text || '(empty)', '');
                 }
@@ -101,7 +105,7 @@
              * whatever still fits.
              * @returns {{messages: Array, temperature: undefined, read: Function}} read gives {text, pinMap}.
              */
-            writeSection({ name, state, sectionId, pending = {}, reweave = false, extras = null }) {
+            writeSection({ name, state, sectionId, pending = {}, reweave = false, extras = null, steer = '' }) {
                 const s = state.sections.find(x => x.id === sectionId);
                 const pins = this.labels(s);
                 const task = [
@@ -110,6 +114,8 @@
                         : `TASK: Write the "${s.title}" section${String(s.text || '').trim() ? ', replacing its current text' : ''}.`,
                     `Length: ${this.LENGTHS[s.length] || this.LENGTHS.medium}.`,
                     pins.length ? `It must carry every one of these pins:\n${this._pinLines(pins)}` : 'It has no pins yet. Follow the concept, the story notes and the other sections.',
+                    // From the co-writer: what should change, and why, plus anything you added to it.
+                    steer ? `What should change: ${steer}` : '',
                     `Reply with JSON: {"text": "the section's text", "pins": {${this._pinShape(pins)}}}`
                 ];
                 return {

@@ -4739,3 +4739,265 @@ test("Openings in the Workshop: switching variants puts that variant's openings 
     await settle();
     deepEq([p.saved().scenarios[0].name, p.saved().scenarios[0].message], ['Default Start', 'Kael slides a mug across the bar. "On the house, {user}."']);
 });
+
+// ─── The co-writer: its data and what it reads ───────────────────────────────
+
+test('WorkshopStore: the notebook lives in each variant, with a history, and a Phase 1 Workshop has an empty one', () => {
+    let ws = WorkshopStore.create({ now: 1, commitId: 'c0' });
+    assert.equal(ws.commits[0].changes.length, 14, 'a character with an empty notebook starts as before');
+    deepEq(WorkshopStore.active(ws).state.notebook, []);
+
+    const state = WorkshopStore.addDecision(WorkshopStore.active(ws).state, { text: '  Slow burn: never warms up in one scene.  ', why: 'Hard to win over.', origin: 'cowriter', now: 2, id: 'n1' });
+    deepEq(state.notebook, [{ id: 'n1', text: 'Slow burn: never warms up in one scene.', why: 'Hard to win over.', at: 2, origin: 'cowriter' }]);
+    assert.equal(WorkshopStore.addDecision(state, { text: '   ' }), state, 'an empty decision is nothing');
+    ws = WorkshopStore.commit(ws, state, { now: 2, commitId: 'c1', origin: 'cowriter', summary: 'A decision' });
+    deepEq(ws.commits.at(-1).changes.map(ch => ch.section), ['_notebook']);
+
+    const changed = WorkshopStore.changeDecision(WorkshopStore.active(ws).state, 'n1', { text: ' Slow burn over many scenes. ' }, 3);
+    deepEq(changed.notebook[0], { id: 'n1', text: 'Slow burn over many scenes.', why: 'Hard to win over.', at: 3, origin: 'cowriter' });
+    ws = WorkshopStore.commit(ws, changed, { now: 3, commitId: 'c2' });
+    ws = WorkshopStore.commit(ws, WorkshopStore.removeDecision(WorkshopStore.active(ws).state, 'n1'), { now: 4, commitId: 'c3' });
+    deepEq(WorkshopStore.active(ws).state.notebook, []);
+    assert.equal(WorkshopStore.stateAt(ws, 'c2').notebook[0].text, 'Slow burn over many scenes.', 'every point rebuilds with its notebook');
+    deepEq(WorkshopStore.stateAt(ws, 'c3'), JSON.parse(JSON.stringify(WorkshopStore.active(ws).state)));
+    assert.equal(WorkshopStore.active(WorkshopStore.restore(ws, 'c1', { now: 5, commitId: 'c4' })).state.notebook[0].text, 'Slow burn: never warms up in one scene.',
+        'going back takes the notebook back too');
+
+    const phase1 = JSON.parse(JSON.stringify(WorkshopStore.create({ now: 1, commitId: 'c0' })));
+    delete phase1.variants[0].state.notebook;
+    const next = WorkshopStore.commit(phase1, withTexts(WorkshopStore.active(phase1).state, { voice: 'Clipped.' }), { now: 2, commitId: 'c1' });
+    deepEq(next.commits.at(-1).changes.map(ch => ch.section), ['voice'], 'no notebook reads as an empty one, which is not a change');
+});
+
+test("WorkshopStore: the co-writer's chats and cards live outside the history, ride in exported cards, and a new chat is named by its first message", () => {
+    let ws = WorkshopStore.create({ now: 1, commitId: 'c0' });
+    deepEq(WorkshopStore.cowriterOf(ws), { open: null, chats: [], cards: {} }, 'none yet');
+    ws = WorkshopStore.newChat(ws, { id: 'k1', now: 10 });
+    ws = WorkshopStore.addMessage(ws, 'k1', { role: 'you', text: 'About Voice: she warms up to {{user}} way too fast, I want her harder to win over.', variant: 'v_main' }, 11);
+    let cw = WorkshopStore.cowriterOf(ws);
+    assert.equal(cw.open, 'k1');
+    assert.equal(cw.chats[0].title, 'She warms up to {{user}} way…', 'named by its first words, without the "About" it started with');
+    assert.equal(cw.chats[0].updated, 11);
+    assert.ok(cw.chats[0].messages[0].id, 'every message has an id');
+
+    ws = WorkshopStore.addMessage(ws, 'k1', { role: 'cowriter', text: 'Agreed.', model: 'deepseek/deepseek-v4.1-flash', provider: 'Test' }, 12);
+    const replyId = WorkshopStore.cowriterOf(ws).chats[0].messages[1].id;
+    ws = WorkshopStore.addCards(ws, 'k1', replyId, [{ type: 'pin', action: 'add', section: 'voice', text: 'goes quiet', why: 'A tell.' }], { variant: 'v_main', now: 12 });
+    cw = WorkshopStore.cowriterOf(ws);
+    const cardId = cw.chats[0].messages[1].cards[0];
+    deepEq(cw.cards[cardId], { type: 'pin', action: 'add', section: 'voice', text: 'goes quiet', why: 'A tell.', id: cardId, status: 'waiting', variant: 'v_main', at: 12 });
+    ws = WorkshopStore.setCard(ws, cardId, { status: 'used', commit: 'c9' });
+    assert.equal(WorkshopStore.cowriterOf(ws).cards[cardId].status, 'used');
+    assert.equal(WorkshopStore.setCard(ws, 'nope', { status: 'used' }), ws);
+    ws = WorkshopStore.updateMessage(ws, 'k1', replyId, { ask: { question: 'Which?', options: ['A', 'B'], picked: 1 } });
+    assert.equal(WorkshopStore.cowriterOf(ws).chats[0].messages[1].ask.picked, 1);
+    assert.equal(ws.commits.length, 1, 'talking is not a change to the character');
+
+    ws = WorkshopStore.newChat(ws, { id: 'k2', now: 20 });
+    deepEq(WorkshopStore.cowriterOf(ws).chats.map(c => c.id), ['k2', 'k1'], 'newest first, and the new one is open');
+    assert.equal(WorkshopStore.cowriterOf(ws).open, 'k2');
+    ws = WorkshopStore.renameChat(ws, 'k1', '  Harder to win over  ');
+    assert.equal(WorkshopStore.cowriterOf(ws).chats[1].title, 'Harder to win over');
+    ws = WorkshopStore.hideChat(ws, 'k2', 30);
+    cw = WorkshopStore.cowriterOf(ws);
+    assert.equal(cw.open, 'k1', 'hiding the open chat opens the next one');
+    assert.equal(cw.chats[0].hiddenAt, 30, 'hidden, not deleted');
+    assert.equal(WorkshopStore.openChat(ws, 'k2'), ws, 'a hidden chat does not open');
+    ws = WorkshopStore.unhideChat(ws, 'k2');
+    assert.equal(WorkshopStore.cowriterOf(ws).chats[0].hiddenAt, undefined);
+    assert.equal(WorkshopStore.cowriterOf(WorkshopStore.openChat(ws, 'k2')).open, 'k2');
+
+    deepEq(WorkshopStore.toCard(ws, 'current', { description: '', personality: '', scenario: '' }).workshop.cowriter, JSON.parse(JSON.stringify(ws.cowriter)),
+        'chats ride along in an exported card, so moving a character between phone and PC keeps them');
+});
+
+const CowriterPrompts = vm.runInNewContext(['js/util/workshop-prompts.js', 'js/util/cowriter-prompts.js']
+    .map(file => fs.readFileSync(path.join(__dirname, file), 'utf8')).join('\n') + '\nCowriterPrompts', {});
+
+/** pinnedState with a pin on Voice too, and two decisions in the notebook. */
+function cowriterState() {
+    const state = pinnedState();
+    state.sections = state.sections.map(s => (s.id === 'voice' ? { ...s, pins: [{ id: 'pv', text: 'short, dry sentences', state: 'kept' }] } : s));
+    state.notebook = [
+        { id: 'n1', text: 'She never apologizes outright.', why: 'Her pride is the core of her.', at: 1, origin: 'you' },
+        { id: 'n2', text: '{{user}} is a regular.', why: 'The slow burn needs a history.', at: 2, origin: 'cowriter' }
+    ];
+    return state;
+}
+
+const COWRITER_EXTRAS = { openings: [{ id: 'sc1', label: 'O1', name: 'At the bar', message: 'Coin first.' }], examples: '{{user}}: Hi\n{{char}}: Hello.' };
+
+test('CowriterPrompts: pins, openings and decisions get short labels, and the labels in a reply turn back into ids', () => {
+    const labels = CowriterPrompts.labels(cowriterState(), COWRITER_EXTRAS);
+    deepEq(labels.byLabel.P1, { kind: 'pin', id: 'pa', section: 'personality' });
+    deepEq(labels.byLabel.P3, { kind: 'pin', id: 'pc', section: 'personality' }, 'suggested pins have labels too');
+    deepEq(labels.byLabel.P4, { kind: 'pin', id: 'pv', section: 'voice' });
+    deepEq(labels.byLabel.O1, { kind: 'opening', id: 'sc1' });
+    deepEq(labels.byLabel.D2, { kind: 'decision', id: 'n2' });
+    assert.equal(labels.pinLabel.pv, 'P4');
+    deepEq(labels.sections, JSON.parse(JSON.stringify(WorkshopStore.sectionDefs.map(d => d.id))));
+    const reply = CowriterPrompts.readReply('Done.\n<card>{"type":"pin","remove":"p4","why":"Too plain."}</card>', labels);
+    deepEq(reply.cards, [{ type: 'pin', action: 'remove', section: 'voice', pin: 'pv', why: 'Too plain.' }], 'whatever the case of the label');
+});
+
+test('CowriterPrompts: a reply is its words, its cards and one question; a block it cannot read is kept to show, never dropped', () => {
+    const labels = CowriterPrompts.labels(cowriterState(), COWRITER_EXTRAS);
+    const quiet = '<card>{"type":"pin","section":"voice","add":"goes quiet instead of saying thank you","why":"A tell."}</card>';
+    const text = [
+        "Agreed. I'd slow the thaw.",
+        '<card>{"type":"rewrite","section":"personality","brief":"Colder.","pins":{"add":["trusts no one at first"],"remove":["P1","P4"]},"why":"Fits."}</card>',
+        quiet,
+        quiet,
+        '<card>{"type":"pin","pin":"P2","text":"hums when lying","why":"Sharper."}</card>',
+        '<card>{"type":"opening","opening":"O1","brief":"No free drink.","why":"Too warm."}</card>',
+        '<card>{"type":"opening","new":"Storm night","brief":"A quiet start.","why":"Variety."}</card>',
+        '<card>{"type":"examples","brief":"Drier.","why":"Matches Voice."}</card>',
+        '<card>{"type":"notes","text":"Slow burn. Act 2 at the festival.","why":"Pacing."}</card>',
+        '<card>{"type":"decision","add":"Slow burn over many scenes.","why":"Hard to win over."}</card>',
+        '<card>{"type":"decision","decision":"D1","text":"She never says sorry.","why":"Shorter."}</card>',
+        '<card>{"type":"decision","remove":"D2","why":"Not true any more."}</card>',
+        '<card>{"type":"variant","name":"Reckless","why":"Try it."}</card>',
+        '<card>```json\n{"type":"concept","text":"A tavern keeper who trusts no one.","why":"Tighter."}\n```</card>',
+        '<card>{"type":"spell","why":"?"}</card>',
+        '<card>{"type":"pin","remove":"P9"}</card>',
+        '<card>{not json}</card>',
+        '<ask>{"question":"What gets through to her?","options":["Patience","A promise kept","Patience"]}</ask>',
+        '<ask>{"question":"A second one?","options":["Yes","No"]}</ask>',
+        'One more thing.',
+        '<card>{"type":"pin","section":"voice","add":"cut off mid'
+    ].join('\n');
+    const reply = CowriterPrompts.readReply(text, labels);
+    assert.equal(reply.prose, "Agreed. I'd slow the thaw.\n\nOne more thing.");
+    deepEq(reply.cards, [
+        { type: 'rewrite', section: 'personality', brief: 'Colder.', addPins: ['trusts no one at first'], removePins: ['pa'], why: 'Fits.' },
+        { type: 'pin', action: 'add', section: 'voice', text: 'goes quiet instead of saying thank you', why: 'A tell.' },
+        { type: 'pin', action: 'reword', section: 'personality', pin: 'pb', text: 'hums when lying', why: 'Sharper.' },
+        { type: 'opening', opening: 'sc1', brief: 'No free drink.', why: 'Too warm.' },
+        { type: 'opening', opening: null, name: 'Storm night', brief: 'A quiet start.', why: 'Variety.' },
+        { type: 'examples', brief: 'Drier.', why: 'Matches Voice.' },
+        { type: 'notes', text: 'Slow burn. Act 2 at the festival.', why: 'Pacing.' },
+        { type: 'decision', action: 'add', text: 'Slow burn over many scenes.', why: 'Hard to win over.' },
+        { type: 'decision', action: 'change', decision: 'n1', text: 'She never says sorry.', why: 'Shorter.' },
+        { type: 'decision', action: 'remove', decision: 'n2', why: 'Not true any more.' },
+        { type: 'variant', name: 'Reckless', why: 'Try it.' },
+        { type: 'concept', text: 'A tavern keeper who trusts no one.', why: 'Tighter.' }
+    ], "a repeated card counts once, and a rewrite only removes its own section's pins");
+    deepEq(reply.ask, { question: 'What gets through to her?', options: ['Patience', 'A promise kept'], multi: false });
+    deepEq(reply.unreadable.map(u => u.reason), [
+        'There is no card type "spell".',
+        'There is no pin P9.',
+        'It is not JSON.',
+        'Only one question at a time.',
+        'The reply was cut off before this was finished.'
+    ]);
+    assert.ok(reply.unreadable.every(u => u.raw.startsWith('<')), 'each with what it said, to show');
+    deepEq(CowriterPrompts.readReply('Just talk.', labels), { prose: 'Just talk.', cards: [], ask: null, unreadable: [] });
+});
+
+/** A chat where a reply's cards were used, turned down and changed, with a second opinion after it. */
+function cowriterChat() {
+    return {
+        id: 'k1', title: 'Harder to win over', messages: [
+            { id: 'm1', role: 'you', text: 'She warms up too fast.' },
+            { id: 'm2', role: 'cowriter', text: "Agreed. I'd slow the thaw.", cards: ['card_a', 'card_b', 'card_c'], ask: { question: 'What gets through?', options: ['Patience', 'A promise'], picked: 0 } },
+            { id: 'm3', role: 'second', text: 'Give her distrust a cause.' },
+            { id: 'm4', role: 'you', text: 'Patience' }
+        ]
+    };
+}
+
+const COWRITER_CARDS = {
+    card_a: { id: 'card_a', type: 'rewrite', section: 'relationship', brief: 'Slow the thaw.', status: 'used' },
+    card_b: { id: 'card_b', type: 'pin', action: 'add', section: 'voice', text: 'goes quiet', status: 'turned-down' },
+    card_c: { id: 'card_c', type: 'opening', opening: 'sc1', brief: 'No free drink.', status: 'used', note: 'keep the coin line' }
+};
+
+test('CowriterPrompts: every request reads the whole character, the notebook, the history and what happened in play, in that order, inside its budgets', () => {
+    const history = Array.from({ length: 25 }, (_, i) => ({ at: Date.UTC(2026, 9, 1 + i), origin: i % 2 ? 'ai' : 'you', summary: `Step ${i + 1}` })).reverse();
+    const play = {
+        messages: Array.from({ length: 60 }, (_, i) => ({ who: i % 2 ? 'Sam' : 'Kael', text: `${'x'.repeat(990)} ${i + 1}` })),
+        timeline: Array.from({ length: 40 }, (_, i) => `Event ${i + 1}`),
+        relationships: ['Kael → Sam: wary friends'],
+        world: [{ title: 'The inn', content: 'A warm inn.' }, { title: 'The docks', content: 'd'.repeat(7000) }]
+    };
+    const { messages, labels } = CowriterPrompts.request({
+        name: 'Kael', state: cowriterState(), extras: COWRITER_EXTRAS, variants: { active: 'Main', others: ['Reckless'] },
+        history, play, chat: cowriterChat(), cards: COWRITER_CARDS, withCards: true
+    });
+    assert.equal(labels.byLabel.P4.id, 'pv', 'the labels the reply will be read with');
+    assert.equal(messages[0].role, 'system');
+    const sent = messages[0].content;
+    const order = ['You are the co-writer in the Character Workshop', 'VARIANT IN USE: Main (other variants: Reckless)', 'CHARACTER: Kael',
+        'NOTEBOOK', 'RECENT HISTORY', 'WHAT HAS HAPPENED IN PLAY'].map(part => sent.indexOf(part));
+    assert.ok(order.every(at => at >= 0), 'every part is there');
+    assert.deepStrictEqual(order, [...order].sort((a, b) => a - b), 'the parts that change least come first');
+
+    assert.ok(sent.includes('## Relationship to {{user}} [id: relationship]'), 'sections by the ids cards use');
+    assert.ok(sent.includes('Pins: P1 "slow to trust"; P2 "hums when nervous"; P3 "an idea not kept yet" (suggested, not kept yet)'), 'every pin, by its label');
+    assert.ok(sent.includes('O1 "At the bar":\nCoin first.'));
+    assert.ok(sent.includes('D1. She never apologizes outright. Why: Her pride is the core of her.'));
+    assert.ok(sent.includes('- 2026-10-25 · you · Step 25') && sent.includes('Step 6') && !sent.includes('Step 5\n'), 'the last 20 steps, newest first');
+    assert.ok(sent.includes('Event 40') && sent.includes('Event 11') && !sent.includes('Event 10\n'), 'the last 30 lines of the timeline');
+    assert.ok(sent.includes('Kael → Sam: wary friends'));
+    assert.ok(sent.includes('### The inn\nA warm inn.') && sent.includes('(more World Knowledge not shown)'), 'World Knowledge within its budget');
+    const shown = (sent.match(/^(Kael|Sam): x+ \d+$/gm) || []);
+    assert.ok(shown.length > 0 && shown.length <= 40, `at most 40 messages; got ${shown.length}`);
+    assert.ok(shown.join('\n').length <= 24000, 'about 24,000 characters at most');
+    assert.ok(shown.at(-1).endsWith(' 60'), 'the newest ones, oldest first');
+    assert.match(sent, /\(\d+ earlier messages not shown\)/);
+    assert.ok(sent.includes('<card>'), 'the card format, when cards are on');
+
+    deepEq(messages.slice(1).map(m => m.role), ['user', 'assistant', 'user']);
+    assert.equal(messages[1].content, 'She warms up too fast.');
+    const reply = messages[2].content;
+    assert.ok(reply.startsWith("Agreed. I'd slow the thaw."));
+    assert.ok(reply.includes('rewrite Relationship to {{user}}: Slow the thaw. (used)'), 'what happened to each card reaches the next request');
+    assert.ok(reply.includes('new pin on Voice: "goes quiet" (turned down)'));
+    assert.ok(reply.includes('rewrite the opening "At the bar": No free drink. (used, after the author asked for: keep the coin line)'));
+    assert.ok(reply.includes('You asked: What gets through? (Patience / A promise)'));
+    assert.ok(reply.includes('A second opinion from another model: Give her distrust a cause.'));
+    assert.equal(messages[3].content, 'Patience');
+
+    const talk = CowriterPrompts.request({ name: 'Kael', state: cowriterState(), chat: { messages: [{ role: 'you', text: 'Hi.' }] } }).messages[0].content;
+    assert.ok(!talk.includes('<card>') && talk.includes('<ask>'), 'with cards off, only questions with choices');
+    assert.ok(!talk.includes('WHAT HAS HAPPENED IN PLAY'), 'and nothing about play when there is no chat');
+    const long = { messages: Array.from({ length: 40 }, (_, i) => ({ role: i % 2 ? 'cowriter' : 'you', text: `Turn ${i + 1}` })) };
+    const turns = CowriterPrompts.request({ name: 'Kael', state: cowriterState(), chat: long }).messages.slice(1);
+    assert.equal(turns.length, 30, "this chat's last 30 messages");
+    assert.equal(turns[0].content, 'Turn 11');
+});
+
+test('CowriterPrompts: what happened in play comes from the open chat: its messages by name, its timeline, relationships and World Knowledge', () => {
+    const characters = [{ id: 'me', name: 'Sam', is_user: true }, { id: 'ch1', name: 'Kael Ironheart' }, { id: 'ch2', name: 'Elara' }];
+    const play = CowriterPrompts.playFrom({
+        chat_history: [
+            { character_id: 'me', content: 'An example.', type: 'chat', isHidden: true },
+            { character_id: 'ch1', content: '<think>Plan it.</think>{character} nods at {user}.', type: 'chat' },
+            { character_id: 'me', content: 'Hi, {{char}}.', type: 'chat' },
+            { type: 'lore_reveal', content: 'Lore.' },
+            { character_id: 'ch2', content: '  ', type: 'chat' }
+        ],
+        narrative_timeline: ['Arrived at the inn.'],
+        relationship_matrix: ['Kael → Sam: wary friends', 'Elara → Sam: rivals', 'kael and elara: old allies'],
+        static_entries: [{ title: 'The inn', content: 'A warm inn.' }, { title: 'Empty', content: ' ' }]
+    }, { characters, leadId: 'ch1' });
+    deepEq(play.messages, [{ who: 'Kael Ironheart', text: 'Kael Ironheart nods at Sam.' }, { who: 'Sam', text: 'Hi, Kael Ironheart.' }],
+        'chat messages only, by name, without thinking or placeholders');
+    deepEq(play.timeline, ['Arrived at the inn.']);
+    deepEq(play.relationships, ['Kael → Sam: wary friends', 'kael and elara: old allies'], "this character's lines, by full or first name");
+    deepEq(play.world, [{ title: 'The inn', content: 'A warm inn.' }]);
+    assert.equal(CowriterPrompts.playFrom(null, { characters, leadId: 'ch1' }), null);
+});
+
+test("WorkshopPrompts: a steer, the co-writer's brief plus any note of yours, reaches the section writer", () => {
+    const ask = WorkshopPrompts.writeSection({ name: 'Kael', state: pinnedState(), sectionId: 'personality', reweave: true, steer: 'Slow the thaw. Note: colder.' });
+    assert.match(ask.messages[1].content, /What should change: Slow the thaw\. Note: colder\./);
+    assert.ok(!WorkshopPrompts.writeSection({ name: 'Kael', state: pinnedState(), sectionId: 'personality' }).messages[1].content.includes('What should change'));
+});
+
+test('Co-writer prompts: loaded with the other Workshop files, before the actions are wired', () => {
+    const html = fs.readFileSync(HTML_PATH, 'utf8');
+    const at = html.indexOf('js/util/cowriter-prompts.js');
+    assert.ok(at > html.indexOf('js/util/workshop-prompts.js'), 'after the Workshop prompts it builds on');
+    assert.ok(at < html.indexOf('js/controllers/action-dispatcher.js'));
+});
