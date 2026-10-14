@@ -408,10 +408,11 @@
                 document.getElementById('ws-sections').innerHTML = [
                     this._conceptCard(state),
                     `<div id="ws-aibar-wrap">${this._aiBar(state)}</div>`,
-                    String(state.unsorted || '').trim() ? this._unsortedCard(state) : '',
+                    '<div id="ws-sort-wrap"></div>',
                     ...state.sections.map(s => this._sectionCard(s)),
                     this._notesCard(state)
                 ].join('');
+                this.renderSortArea();
                 this._growAll(document.getElementById('ws-sections'));
             },
 
@@ -469,8 +470,11 @@
                 return DOM.html`
                     <article class="ws-card ws-unsorted">
                         <label class="ws-label" for="ws-unsorted">From the card, not in a section yet</label>
-                        <p class="ws-hint">Replies still read this exactly as written, ahead of the sections. Move lines into sections when you like.</p>
+                        <p class="ws-hint">Replies still read this exactly as written, ahead of the sections. Move lines into sections yourself, or let the AI sort them without changing a word.</p>
                         <textarea id="ws-unsorted" class="ws-field" data-ws-field="unsorted" rows="4">${state.unsorted}</textarea>
+                        <div class="ws-ai-row">
+                            <button type="button" class="ws-ai-btn" data-action="workshop-sort" ${this.RUNTIME.view.busy ? 'disabled' : ''}>✦ Sort into sections</button>
+                        </div>
                     </article>`.toString();
             },
 
@@ -604,13 +608,23 @@
             // Writing with the Workshop's AI. Every answer is a proposal; nothing changes until it is used.
             // ---------------------------------------------------------------------------------------
 
+            /** A written or re-woven section waiting to be used (not a batch of takes, not a sorting). */
+            _isSectionProposal(p) {
+                return !!p && (p.kind === 'write' || p.kind === 'reweave');
+            },
+
             /** The bar under the concept: pins and text for every empty section, and proposals waiting. */
             _aiBar(state) {
                 const view = this.RUNTIME.view;
                 const busy = view.busy;
                 const empty = state.sections.filter(s => !s.locked && !String(s.text || '').trim());
-                const waiting = Object.values(view.ws.pending || {}).filter(p => p && p.kind !== 'takes');
+                const waiting = Object.values(view.ws.pending || {}).filter(p => this._isSectionProposal(p));
                 const off = (busy || empty.length === 0) ? 'disabled' : '';
+                // A card that was split by its headings has text but no pins yet: offer to draft them.
+                const unpinned = !String(state.unsorted || '').trim() && !(view.ws.pending || {})._sort
+                    && state.sections.some(s => !s.locked && String(s.text || '').trim() && s.pins.length === 0);
+                const draft = unpinned ? DOM.html`<button type="button" class="ws-ai-btn" data-action="workshop-sort" ${busy ? 'disabled' : ''}
+                    title="Read each section's text and suggest the pins it clearly wants kept">✦ Draft pins from the text</button>` : '';
                 let status = '';
                 if (busy && !busy.sectionId) status = this._busyLine(busy);
                 else if ((view.errors || {})._all) status = DOM.html`<span class="ws-status is-error">${view.errors._all}</span>`;
@@ -624,8 +638,75 @@
                     <div class="ws-aibar">
                         <button type="button" class="ws-ai-btn" data-action="workshop-suggest-pins" ${off}>✦ Suggest pins</button>
                         <button type="button" class="ws-ai-btn" data-action="workshop-write-all" ${off}>✦ Write the empty sections</button>
+                        ${draft}
                         ${status}
                     </div>${waitingBar}`.toString();
+            },
+
+            /** The card text not in a section yet, or the AI's sorting of it waiting for a yes. */
+            renderSortArea() {
+                const wrap = document.getElementById('ws-sort-wrap');
+                const view = this.RUNTIME.view;
+                if (!wrap || !view) return;
+                const typing = document.activeElement;
+                if (typing && wrap.contains(typing) && typing.matches('textarea, input')) return;
+                const state = WorkshopStore.active(view.ws).state;
+                const sort = (view.ws.pending || {})._sort;
+                wrap.innerHTML = (sort ? this._sortReview(state, sort) : '') + (String(state.unsorted || '').trim() ? this._unsortedCard(state) : '');
+                this._growAll(wrap);
+            },
+
+            /** What the sorting would move where, what stays unsorted, and the pins drafted from the text. */
+            _sortReview(state, p) {
+                const moved = state.sections.filter(s => p.sections[s.id]);
+                const pinned = state.sections.filter(s => (p.pins[s.id] || []).length);
+                const restored = p.restored ? DOM.html`
+                    <p class="ws-hint is-warn">${p.restored} sentence${p.restored === 1 ? '' : 's'} the AI changed or left out ${p.restored === 1 ? 'was' : 'were'} put back into the unsorted text, word for word.</p>` : '';
+                const stays = p.leftover
+                    ? DOM.html`<div class="ws-sort-item"><div class="ws-sort-title">Stays unsorted</div><div class="ws-text is-proposal">${p.leftover}</div></div>`
+                    : (String(state.unsorted || '').trim() ? DOM.html`<p class="ws-hint">Nothing stays unsorted.</p>` : '');
+                const pinList = pinned.length ? DOM.html`
+                    <div class="ws-sort-item">
+                        <div class="ws-sort-title">Pins drafted from the text, as suggestions to keep or drop</div>
+                        ${pinned.map(s => DOM.html`<p class="ws-sort-pins"><strong>${s.title}:</strong> ${p.pins[s.id].join(' · ')}</p>`)}
+                    </div>` : '';
+                return DOM.html`
+                    <article class="ws-card ws-sort-review">
+                        <div class="ws-label">${moved.length ? 'The card, sorted by the AI' : 'Pins drafted by the AI'}</div>
+                        <p class="ws-hint">Nothing changes until you use it.${moved.length ? ' Moved text joins the end of each section, in the card\'s own words.' : ''}</p>
+                        ${restored}
+                        ${moved.map(s => DOM.html`<div class="ws-sort-item"><div class="ws-sort-title">Into ${s.title}</div><div class="ws-text is-proposal">${p.sections[s.id]}</div></div>`)}
+                        ${stays}
+                        ${pinList}
+                        <div class="ws-proposal-actions">
+                            <button type="button" class="ws-btn is-primary" data-action="workshop-sort-accept">Use it</button>
+                            <button type="button" class="ws-btn" data-action="workshop-sort-discard">Discard</button>
+                        </div>
+                    </article>`.toString();
+            },
+
+            async _sortCard(view, name, onDelta) {
+                const ask = WorkshopPrompts.sortCard({ name, state: WorkshopStore.active(view.ws).state });
+                const sort = ask.read((await this._chat(view, ask, onDelta)).data);
+                view.ws = WorkshopStore.setPending(view.ws, '_sort', { kind: 'sort', ...sort, at: Date.now() });
+                await this._saveWs(view);
+            },
+
+            acceptSort() {
+                const view = this.RUNTIME.view;
+                const sort = view && (view.ws.pending || {})._sort;
+                if (!sort) return;
+                const moved = Object.keys(sort.sections).length;
+                const summary = moved ? `Sorted the card into ${moved} section${moved === 1 ? '' : 's'}` : 'The AI drafted pins from the text';
+                const next = WorkshopStore.applySort(WorkshopStore.active(view.ws).state, sort);
+                const ws = WorkshopStore.setPending(WorkshopStore.commit(view.ws, next, { origin: 'ai', summary }), '_sort', null);
+                this._commitWs(ws, () => this.renderSections());
+            },
+
+            discardSort() {
+                const view = this.RUNTIME.view;
+                if (!view) return;
+                this._commitWs(WorkshopStore.setPending(view.ws, '_sort', null), () => this.renderSortArea());
             },
 
             renderAiBar() {
@@ -738,6 +819,7 @@
                 };
                 try {
                     if (kind === 'suggest') await this._suggestPins(view, name, onDelta);
+                    else if (kind === 'sort') await this._sortCard(view, name, onDelta);
                     else if (kind === 'write-all') await this._writeAll(view, name, onDelta);
                     else if (kind === 'takes') await this._takes(view, name, sectionId, creativity, onDelta);
                     else await this._write(view, name, sectionId, kind === 'reweave', onDelta);
@@ -751,8 +833,12 @@
 
             _redrawFor(sectionId) {
                 this.renderAiBar();
-                if (sectionId) this.renderSection(sectionId);
-                else WorkshopStore.active(this.RUNTIME.view.ws).state.sections.forEach(s => this.renderSection(s.id));
+                if (sectionId) {
+                    this.renderSection(sectionId);
+                    return;
+                }
+                this.renderSortArea();
+                WorkshopStore.active(this.RUNTIME.view.ws).state.sections.forEach(s => this.renderSection(s.id));
             },
 
             _chat(view, ask, onDelta) {
@@ -796,7 +882,7 @@
                     view.busy.label = `${s.title} (${i + 1} of ${targets.length}): `;
                     const el = document.getElementById('ws-busy-status');
                     if (el) el.textContent = `${view.busy.label}starting...`;
-                    const written = Object.fromEntries(Object.entries(view.ws.pending || {}).filter(([, p]) => p && p.kind !== 'takes'));
+                    const written = Object.fromEntries(Object.entries(view.ws.pending || {}).filter(([, p]) => this._isSectionProposal(p)));
                     const ask = WorkshopPrompts.writeSection({ name, state: WorkshopStore.active(view.ws).state, sectionId: s.id, pending: written });
                     const result = ask.read((await this._chat(view, ask, onDelta)).data);
                     view.ws = WorkshopStore.setPending(view.ws, s.id, { kind: 'write', text: result.text, pinMap: result.pinMap, at: Date.now() });
@@ -825,7 +911,7 @@
 
             acceptAll() {
                 const view = this.RUNTIME.view;
-                const waiting = Object.fromEntries(Object.entries((view && view.ws.pending) || {}).filter(([, p]) => p && p.kind !== 'takes'));
+                const waiting = Object.fromEntries(Object.entries((view && view.ws.pending) || {}).filter(([, p]) => this._isSectionProposal(p)));
                 const count = Object.keys(waiting).length;
                 if (count === 0) return;
                 this._commitWs(WorkshopStore.acceptMany(view.ws, waiting, { origin: 'ai', summary: `Wrote ${count} sections with the AI` }), () => this.renderSections());
@@ -835,7 +921,7 @@
                 const view = this.RUNTIME.view;
                 if (!view) return;
                 let ws = view.ws;
-                for (const [id, p] of Object.entries(ws.pending || {})) if (p && p.kind !== 'takes') ws = WorkshopStore.setPending(ws, id, null);
+                for (const [id, p] of Object.entries(ws.pending || {})) if (this._isSectionProposal(p)) ws = WorkshopStore.setPending(ws, id, null);
                 this._commitWs(ws, () => this.renderSections());
             },
 
@@ -946,6 +1032,9 @@
                 ActionHandler.register('workshop-takes', (ds) => this._ask('takes', ds.section, Number(ds.creativity) || null));
                 ActionHandler.register('workshop-suggest-pins', () => this._ask('suggest'));
                 ActionHandler.register('workshop-write-all', () => this._ask('write-all'));
+                ActionHandler.register('workshop-sort', () => this._ask('sort'));
+                ActionHandler.register('workshop-sort-accept', () => this.acceptSort());
+                ActionHandler.register('workshop-sort-discard', () => this.discardSort());
                 ActionHandler.register('workshop-ai-stop', () => {
                     const view = this.RUNTIME.view;
                     if (view && view.busy) view.busy.controller.abort();

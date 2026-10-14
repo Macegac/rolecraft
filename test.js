@@ -3557,3 +3557,101 @@ test('fake AI server: replies can be queued, to drive a screen through real-look
         assert.match((await (await ask({ messages: [{ role: 'user', content: 'Hi' }] })).json()).choices[0].message.content, /made-up reply/, 'then back to normal');
     });
 });
+
+// ─── Sorting an old card into sections ───────────────────────────────────────
+
+/** A character whose card has a loose block, one section already split by its heading, and Voice locked. */
+function looseState() {
+    const state = withTexts(WorkshopStore.blankState(), { appearance: 'Tall.', voice: 'Clipped.' });
+    state.unsorted = 'She grew up in a port town. She never asks for help.\nShe owes you a favour.';
+    state.sections = state.sections.map(s => (s.id === 'voice' ? { ...s, locked: true } : s));
+    return state;
+}
+
+test('WorkshopPrompts: sorting asks for the exact words moved, nothing left out, and pins drawn from the text', () => {
+    const ask = WorkshopPrompts.sortCard({ name: 'Test', state: looseState() });
+    const task = ask.messages[1].content.split('TASK:')[1];
+    assert.match(task, /keeping the author's exact words: move sentences, never rewrite, shorten or add to them/);
+    assert.match(task, /Leave nothing out/);
+    assert.match(task, /"leftover"/);
+    assert.match(task, /2 to 4 short must-have ideas/);
+    assert.ok(!task.includes('voice ("Voice")'), 'a locked section takes nothing');
+    assert.match(ask.messages[1].content, /FROM THE OLD CARD, NOT SORTED INTO SECTIONS YET:\nShe grew up in a port town\./);
+
+    const plain = WorkshopPrompts.sortCard({ name: 'Test', state: { ...looseState(), unsorted: '' } });
+    const pinsOnly = plain.messages[1].content.split('TASK:')[1];
+    assert.match(pinsOnly, /Draft pins from the text the sections already have/);
+    assert.ok(!pinsOnly.includes('"leftover"'), 'with nothing to sort, only pins are asked for');
+});
+
+test('WorkshopPrompts: a sorting that changed or dropped a sentence puts it back, word for word', () => {
+    const sort = WorkshopPrompts.readSort({
+        sections: {
+            background: 'She grew up in a port town.',
+            personality: 'She rarely asks anyone for help.', // reworded: does not count
+            voice: 'Locked section, so refused.',
+            nowhere: 'Not a section.'
+        },
+        leftover: '',
+        pins: { background: ['Port town childhood', 'port town childhood', 'Tall.'], appearance: ['tall.', 'Long legs'], voice: ['no'] }
+    }, looseState());
+    deepEq(sort.sections, { background: 'She grew up in a port town.', personality: 'She rarely asks anyone for help.' });
+    assert.equal(sort.leftover, 'She never asks for help. She owes you a favour.', 'the reworded and the forgotten sentences come back as they were');
+    assert.equal(sort.restored, 2);
+    deepEq(sort.pins, { background: ['Port town childhood', 'Tall.'], appearance: ['tall.', 'Long legs'] }, 'no repeats, nothing for a locked section');
+    assert.throws(() => WorkshopPrompts.readSort({ sections: {}, pins: {} }, { ...looseState(), unsorted: '' }), /sorted nothing/);
+    deepEq(WorkshopPrompts.sentences('One. Two!  Three?\nFour'), ['One.', 'Two!', 'Three?', 'Four']);
+});
+
+test('WorkshopStore: a sorting adds to each section, leaves the rest unsorted, and drafts pins as suggestions', () => {
+    const state = looseState();
+    const next = WorkshopStore.applySort(state, {
+        sections: { appearance: 'Long legs.', background: 'She grew up in a port town.', voice: 'Refused.' },
+        leftover: 'She owes you a favour.',
+        pins: { background: ['Port town childhood'], voice: ['no'] }
+    }, 7);
+    const get = id => next.sections.find(s => s.id === id);
+    assert.equal(get('appearance').text, 'Tall.\n\nLong legs.', 'moved text joins the end of what the section had');
+    assert.equal(get('background').text, 'She grew up in a port town.');
+    assert.equal(get('voice').text, 'Clipped.', 'a locked section is left alone');
+    assert.equal(get('voice').pins.length, 0);
+    deepEq(get('background').pins.map(p => [p.text, p.state, p.origin, p.at]), [['Port town childhood', 'suggested', 'unflatten', 7]]);
+    assert.equal(next.unsorted, 'She owes you a favour.');
+});
+
+test('Workshop AI: sorting the card waits for a yes, then is one commit; Use all leaves it alone', async () => {
+    const answer = {
+        sections: { background: 'She grew up in a port town.', personality: 'She never asks for help.' },
+        leftover: 'She owes you a favour.',
+        pins: { personality: ['Never asks for help'] }
+    };
+    const p = workshopAiPage([answer], looseState());
+    await p.WC._ask('sort');
+    const pending = p.view().ws.pending._sort;
+    assert.equal(pending.kind, 'sort');
+    assert.equal(pending.restored, 0);
+    assert.equal(p.view().ws.commits.length, 1, 'nothing changed yet');
+
+    p.WC.acceptAll();
+    await settle();
+    assert.ok(p.view().ws.pending._sort, '"Use all" is for written sections, not for a sorting');
+
+    p.WC.acceptSort();
+    await settle();
+    const state = WorkshopStore.active(p.view().ws).state;
+    assert.equal(p.view().ws.commits.at(-1).summary, 'Sorted the card into 2 sections');
+    assert.equal(state.unsorted, 'She owes you a favour.');
+    assert.equal(p.view().ws.pending._sort, undefined);
+    assert.equal(p.characters[0].description,
+        'She owes you a favour.\n\n## Appearance & body\nTall.\n\n## Personality\nShe never asks for help.\n\n## Background\nShe grew up in a port town.\n\n## Voice\nClipped.');
+});
+
+test('Workshop screen: sorting is offered on the unsorted card, and pins are offered for a card split by headings', () => {
+    const controller = fs.readFileSync(path.join(__dirname, 'js', 'controllers', 'workshop.js'), 'utf8');
+    const unsorted = controller.slice(controller.indexOf('_unsortedCard(state) {'), controller.indexOf('_notesCard(state) {'));
+    assert.ok(unsorted.includes('data-action="workshop-sort"'), 'Sort into sections sits on the unsorted card');
+    assert.ok(controller.includes('Draft pins from the text'));
+    for (const action of ['workshop-sort', 'workshop-sort-accept', 'workshop-sort-discard']) {
+        assert.ok(controller.includes(`ActionHandler.register('${action}'`), `${action} has a handler`);
+    }
+});

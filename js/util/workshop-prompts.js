@@ -169,22 +169,87 @@
                 const raw = (data && data.pins && typeof data.pins === 'object') ? data.pins : {};
                 const out = {};
                 for (const s of sections) {
-                    const have = new Set(s.pins.map(p => p.text.trim().toLowerCase()));
-                    const seen = new Set();
-                    const pins = (Array.isArray(raw[s.id]) ? raw[s.id] : [])
-                        .filter(t => typeof t === 'string' && t.trim())
-                        .map(t => t.trim().slice(0, 160))
-                        .filter(t => {
-                            const key = t.toLowerCase();
-                            if (have.has(key) || seen.has(key)) return false;
-                            seen.add(key);
-                            return true;
-                        })
-                        .slice(0, 4);
+                    const pins = this._cleanPins(raw[s.id], s);
                     if (pins.length) out[s.id] = pins;
                 }
                 if (Object.keys(out).length === 0) throw new Error('The model suggested no pins. Try again.');
                 return out;
+            },
+
+            /**
+             * Sorts the card text that is not in a section yet into the sections, in the author's own
+             * words, and drafts pins from what each section says. With nothing left to sort, it only
+             * drafts the pins.
+             * @returns {{messages: Array, temperature: undefined, read: Function}} read gives
+             *          {sections: {id: moved text}, leftover, pins: {id: [pin]}, restored: number}.
+             */
+            sortCard({ name, state }) {
+                const open = state.sections.filter(s => !s.locked);
+                const hasLoose = !!String(state.unsorted || '').trim();
+                const task = [
+                    hasLoose
+                        ? "TASK: Sort the card. Part of this character is still one block, shown above under FROM THE OLD CARD. Move every sentence of it into the section it belongs to, keeping the author's exact words: move sentences, never rewrite, shorten or add to them. A sentence that fits no section goes in \"leftover\". Leave nothing out."
+                        : 'TASK: Draft pins from the text the sections already have.',
+                    'Pins: for each section that has text, 2 to 4 short must-have ideas (at most 12 words each) that its text clearly wants kept.',
+                    `Sections you may use: ${open.map(s => `${s.id} ("${s.title}")`).join(', ')}`,
+                    `Reply with JSON: {${hasLoose ? '"sections": {"<section id>": "the sentences moved there, in their original order"}, "leftover": "sentences that fit nowhere, or an empty string", ' : ''}"pins": {"<section id>": ["a pin", "another pin"]}}`
+                ];
+                return {
+                    messages: this._messages(name, state, {}, task),
+                    temperature: undefined,
+                    read: data => this.readSort(data, state)
+                };
+            },
+
+            /**
+             * Reads a sorting. Nothing of the old card may be lost: any sentence of it that did not
+             * land somewhere word for word (the model changed it or dropped it) goes back into the
+             * leftover text as it was.
+             */
+            readSort(data, state) {
+                const open = new Map(state.sections.filter(s => !s.locked).map(s => [s.id, s]));
+                const sections = {};
+                for (const [id, text] of Object.entries((data && data.sections && typeof data.sections === 'object') ? data.sections : {})) {
+                    if (open.has(id) && typeof text === 'string' && text.trim()) sections[id] = text.trim();
+                }
+                let leftover = (data && typeof data.leftover === 'string') ? data.leftover.trim() : '';
+                const placed = this._loose([...Object.values(sections), leftover].join('\n'));
+                const lost = this.sentences(state.unsorted).filter(sentence => !placed.includes(this._loose(sentence)));
+                if (lost.length) leftover = [leftover, ...lost].filter(Boolean).join(' ');
+
+                const pins = {};
+                for (const [id, list] of Object.entries((data && data.pins && typeof data.pins === 'object') ? data.pins : {})) {
+                    if (!open.has(id)) continue;
+                    const clean = this._cleanPins(list, open.get(id));
+                    if (clean.length) pins[id] = clean;
+                }
+                if (Object.keys(sections).length === 0 && Object.keys(pins).length === 0) throw new Error('The model sorted nothing. Try again.');
+                return { sections, leftover, pins, restored: lost.length };
+            },
+
+            /** A text cut into sentences and lines, for checking that each one survived. */
+            sentences(text) {
+                return String(text || '').replace(/([.!?…])\s+/g, '$1\n').split(/\n+/).map(s => s.trim()).filter(s => s.length > 1);
+            },
+
+            /** Pin ideas as given: trimmed, at most four, none repeated or already on the section, case ignored. */
+            _cleanPins(list, section) {
+                const seen = new Set(section.pins.map(p => p.text.trim().toLowerCase()));
+                const out = [];
+                for (const raw of Array.isArray(list) ? list : []) {
+                    if (typeof raw !== 'string' || !raw.trim()) continue;
+                    const text = raw.trim().slice(0, 160);
+                    if (seen.has(text.toLowerCase())) continue;
+                    seen.add(text.toLowerCase());
+                    out.push(text);
+                    if (out.length === 4) break;
+                }
+                return out;
+            },
+
+            /** Spacing, curly quotes and case ignored, for comparing the author's words with the model's copy. */
+            _loose(text) {
+                return String(text || '').replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/\s+/g, ' ').trim().toLowerCase();
             },
 
             /** The phrases the model said carry each pin, under the pins' real ids. */

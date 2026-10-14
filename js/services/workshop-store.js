@@ -224,6 +224,27 @@
                 return { ...ws, avoid: { ...(ws.avoid || {}), [sectionId]: [...list, line].slice(-20) } };
             },
 
+            /**
+             * The state after a sorting of the old card: moved sentences join the end of each
+             * section's text, the leftover becomes the unsorted text, and drafted pins arrive as
+             * suggestions. Locked sections are left as they are.
+             */
+            applySort(state, sort, now = Date.now()) {
+                return {
+                    ...state,
+                    unsorted: sort.leftover || '',
+                    sections: state.sections.map(s => {
+                        if (s.locked) return s;
+                        let next = s;
+                        if (sort.sections[s.id]) next = { ...next, text: [String(s.text || '').trim(), sort.sections[s.id]].filter(Boolean).join('\n\n') };
+                        if ((sort.pins[s.id] || []).length) {
+                            next = { ...next, pins: [...next.pins, ...sort.pins[s.id].map(text => ({ id: this.newId('p'), text, origin: 'unflatten', state: 'suggested', at: now }))] };
+                        }
+                        return next;
+                    })
+                };
+            },
+
             /** The state with suggested pins added to each section named, marked as suggestions. */
             addSuggestions(state, bySection, now = Date.now()) {
                 return {
