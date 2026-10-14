@@ -360,6 +360,8 @@
                     charId,
                     ws: this.workshopOf(charId) || this._fromCard(this._character(charId)),
                     tab: 'sections',
+                    // On a wide screen, what the right column shows: the co-writer or the card.
+                    side: 'cowriter',
                     editing: null,
                     addingPin: null,
                     editorWasOpen: !!(editor && editor.style.display === 'flex'),
@@ -382,6 +384,7 @@
                 this.RUNTIME.view = null;
                 root.classList.add('hidden');
                 document.getElementById('ws-history').classList.add('hidden');
+                document.getElementById('ws-cw-sheet').classList.add('hidden');
                 if (view.pushed && !fromBack) history.back();
                 // Reopened, not just shown, so the character editor shows the new description.
                 if (view.editorWasOpen) UIManager.openCharacterDetailModal(view.charId);
@@ -457,17 +460,27 @@
                 this.renderTabs();
                 this.renderSections();
                 this.renderCard();
+                this.renderCowriter();
+                this.renderCowriterSheet();
             },
 
-            /** On the phone the sections and the card are tabs; on a wide screen they sit side by side. */
+            /**
+             * On the phone the sections, the co-writer and the card are tabs. On a wide screen the
+             * sections stay on the left, and the right column shows the co-writer or the card.
+             */
             renderTabs() {
-                const tab = this.RUNTIME.view.tab;
+                const view = this.RUNTIME.view;
+                const tab = view.tab;
+                const side = view.side || 'cowriter';
                 document.querySelectorAll('#character-workshop [data-action="workshop-tab"]').forEach(btn => {
-                    const on = btn.dataset.tab === tab;
+                    const on = btn.closest('.ws-side-tabs') ? btn.dataset.tab === side : btn.dataset.tab === tab;
                     btn.classList.toggle('is-active', on);
                     btn.setAttribute('aria-selected', on ? 'true' : 'false');
                 });
-                document.querySelectorAll('#character-workshop .ws-pane').forEach(pane => pane.classList.toggle('is-active', pane.dataset.pane === tab));
+                document.querySelectorAll('#character-workshop .ws-pane').forEach(pane => {
+                    pane.classList.toggle('is-active', pane.dataset.pane === tab);
+                    pane.classList.toggle('is-side', pane.dataset.pane === side);
+                });
                 // A pane that was hidden measured its text boxes at zero.
                 this._growAll(document.querySelector(`#character-workshop .ws-pane[data-pane="${tab}"]`));
             },
@@ -700,6 +713,9 @@
             },
 
             ICONS: {
+                down: '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 9l6 6 6-6"></path></svg>',
+                book: '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 4h11a3 3 0 013 3v13H8a3 3 0 01-3-3V4z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 17a3 3 0 013-3h11"></path></svg>',
+                plus: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v14M5 12h14"></path></svg>',
                 locked: '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>',
                 unlocked: '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"></path></svg>'
             },
@@ -896,16 +912,18 @@
                 }
                 if (busy.kind === 'examples-write') return 'Writing the example dialogue';
                 if (busy.kind === 'examples-reweave') return 'Re-weaving the example dialogue';
+                if (busy.kind === 'cowriter') return 'The co-writer is answering';
                 return {
                     write: `Writing ${title}`, reweave: `Re-weaving ${title}`, takes: `3 takes for ${title}`,
                     suggest: 'Suggesting pins', 'write-all': 'Writing the empty sections'
                 }[busy.kind] || 'The AI is working';
             },
 
-            /** A section's AI buttons, with what the AI is doing for it, or why it failed. */
+            /** A section's AI buttons, with what the AI is doing for it, or why it failed. Locked, it can still be talked over. */
             _aiRow(s) {
                 const view = this.RUNTIME.view;
-                if (s.locked) return '';
+                const talk = DOM.html`<button type="button" class="ws-btn" data-action="workshop-cw-about" data-about="${s.title}" title="Talk it over with the co-writer">Talk it over</button>`;
+                if (s.locked) return DOM.html`<div class="ws-ai-row">${talk}</div>`;
                 const busy = view.busy;
                 const hasText = !!String(s.text || '').trim();
                 const status = (view.errors || {})[s.id] ? DOM.html`<span class="ws-status is-error">${view.errors[s.id]}</span>` : '';
@@ -915,6 +933,7 @@
                             title="${hasText ? 'Rewrite it around its pins, keeping what still fits' : 'Write it from its pins and the rest of the character'}" ${busy ? 'disabled' : ''}>${hasText ? '✦ Re-weave' : '✦ Write'}</button>
                         <button type="button" class="ws-ai-btn" data-action="workshop-takes" data-section="${s.id}"
                             title="Three really different versions to choose from" ${busy ? 'disabled' : ''}>✦ 3 takes</button>
+                        ${talk}
                         ${status}
                     </div>`;
             },
@@ -1007,9 +1026,11 @@
                     else if (kind === 'opening-write' || kind === 'opening-reweave') await this._writeOpening(view, name, target, kind === 'opening-reweave', onDelta);
                     else if (kind === 'opening-takes') await this._openingTakes(view, name, target, creativity, onDelta);
                     else if (kind === 'examples-write' || kind === 'examples-reweave') await this._writeExamples(view, name, kind === 'examples-reweave', onDelta);
+                    else if (kind === 'cowriter') await this._cowriterReply(view, name, target, onDelta);
                     else await this._write(view, name, sectionId, kind === 'reweave', onDelta);
                 } catch (err) {
-                    const where = sectionId || (target ? `o:${target}` : (kind.startsWith('examples') ? '_examples' : '_all'));
+                    let where = sectionId || (target ? `o:${target}` : (kind.startsWith('examples') ? '_examples' : '_all'));
+                    if (kind === 'cowriter') where = '_cowriter';
                     if (!(err && err.name === 'AbortError')) view.errors = { [where]: (err && err.message) || 'The Workshop model did not answer.' };
                 } finally {
                     view.busy = null;
@@ -1022,6 +1043,10 @@
                 this.renderAiBar();
                 if (/^(opening|examples)/.test(kind)) {
                     this.renderOpenings();
+                    return;
+                }
+                if (kind === 'cowriter') {
+                    this.renderCowriter();
                     return;
                 }
                 if (sectionId) {
@@ -1295,6 +1320,7 @@
                                 title="${hasText ? 'Rewrite it to fit the character as it is now' : 'Write it from the character'}" ${busy ? 'disabled' : ''}>${hasText ? '✦ Re-weave' : '✦ Write'}</button>
                             <button type="button" class="ws-ai-btn" data-action="workshop-opening-takes" data-opening="${sc.id}"
                                 title="Three really different ways to start" ${busy ? 'disabled' : ''}>✦ 3 takes</button>
+                            <button type="button" class="ws-btn" data-action="workshop-cw-about" data-about="${`the opening "${label}"`}" title="Talk it over with the co-writer">Talk it over</button>
                             ${status}
                         </div>
                         ${proposal}
@@ -1385,6 +1411,7 @@
                                 title="${hasText ? 'Rewrite it to fit the character as it is now' : 'Write some from the character'}" ${busy ? 'disabled' : ''}>${hasText ? '✦ Re-weave' : '✦ Write'}</button>
                             ${chat && hasText ? DOM.html`<button type="button" class="ws-btn" data-action="workshop-examples-to-chat"
                                 title="The open chat started with its own copy of the examples. Swap in these.">Use in the open chat</button>` : ''}
+                            <button type="button" class="ws-btn" data-action="workshop-cw-about" data-about="the example dialogue" title="Talk it over with the co-writer">Talk it over</button>
                             ${status}
                         </div>
                         ${swapped}
@@ -1596,6 +1623,538 @@
             },
 
             // ---------------------------------------------------------------------------------------
+            // The co-writer: a chat about the character, with a notebook of what was decided.
+            // ---------------------------------------------------------------------------------------
+
+            /** The chat on screen, or none when no chat has been started. */
+            _openChat(view) {
+                const cw = WorkshopStore.cowriterOf(view.ws);
+                return cw.chats.find(c => c.id === cw.open && !c.hiddenAt) || null;
+            },
+
+            /** How many messages anyone can see in the open chat, its opening included. */
+            _playCount() {
+                const history = (ReactiveStore.state && ReactiveStore.state.chat_history) || [];
+                return history.filter(m => m && m.type === 'chat' && !m.isHidden && String(m.content || '').trim()).length;
+            },
+
+            /** A phone, or a window as narrow as one, where Enter makes a new line instead of sending. */
+            _narrow() {
+                return !!(document.body && document.body.classList.contains('layout-vertical'))
+                    || !!(window.matchMedia && window.matchMedia('(max-width: 760px)').matches);
+            },
+
+            renderCowriter() {
+                if (!this.RUNTIME.view) return;
+                this.renderCowriterHead();
+                this.renderCowriterLog();
+                this.renderCowriterMenu();
+            },
+
+            /** The bar: the chat's name, which opens the list of chats, the notebook, and a new chat. */
+            renderCowriterHead() {
+                const view = this.RUNTIME.view;
+                const head = document.getElementById('ws-cw-head');
+                if (!head || !view) return;
+                const chat = this._openChat(view);
+                const decisions = (WorkshopStore.active(view.ws).state.notebook || []).length;
+                head.innerHTML = DOM.html`
+                    <button type="button" class="ws-cw-title" data-action="workshop-cw-sheet" data-sheet="chats" title="Chats with the co-writer">
+                        <span class="ws-cw-title-text">${chat ? chat.title : 'New chat'}</span>${DOM.unsafe(this.ICONS.down)}</button>
+                    <button type="button" class="ws-cw-chip" data-action="workshop-cw-sheet" data-sheet="notebook" title="What was decided, and why">${DOM.unsafe(this.ICONS.book)}Notebook · ${decisions}</button>
+                    <button type="button" class="ws-icon-btn" data-action="workshop-cw-new" aria-label="New chat" title="New chat">${DOM.unsafe(this.ICONS.plus)}</button>`.toString();
+            },
+
+            /** The chat: what the co-writer reads, the messages, a reply arriving, and what went wrong. */
+            renderCowriterLog(toEnd = false) {
+                const view = this.RUNTIME.view;
+                const log = document.getElementById('ws-cw-log');
+                if (!log || !view) return;
+                // Never while another answer is being typed: redrawing would throw it away.
+                const typing = document.activeElement;
+                if (typing && log.contains(typing) && typing.matches('input, textarea')) return;
+                const near = log.scrollHeight - log.scrollTop - log.clientHeight < 160;
+                const chat = this._openChat(view);
+                const messages = chat ? chat.messages : [];
+                const streaming = (view.cwStreaming && chat && view.cwStreaming.chatId === chat.id) ? view.cwStreaming : null;
+                const error = (view.errors || {})._cowriter;
+                const parts = [this._readsBlock(view)];
+                if (messages.length === 0 && !streaming) parts.push(this._emptyChat(view));
+                messages.forEach((m, i) => parts.push(this._cwMessage(m, i === messages.length - 1 && !streaming)));
+                if (streaming) {
+                    parts.push(DOM.html`
+                        <div class="ws-cw-msg is-cowriter">
+                            <div class="ws-cw-who">Co-writer</div>
+                            <div id="ws-cw-stream" class="ws-cw-say is-streaming">${this._shownWhileStreaming(streaming.text)}</div>
+                        </div>`.toString());
+                }
+                if (error && !view.busy) {
+                    parts.push(DOM.html`
+                        <div class="ws-cw-error"><span>${error}</span><button type="button" class="ws-btn" data-action="workshop-cw-retry">Try again</button></div>`.toString());
+                }
+                log.innerHTML = parts.join('');
+                if (toEnd || near) log.scrollTop = log.scrollHeight;
+            },
+
+            /** While a reply streams in, its words; a card or question being written stays out of sight until it's read. */
+            _shownWhileStreaming(text) {
+                return String(text || '').split(/<(?:card|ask)\b/i)[0];
+            },
+
+            _streamInto(text) {
+                const view = this.RUNTIME.view;
+                if (!view || !view.cwStreaming) return;
+                view.cwStreaming.text = text;
+                const el = document.getElementById('ws-cw-stream');
+                if (el) el.textContent = this._shownWhileStreaming(text);
+                const log = document.getElementById('ws-cw-log');
+                if (log && log.scrollHeight - log.scrollTop - log.clientHeight < 200) log.scrollTop = log.scrollHeight;
+            },
+
+            _readsBlock(view) {
+                const open = !!view.cwReadsOpen;
+                return DOM.html`
+                    <div class="ws-cw-reads">
+                        <button type="button" class="ws-cw-reads-toggle" data-action="workshop-cw-reads" aria-expanded="${open ? 'true' : 'false'}">What it reads before every reply ${open ? '▴' : '▾'}</button>
+                        ${open ? DOM.html`<ul>${this._reads(view).map(item => DOM.html`<li>${item}</li>`)}</ul>` : ''}
+                    </div>`.toString();
+            },
+
+            /** What the next request will carry, in plain words. */
+            _reads(view) {
+                const state = WorkshopStore.active(view.ws).state;
+                const character = this._character(view.charId);
+                const pins = state.sections.reduce((n, s) => n + s.pins.length, 0);
+                const decisions = (state.notebook || []).length;
+                const steps = WorkshopStore.lineage(view.ws, WorkshopStore.active(view.ws).head).length;
+                const items = [`${(character && character.name) || 'The character'}: the concept, the ${state.sections.length} sections and their pins (${pins}), and what's locked`];
+                if (this._ownsOpenings(view)) items.push('The openings and the example dialogue');
+                items.push(`The story notes, and ${decisions === 1 ? 'the decision' : `the ${decisions} decisions`} in the notebook`);
+                items.push(`The last ${Math.min(steps, CowriterPrompts.LIMITS.history)} steps of the history`);
+                const play = this._playCount();
+                if (play) {
+                    const read = play === 1 ? 'its one message' : `its last ${Math.min(play, CowriterPrompts.LIMITS.playMessages)} messages`;
+                    items.push(`The open chat: ${read}, the timeline, relationships and World Knowledge`);
+                }
+                items.push('This chat');
+                // Only OpenRouter is sent a thinking level; local servers think as their model does.
+                const cfg = WorkshopAI.settings();
+                const thinking = cfg.backend === 'openrouter' && cfg.reasoning && cfg.reasoning !== 'off' ? `, thinking at ${cfg.reasoning}` : '';
+                items.push(`It answers with ${cfg.model || 'the loaded model'}${thinking}.`);
+                return items;
+            },
+
+            /** Ways to start a chat. What happened in play waits until the open chat has more than its opening. */
+            _starters(view) {
+                const character = this._character(view.charId);
+                const name = (character && character.name) || 'this character';
+                const list = [
+                    { id: 'interview', label: 'Interview me', hint: 'One question at a time, with choices to tap.', say: `Interview me about ${name}, one question at a time, with choices to tap.` },
+                    { id: 'pitch', label: 'Pitch ideas', hint: 'Directions for the character and the story, and which one it would pick.', say: `Pitch me some directions for ${name} and the story, and say which one you'd pick.` },
+                    { id: 'missing', label: "What's missing?", hint: 'Gaps, thin spots and contradictions, most important first.', say: `What's missing or thin on ${name}'s card, or contradicts itself? Most important first.` }
+                ];
+                const play = this._playCount();
+                if (play >= 2) {
+                    list.push({ id: 'play', label: 'What happened in play?', hint: `Reads the open chat (${play} messages) for what the card doesn't have yet.`, say: `What has happened in play that isn't on ${name}'s card yet?` });
+                }
+                return list;
+            },
+
+            _startersHtml(view) {
+                return this._starters(view).map(s => DOM.html`
+                    <button type="button" class="ws-cw-starter" data-action="workshop-cw-starter" data-starter="${s.id}" ${view.busy ? 'disabled' : ''}><strong>${s.label}</strong><span>${s.hint}</span></button>`);
+            },
+
+            _emptyChat(view) {
+                const character = this._character(view.charId);
+                return DOM.html`
+                    <div class="ws-cw-starters">
+                        <p class="ws-hint">Ask anything about ${(character && character.name) || 'the character'}, or start with one of these.</p>
+                        ${this._startersHtml(view)}
+                    </div>`.toString();
+            },
+
+            /** The ways to start, behind ✦ beside the box. */
+            renderCowriterMenu() {
+                const view = this.RUNTIME.view;
+                const menu = document.getElementById('ws-cw-starters');
+                if (!menu || !view) return;
+                if (view.cwMenu) menu.classList.remove('hidden');
+                else menu.classList.add('hidden');
+                menu.innerHTML = view.cwMenu ? DOM.html`${this._startersHtml(view)}`.toString() : '';
+            },
+
+            _cwMessage(m, isLast) {
+                if (m.role === 'you') return DOM.html`<div class="ws-cw-msg is-you">${m.text}</div>`.toString();
+                const proposed = m.proposed ? DOM.html`
+                    <p class="ws-hint">It also wrote ${m.proposed === 1 ? 'a change card' : `${m.proposed} change cards`}. Change cards come in the next update; until then, make the change yourself.</p>` : '';
+                const unread = (m.unreadable || []).map(u => DOM.html`
+                    <details class="ws-cw-unread"><summary>Part of this reply couldn't be read. ${u.reason}</summary><pre>${u.raw}</pre></details>`);
+                return DOM.html`
+                    <div class="ws-cw-msg is-cowriter">
+                        <div class="ws-cw-who">Co-writer<span class="ws-cw-model">${String(m.model || '').split('/').pop()}</span></div>
+                        ${m.text ? DOM.html`<div class="ws-cw-say">${DOM.unsafe(this._cwFormat(m.text))}</div>` : ''}
+                        ${m.stopped ? DOM.html`<p class="ws-hint">Stopped.</p>` : ''}
+                        ${m.ask ? this._askBlock(m, isLast) : ''}
+                        ${proposed}
+                        ${unread}
+                    </div>`.toString();
+            },
+
+            /** A question with its choices. Only the newest one can be answered; a choice, once made, stays. */
+            _askBlock(m, isLast) {
+                const view = this.RUNTIME.view;
+                const a = m.ask;
+                const answered = a.picked !== null && a.picked !== undefined;
+                const off = answered || !isLast || !!view.busy;
+                const choices = a.options.map((option, i) => DOM.html`
+                    <button type="button" class="ws-cw-choice${a.picked === i ? ' is-picked' : ''}" data-action="workshop-cw-pick" data-message="${m.id}" data-index="${i}" ${off ? 'disabled' : ''}>${option}</button>`);
+                let other = '';
+                if (answered && a.picked === 'other') other = DOM.html`<p class="ws-hint">You answered in your own words.</p>`;
+                else if (!answered && isLast) {
+                    other = DOM.html`
+                        <div class="ws-cw-other">
+                            <input type="text" id="ws-cw-other" class="ws-cw-other-input" placeholder="Something else…" aria-label="Your own answer" ${view.busy ? 'disabled' : ''}>
+                            <button type="button" class="ws-btn" data-action="workshop-cw-other" ${view.busy ? 'disabled' : ''}>Send</button>
+                        </div>`;
+                }
+                return DOM.html`
+                    <div class="ws-cw-ask" role="group" aria-label="${a.question}">
+                        <div class="ws-cw-ask-q">${a.question}</div>
+                        ${choices}
+                        ${other}
+                    </div>`;
+            },
+
+            /** A reply as HTML: escaped, with **bold** and *italics* kept. */
+            _cwFormat(text) {
+                return this._esc(text)
+                    .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+                    .replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1<em>$2</em>');
+            },
+
+            /** Sends what is in the box. Refused, and left in the box, while the AI is busy. */
+            sendFromBox() {
+                const view = this.RUNTIME.view;
+                const box = document.getElementById('ws-cw-input');
+                const text = box ? String(box.value || '') : '';
+                if (!view || !text.trim()) return Promise.resolve();
+                if (view.busy) {
+                    UIManager.showNotification('Wait for the AI to finish, or stop it, first.', 'info');
+                    return Promise.resolve();
+                }
+                box.value = '';
+                return this.cowriterSend(text);
+            },
+
+            /**
+             * Adds your message to the chat on screen, starting one if there is none, and asks the
+             * co-writer to answer. A question still open is answered by it: the choice tapped, or
+             * your own words.
+             */
+            async cowriterSend(text, { picked, title } = {}) {
+                const view = this.RUNTIME.view;
+                const words = String(text || '').trim();
+                if (!view || !words) return;
+                if (view.busy) {
+                    UIManager.showNotification('Wait for the AI to finish, or stop it, first.', 'info');
+                    return;
+                }
+                let ws = view.ws;
+                let chat = this._openChat(view);
+                if (!chat) {
+                    ws = WorkshopStore.newChat(ws);
+                    chat = WorkshopStore.cowriterOf(ws).chats[0];
+                }
+                // A chat begun with a starter is named after it, rather than after its long request.
+                if (title && chat.messages.length === 0 && chat.title === 'New chat') ws = WorkshopStore.renameChat(ws, chat.id, title);
+                const last = chat.messages[chat.messages.length - 1];
+                if (last && last.ask && (last.ask.picked === null || last.ask.picked === undefined)) {
+                    ws = WorkshopStore.updateMessage(ws, chat.id, last.id, { ask: { ...last.ask, picked: picked === undefined ? 'other' : picked } });
+                }
+                view.ws = WorkshopStore.addMessage(ws, chat.id, { role: 'you', text: words, variant: ws.active });
+                view.cwMenu = false;
+                this.renderCowriterHead();
+                this.renderCowriterMenu();
+                this.renderCowriterLog(true);
+                await this._saveWs(view);
+                await this._ask('cowriter', null, null, chat.id);
+            },
+
+            cowriterPick(messageId, index) {
+                const view = this.RUNTIME.view;
+                const chat = view && this._openChat(view);
+                const last = chat && chat.messages[chat.messages.length - 1];
+                if (!last || last.id !== messageId || !last.ask || (last.ask.picked !== null && last.ask.picked !== undefined)) return Promise.resolve();
+                const option = last.ask.options[index];
+                return option === undefined ? Promise.resolve() : this.cowriterSend(option, { picked: index });
+            },
+
+            /** Asks again after a failure, without a new message. */
+            cowriterRetry() {
+                const view = this.RUNTIME.view;
+                const chat = view && this._openChat(view);
+                if (!chat || view.busy) return Promise.resolve();
+                return this._ask('cowriter', null, null, chat.id);
+            },
+
+            /**
+             * One reply: everything the co-writer reads goes with the chat so far, the words appear
+             * as they arrive, and the reply is kept with its question. Stop keeps what was said.
+             */
+            async _cowriterReply(view, name, chatId, onDelta) {
+                const cw = WorkshopStore.cowriterOf(view.ws);
+                const chat = cw.chats.find(c => c.id === chatId);
+                if (!chat) return;
+                const active = WorkshopStore.active(view.ws);
+                const characters = (ReactiveStore.state && ReactiveStore.state.characters) || [];
+                const { messages, labels } = CowriterPrompts.request({
+                    name, state: active.state, extras: this._extras(view),
+                    variants: { active: active.name, others: view.ws.variants.filter(v => !v.deletedAt && v.id !== active.id).map(v => v.name) },
+                    history: WorkshopStore.lineage(view.ws, active.head).reverse().map(c => ({ at: c.at, origin: c.origin, summary: c.summary })),
+                    play: CowriterPrompts.playFrom(ReactiveStore.state, { characters, leadId: view.charId }),
+                    chat, cards: cw.cards, withCards: false
+                });
+                view.cwStreaming = { chatId, text: '' };
+                if (this.RUNTIME.view === view) this.renderCowriterLog(true);
+                let reply;
+                try {
+                    reply = await WorkshopAI.chat({
+                        messages, signal: view.busy.controller.signal,
+                        onDelta: delta => {
+                            onDelta(delta);
+                            if (this.RUNTIME.view === view) this._streamInto(delta.text);
+                        }
+                    });
+                } catch (err) {
+                    const said = CowriterPrompts.readReply(view.cwStreaming ? view.cwStreaming.text : '', labels).prose;
+                    view.cwStreaming = null;
+                    if (err && err.name === 'AbortError' && said) {
+                        view.ws = WorkshopStore.addMessage(view.ws, chatId, { role: 'cowriter', text: said, stopped: true, variant: view.ws.active });
+                        await this._saveWs(view);
+                    }
+                    throw err;
+                }
+                view.cwStreaming = null;
+                const read = CowriterPrompts.readReply(reply.text, labels);
+                const message = { role: 'cowriter', text: read.prose, variant: view.ws.active, model: WorkshopAI.settings().model || '', provider: reply.provider || '' };
+                if (read.ask) message.ask = { ...read.ask, picked: null };
+                if (read.cards.length) message.proposed = read.cards.length;
+                if (read.unreadable.length) message.unreadable = read.unreadable;
+                view.ws = WorkshopStore.addMessage(view.ws, chatId, message);
+                await this._saveWs(view);
+            },
+
+            /** Talk it over: the co-writer comes into view with "About …: " ready in the box. */
+            talkAbout(about) {
+                const view = this.RUNTIME.view;
+                if (!view) return;
+                view.tab = 'cowriter';
+                view.side = 'cowriter';
+                this.renderTabs();
+                const box = document.getElementById('ws-cw-input');
+                if (!box) return;
+                box.value = `About ${about}: `;
+                box.focus();
+                if (box.setSelectionRange) box.setSelectionRange(box.value.length, box.value.length);
+            },
+
+            /** A new chat, unless the one on screen is still empty. */
+            cowriterNewChat() {
+                const view = this.RUNTIME.view;
+                if (!view) return Promise.resolve();
+                if (view.busy) {
+                    UIManager.showNotification('Wait for the AI to finish, or stop it, first.', 'info');
+                    return Promise.resolve();
+                }
+                const empty = WorkshopStore.cowriterOf(view.ws).chats.find(c => !c.hiddenAt && c.messages.length === 0);
+                view.ws = empty ? WorkshopStore.openChat(view.ws, empty.id) : WorkshopStore.newChat(view.ws);
+                view.cwSheet = null;
+                view.errors = { ...(view.errors || {}), _cowriter: null };
+                this.renderCowriterSheet();
+                this.renderCowriter();
+                return this._saveWs(view);
+            },
+
+            // The chats and the notebook open in a drawer, like the history.
+
+            openCowriterSheet(sheet) {
+                const view = this.RUNTIME.view;
+                if (!view) return;
+                view.cwSheet = sheet;
+                view.cwNoteEditing = null;
+                view.cwUndo = null;
+                this.renderCowriterSheet();
+            },
+
+            closeCowriterSheet() {
+                const view = this.RUNTIME.view;
+                if (view) {
+                    view.cwSheet = null;
+                    view.cwNoteEditing = null;
+                    view.cwUndo = null;
+                }
+                this.renderCowriterSheet();
+            },
+
+            renderCowriterSheet() {
+                const view = this.RUNTIME.view;
+                const sheet = document.getElementById('ws-cw-sheet');
+                if (!sheet) return;
+                if (!view || !view.cwSheet) {
+                    sheet.classList.add('hidden');
+                    return;
+                }
+                sheet.classList.remove('hidden');
+                document.getElementById('ws-cw-sheet-title').textContent = view.cwSheet === 'chats' ? 'Chats with the co-writer' : 'Notebook';
+                const body = document.getElementById('ws-cw-sheet-body');
+                body.innerHTML = view.cwSheet === 'chats' ? this._chatsSheet(view) : this._notebookSheet(view);
+                const field = body.querySelector('#ws-cw-note-text');
+                if (field) field.focus();
+            },
+
+            _undoLine(view) {
+                return view.cwUndo ? DOM.html`<p class="ws-hint">${view.cwUndo.text} <button type="button" class="ws-link" data-action="workshop-cw-undo">Undo</button></p>` : '';
+            },
+
+            _chatsSheet(view) {
+                const cw = WorkshopStore.cowriterOf(view.ws);
+                const rows = cw.chats.filter(c => !c.hiddenAt).map(c => DOM.html`
+                    <div class="ws-variant-row${c.id === cw.open ? ' is-active' : ''}">
+                        <input type="text" class="ws-variant-name" value="${c.title}" data-chat="${c.id}" data-action-change="workshop-cw-rename" maxlength="80" aria-label="Name of this chat">
+                        ${c.id === cw.open
+                            ? DOM.html`<span class="ws-variant-tag">Open</span>`
+                            : DOM.html`<button type="button" class="ws-btn" data-action="workshop-cw-open" data-chat="${c.id}">Open</button>`}
+                        <button type="button" class="ws-link" data-action="workshop-cw-hide" data-chat="${c.id}">Hide</button>
+                        <span class="ws-cw-chat-meta">${this._when(c.updated || c.at)} · ${c.messages.length} message${c.messages.length === 1 ? '' : 's'}</span>
+                    </div>`);
+                const hidden = cw.chats.filter(c => c.hiddenAt);
+                const back = hidden.length ? DOM.html`
+                    <p class="ws-hint">Hidden: ${hidden.map(c => DOM.html`<button type="button" class="ws-link" data-action="workshop-cw-unhide" data-chat="${c.id}">bring back ${c.title}</button> `)}</p>` : '';
+                return DOM.html`
+                    <p class="ws-hint">Start a new chat whenever you like. The notebook carries what matters into every one, and old chats stay here.</p>
+                    <button type="button" class="ws-btn is-primary" data-action="workshop-cw-new">New chat</button>
+                    ${this._undoLine(view)}
+                    ${rows}
+                    ${back}`.toString();
+            },
+
+            _notebookSheet(view) {
+                const notebook = WorkshopStore.active(view.ws).state.notebook || [];
+                const character = this._character(view.charId);
+                const rows = notebook.map(d => (view.cwNoteEditing === d.id ? DOM.html`
+                    <div class="ws-cw-note is-editing">
+                        <textarea id="ws-cw-note-text" class="ws-field" rows="2" aria-label="What was decided">${d.text}</textarea>
+                        <input type="text" id="ws-cw-note-why" class="ws-opening-name-input" value="${d.why || ''}" placeholder="Why" aria-label="Why">
+                        <div class="ws-proposal-actions">
+                            <button type="button" class="ws-btn is-primary" data-action="workshop-cw-note-save" data-decision="${d.id}">Save</button>
+                            <button type="button" class="ws-btn" data-action="workshop-cw-note-cancel">Cancel</button>
+                        </div>
+                    </div>` : DOM.html`
+                    <div class="ws-cw-note">
+                        <button type="button" class="ws-cw-note-main" data-action="workshop-cw-note-edit" data-decision="${d.id}" title="Change it">
+                            <span>${d.text}</span>${d.why ? DOM.html`<span class="ws-hint">Why: ${d.why}</span>` : ''}
+                        </button>
+                        <button type="button" class="ws-pin-btn" data-action="workshop-cw-note-remove" data-decision="${d.id}" aria-label="Remove this decision" title="Remove">×</button>
+                    </div>`));
+                const add = view.cwNoteEditing === 'new' ? DOM.html`
+                    <div class="ws-cw-note is-editing">
+                        <textarea id="ws-cw-note-text" class="ws-field" rows="2" placeholder="What was decided" aria-label="What was decided"></textarea>
+                        <input type="text" id="ws-cw-note-why" class="ws-opening-name-input" placeholder="Why" aria-label="Why">
+                        <div class="ws-proposal-actions">
+                            <button type="button" class="ws-btn is-primary" data-action="workshop-cw-note-add">Add it</button>
+                            <button type="button" class="ws-btn" data-action="workshop-cw-note-cancel">Cancel</button>
+                        </div>
+                    </div>` : DOM.html`<button type="button" class="ws-pin-add" data-action="workshop-cw-note-new">+ Add a decision</button>`;
+                return DOM.html`
+                    <p class="ws-hint">What was decided about ${(character && character.name) || 'the character'}, and why. The co-writer reads it at the start of every chat. Each change here is a step in the history.</p>
+                    ${this._undoLine(view)}
+                    ${rows.length ? rows : DOM.html`<p class="ws-hint">Nothing decided yet.</p>`}
+                    ${add}`.toString();
+            },
+
+            _noteFields() {
+                const text = document.getElementById('ws-cw-note-text');
+                const why = document.getElementById('ws-cw-note-why');
+                return { text: String((text && text.value) || '').trim(), why: String((why && why.value) || '').trim() };
+            },
+
+            _afterNotebook() {
+                this.renderCowriterSheet();
+                this.renderCowriterHead();
+            },
+
+            addDecisionByHand() {
+                const view = this.RUNTIME.view;
+                const { text, why } = this._noteFields();
+                if (!view || !text) return Promise.resolve();
+                view.cwNoteEditing = null;
+                return this._change(`Added to the notebook: "${text}"`,
+                    next => { next.notebook = WorkshopStore.addDecision(next, { text, why, origin: 'you' }).notebook; }, () => this._afterNotebook());
+            },
+
+            saveDecisionByHand(id) {
+                const view = this.RUNTIME.view;
+                const { text, why } = this._noteFields();
+                if (!view) return Promise.resolve();
+                view.cwNoteEditing = null;
+                if (!text) {
+                    this._afterNotebook();
+                    return Promise.resolve();
+                }
+                return this._change(`Changed a decision: "${text}"`,
+                    next => { next.notebook = WorkshopStore.changeDecision(next, id, { text, why }).notebook; }, () => this._afterNotebook());
+            },
+
+            /** Removes a decision, with Undo instead of asking first. */
+            removeDecisionByHand(id) {
+                const view = this.RUNTIME.view;
+                const notebook = view ? (WorkshopStore.active(view.ws).state.notebook || []) : [];
+                const at = notebook.findIndex(d => d.id === id);
+                if (at === -1) return Promise.resolve();
+                const entry = notebook[at];
+                view.cwUndo = {
+                    text: `Removed "${entry.text}".`,
+                    run: () => this._change(`Brought back a decision: "${entry.text}"`, next => {
+                        const list = (next.notebook || []).slice();
+                        list.splice(Math.min(at, list.length), 0, JSON.parse(JSON.stringify(entry)));
+                        next.notebook = list;
+                    }, () => this._afterNotebook())
+                };
+                return this._change(`Removed from the notebook: "${entry.text}"`,
+                    next => { next.notebook = WorkshopStore.removeDecision(next, id).notebook; }, () => this._afterNotebook());
+            },
+
+            /** Hides a chat, with Undo instead of asking first. */
+            cowriterHide(chatId) {
+                const view = this.RUNTIME.view;
+                const chat = view && WorkshopStore.cowriterOf(view.ws).chats.find(c => c.id === chatId);
+                if (!chat) return Promise.resolve();
+                view.ws = WorkshopStore.hideChat(view.ws, chatId);
+                view.cwUndo = {
+                    text: `Hid "${chat.title}".`,
+                    run: () => {
+                        view.ws = WorkshopStore.unhideChat(view.ws, chatId);
+                        this.renderCowriter();
+                        return this._saveWs(view);
+                    }
+                };
+                this.renderCowriterSheet();
+                this.renderCowriter();
+                return this._saveWs(view);
+            },
+
+            /** Changes the chats and saves them: they live with the character, outside its history. */
+            _chatsChange(ws) {
+                const view = this.RUNTIME.view;
+                if (!view || ws === view.ws) return Promise.resolve();
+                view.ws = ws;
+                this.renderCowriterSheet();
+                this.renderCowriter();
+                return this._saveWs(view);
+            },
+
+            // ---------------------------------------------------------------------------------------
             // History and variants: every accepted change, and other versions of the whole character.
             // ---------------------------------------------------------------------------------------
 
@@ -1649,7 +2208,7 @@
 
             _commitRow(c, isHead) {
                 const open = this.RUNTIME.view.expanded === c.id;
-                const who = { you: 'You', ai: 'AI', card: 'Card', restore: 'Went back', unflatten: 'AI' }[c.origin] || 'You';
+                const who = { you: 'You', ai: 'AI', card: 'Card', restore: 'Went back', unflatten: 'AI', cowriter: 'Co-writer' }[c.origin] || 'You';
                 const changes = c.parent ? c.changes : c.changes.filter(ch => this._hasContent(ch.after));
                 const detail = !open ? '' : DOM.html`
                     <div class="ws-commit-detail">
@@ -1689,6 +2248,19 @@
                 if (named) {
                     const before = ch.section === '_examples' && ch.before === null ? (original.examples || '') : (ch.before || '');
                     return DOM.html`<div class="ws-change"><div class="ws-sort-title">${named}</div>${this._beforeAfter(before, ch.after || '')}</div>`;
+                }
+                if (ch.section === '_notebook') {
+                    const was = new Map((ch.before || []).map(d => [d.id, d]));
+                    const now = new Map((ch.after || []).map(d => [d.id, d]));
+                    const lines = [];
+                    for (const [id, d] of now) {
+                        const old = was.get(id);
+                        if (!old) lines.push(DOM.html`<p class="ws-hint">Decided: ${d.text}${d.why ? ` Why: ${d.why}` : ''}</p>`);
+                        else if (old.text !== d.text) lines.push(this._beforeAfter(old.text, d.text));
+                        else if (old.why !== d.why) lines.push(DOM.html`<p class="ws-hint">Why: ${d.why}</p>`);
+                    }
+                    for (const [id, d] of was) if (!now.has(id)) lines.push(DOM.html`<p class="ws-hint">Removed: ${d.text}</p>`);
+                    return DOM.html`<div class="ws-change"><div class="ws-sort-title">Notebook</div>${lines}</div>`;
                 }
                 if (ch.section === '_openings') {
                     const was = ch.before || {};
@@ -1814,9 +2386,12 @@
                 ActionHandler.register('workshop-close', () => this.close());
                 ActionHandler.register('workshop-rename', (ds, val) => this.rename(val));
                 ActionHandler.register('workshop-tab', (ds) => {
-                    if (!this.RUNTIME.view) return;
-                    this.RUNTIME.view.tab = ds.tab;
+                    const view = this.RUNTIME.view;
+                    if (!view) return;
+                    view.tab = ds.tab;
+                    if (ds.tab !== 'sections') view.side = ds.tab;
                     this.renderTabs();
+                    if (ds.tab === 'cowriter') this.renderCowriterLog(true);
                 });
                 ActionHandler.register('workshop-reset-persona', () => this.resetPersona());
                 ActionHandler.register('workshop-edit', (ds) => {
@@ -1897,11 +2472,75 @@
                 ActionHandler.register('workshop-examples-undo', () => this.undoExamplesInChat());
                 ActionHandler.register('workshop-examples-uncopy', () => this.removeExampleCopy());
 
+                // The co-writer.
+                const withView = fn => (...args) => (this.RUNTIME.view ? fn(this.RUNTIME.view, ...args) : undefined);
+                ActionHandler.register('workshop-cw-send', () => this.sendFromBox());
+                ActionHandler.register('workshop-cw-other', () => {
+                    const field = document.getElementById('ws-cw-other');
+                    return this.cowriterSend(field ? field.value : '');
+                });
+                ActionHandler.register('workshop-cw-pick', (ds) => this.cowriterPick(ds.message, Number(ds.index)));
+                ActionHandler.register('workshop-cw-retry', () => this.cowriterRetry());
+                ActionHandler.register('workshop-cw-menu', withView(view => {
+                    view.cwMenu = !view.cwMenu;
+                    this.renderCowriterMenu();
+                }));
+                ActionHandler.register('workshop-cw-starter', withView((view, ds) => {
+                    const starter = this._starters(view).find(s => s.id === ds.starter);
+                    view.cwMenu = false;
+                    this.renderCowriterMenu();
+                    return starter ? this.cowriterSend(starter.say, { title: starter.label }) : undefined;
+                }));
+                ActionHandler.register('workshop-cw-about', (ds) => this.talkAbout(ds.about));
+                ActionHandler.register('workshop-cw-reads', withView(view => {
+                    view.cwReadsOpen = !view.cwReadsOpen;
+                    this.renderCowriterLog();
+                }));
+                ActionHandler.register('workshop-cw-new', () => this.cowriterNewChat());
+                ActionHandler.register('workshop-cw-sheet', (ds) => this.openCowriterSheet(ds.sheet));
+                ActionHandler.register('workshop-cw-sheet-close', () => this.closeCowriterSheet());
+                ActionHandler.register('workshop-cw-open', withView((view, ds) => {
+                    view.cwSheet = null;
+                    return this._chatsChange(WorkshopStore.openChat(view.ws, ds.chat));
+                }));
+                ActionHandler.register('workshop-cw-rename', withView((view, ds, value) => this._chatsChange(WorkshopStore.renameChat(view.ws, ds.chat, value))));
+                ActionHandler.register('workshop-cw-hide', (ds) => this.cowriterHide(ds.chat));
+                ActionHandler.register('workshop-cw-unhide', withView((view, ds) => this._chatsChange(WorkshopStore.unhideChat(view.ws, ds.chat))));
+                ActionHandler.register('workshop-cw-undo', withView(view => {
+                    const undo = view.cwUndo;
+                    view.cwUndo = null;
+                    return undo ? undo.run() : undefined;
+                }));
+                ActionHandler.register('workshop-cw-note-new', withView(view => {
+                    view.cwNoteEditing = 'new';
+                    this.renderCowriterSheet();
+                }));
+                ActionHandler.register('workshop-cw-note-edit', withView((view, ds) => {
+                    view.cwNoteEditing = ds.decision;
+                    this.renderCowriterSheet();
+                }));
+                ActionHandler.register('workshop-cw-note-cancel', withView(view => {
+                    view.cwNoteEditing = null;
+                    this.renderCowriterSheet();
+                }));
+                ActionHandler.register('workshop-cw-note-add', () => this.addDecisionByHand());
+                ActionHandler.register('workshop-cw-note-save', (ds) => this.saveDecisionByHand(ds.decision));
+                ActionHandler.register('workshop-cw-note-remove', (ds) => this.removeDecisionByHand(ds.decision));
+
                 const root = document.getElementById('character-workshop');
                 if (root) {
                     root.addEventListener('focusout', (e) => this._fieldDone(e.target));
                     root.addEventListener('input', (e) => { if (e.target.matches('textarea.ws-field, textarea.ws-pin-input')) this._grow(e.target); });
                     root.addEventListener('keydown', (e) => {
+                        // Enter sends to the co-writer; Shift+Enter makes a new line. On a phone,
+                        // Enter makes a new line and the send button sends.
+                        if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && (e.target.id === 'ws-cw-input' || e.target.id === 'ws-cw-other')) {
+                            if (e.target.id === 'ws-cw-input' && this._narrow()) return;
+                            e.preventDefault();
+                            if (e.target.id === 'ws-cw-input') this.sendFromBox();
+                            else this.cowriterSend(e.target.value);
+                            return;
+                        }
                         if ((e.target.classList.contains('ws-variant-name') || e.target.classList.contains('ws-opening-name-input')) && e.key === 'Enter') {
                             e.preventDefault();
                             e.target.blur();

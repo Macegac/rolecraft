@@ -87,7 +87,7 @@
     <link rel="stylesheet" href="css/agents.css?v=3e3df3752b">
     <link rel="stylesheet" href="css/history.css?v=e70592d647">
     <link rel="stylesheet" href="css/diagnostics.css?v=7068132bb0">
-    <link rel="stylesheet" href="css/workshop.css?v=a4d747fbd6">
+    <link rel="stylesheet" href="css/workshop.css?v=02e371eee9">
 
 
 
@@ -1264,13 +1264,33 @@
         <div id="ws-notice"></div>
         <nav class="ws-tabs" role="tablist" aria-label="Workshop">
             <button type="button" role="tab" class="ws-tab" data-action="workshop-tab" data-tab="sections">Sections</button>
-            <button type="button" role="tab" class="ws-tab hidden" data-action="workshop-tab" data-tab="cowriter">Co-writer</button>
+            <button type="button" role="tab" class="ws-tab" data-action="workshop-tab" data-tab="cowriter">Co-writer</button>
             <button type="button" role="tab" class="ws-tab" data-action="workshop-tab" data-tab="card">Card</button>
         </nav>
         <div id="ws-progress" class="ws-progress hidden"></div>
         <div class="ws-body">
             <section id="ws-sections" class="ws-pane" data-pane="sections" aria-label="Sections"></section>
-            <aside id="ws-card" class="ws-pane" data-pane="card" aria-label="Card"></aside>
+            <div class="ws-side">
+                <nav class="ws-side-tabs" role="tablist" aria-label="Co-writer and card">
+                    <button type="button" role="tab" class="ws-tab" data-action="workshop-tab" data-tab="cowriter">Co-writer</button>
+                    <button type="button" role="tab" class="ws-tab" data-action="workshop-tab" data-tab="card">Card</button>
+                </nav>
+                <section id="ws-cowriter" class="ws-pane ws-cowriter" data-pane="cowriter" aria-label="Co-writer">
+                    <div id="ws-cw-head" class="ws-cw-head"></div>
+                    <div id="ws-cw-log" class="ws-cw-log"></div>
+                    <div class="ws-cw-compose">
+                        <div id="ws-cw-starters" class="ws-cw-menu hidden"></div>
+                        <button type="button" class="ws-cw-round is-spark" data-action="workshop-cw-menu" aria-label="Ways to start" title="Ways to start">✦</button>
+                        <textarea id="ws-cw-input" class="ws-cw-input" rows="1" placeholder="Talk to the co-writer…" aria-label="Message to the co-writer"></textarea>
+                        <button type="button" class="ws-cw-round is-send" data-action="workshop-cw-send" aria-label="Send" title="Send">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M5 12h14M13 6l6 6-6 6"></path>
+                            </svg>
+                        </button>
+                    </div>
+                </section>
+                <aside id="ws-card" class="ws-pane" data-pane="card" aria-label="Card"></aside>
+            </div>
         </div>
         <aside id="ws-history" class="ws-history hidden" aria-label="History and variants">
             <div class="ws-history-head">
@@ -1282,6 +1302,17 @@
                 </button>
             </div>
             <div id="ws-history-body" class="ws-history-body"></div>
+        </aside>
+        <aside id="ws-cw-sheet" class="ws-history hidden" aria-label="The co-writer's chats and notebook">
+            <div class="ws-history-head">
+                <span id="ws-cw-sheet-title" class="ws-kicker">Chats</span>
+                <button type="button" class="ws-icon-btn" data-action="workshop-cw-sheet-close" aria-label="Close" title="Close">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+            <div id="ws-cw-sheet-body" class="ws-history-body"></div>
         </aside>
     </div>
 
@@ -4346,7 +4377,7 @@
 
     <!-- [SEC:JS:CORE] -->
     <!-- Application Logic -->
-    <script src="js/core/build-info.js?v=5da6f18c82"></script>
+    <script src="js/core/build-info.js?v=dd04bda6e1"></script>
     <script src="js/core/dom.js?v=63eb132604"></script>
     <script src="js/core/action-handler.js?v=0db5af7600"></script>
     <script src="js/core/debounce.js?v=dce774dcea"></script>
@@ -4396,7 +4427,7 @@
     <script src="js/controllers/agents.js?v=6a67e60458"></script>
     <script src="js/controllers/history.js?v=ef41f00c31"></script>
     <script src="js/controllers/diagnostics.js?v=b96c876187"></script>
-    <script src="js/controllers/workshop.js?v=df21bf5b4b"></script>
+    <script src="js/controllers/workshop.js?v=0b7aed9bd9"></script>
     <script src="js/controllers/cardcraft-move.js?v=565288f09b"></script>
     <script src="js/controllers/action-dispatcher.js?v=0ec1c44d71"></script>
     <script src="js/boot.js?v=93ba2d0bfd"></script>

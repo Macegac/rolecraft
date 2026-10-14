@@ -169,9 +169,30 @@
             padding: 1rem;
         }
 
-        #ws-card {
+        /* Wide: Sections on the left; the right column shows the co-writer or the card. */
+        .ws-side {
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
             border-left: 1px solid rgba(255, 255, 255, 0.07);
             background: rgba(0, 0, 0, 0.15);
+        }
+
+        .ws-side-tabs {
+            display: flex;
+            gap: 0.25rem;
+            padding: 0.4rem 1rem 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+        }
+
+        .ws-side > .ws-pane {
+            flex: 1;
+        }
+
+        @media (min-width: 761px) {
+            body:not(.layout-vertical) .ws-side > .ws-pane:not(.is-side) {
+                display: none;
+            }
         }
 
         /* On a phone, or any narrow window: one pane at a time, picked with the tabs. */
@@ -192,8 +213,12 @@
             display: block;
         }
 
-        body.layout-vertical #ws-card {
-            border-left: none;
+        body.layout-vertical .ws-side {
+            display: contents;
+        }
+
+        body.layout-vertical .ws-side-tabs {
+            display: none;
         }
 
         @media (max-width: 760px) {
@@ -214,8 +239,12 @@
                 display: block;
             }
 
-            #ws-card {
-                border-left: none;
+            .ws-side {
+                display: contents;
+            }
+
+            .ws-side-tabs {
+                display: none;
             }
         }
 
@@ -1014,4 +1043,401 @@
 
         .ws-examples .ws-notice {
             margin: 0 0 0.6rem;
+        }
+
+        /* --- The co-writer: a chat about the character, with the notebook beside it ----- */
+
+        .ws-cowriter {
+            display: flex;
+            flex-direction: column;
+            padding: 0;
+            overflow: hidden;
+        }
+
+        /* On a phone, or any narrow window, the co-writer is one of the tabs. */
+        body.layout-vertical .ws-body .ws-cowriter.is-active {
+            display: flex;
+        }
+
+        @media (max-width: 760px) {
+            .ws-body .ws-pane:not(.is-active) {
+                display: none;
+            }
+
+            .ws-body .ws-cowriter.is-active {
+                display: flex;
+            }
+        }
+
+        .ws-cw-head {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.55rem 0.75rem 0.55rem 1rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+        }
+
+        .ws-cw-title {
+            flex: 1;
+            min-width: 0;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            font-weight: 700;
+            color: #fff;
+            text-align: left;
+        }
+
+        .ws-cw-title-text {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .ws-cw-chip {
+            flex-shrink: 0;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            padding: 0.35rem 0.7rem;
+            border-radius: 999px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-secondary);
+            font-size: 0.78rem;
+            font-weight: 600;
+        }
+
+        .ws-cw-chip:hover {
+            border-color: rgba(20, 184, 166, 0.55);
+            color: #fff;
+        }
+
+        .ws-cw-head .ws-icon-btn {
+            width: 2.1rem;
+            height: 2.1rem;
+        }
+
+        .ws-cw-log {
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .ws-cw-reads {
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            border-radius: 0.7rem;
+            background: rgba(0, 0, 0, 0.2);
+            font-size: 0.78rem;
+            color: #8b98a9;
+        }
+
+        .ws-cw-reads-toggle {
+            width: 100%;
+            padding: 0.5rem 0.75rem;
+            color: var(--text-secondary);
+            font-weight: 600;
+            text-align: left;
+        }
+
+        .ws-cw-reads ul {
+            margin: 0;
+            padding: 0 0.75rem 0.6rem 2rem;
+            list-style: disc;
+        }
+
+        .ws-cw-msg.is-you {
+            align-self: flex-end;
+            max-width: 85%;
+            padding: 0.6rem 0.85rem;
+            border-radius: 1rem 1rem 0.3rem 1rem;
+            border: 1px solid rgba(20, 184, 166, 0.3);
+            background: rgba(20, 184, 166, 0.16);
+            color: #fff;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+        }
+
+        .ws-cw-msg.is-cowriter {
+            display: flex;
+            flex-direction: column;
+            gap: 0.55rem;
+            min-width: 0;
+        }
+
+        .ws-cw-who {
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--text-accent);
+        }
+
+        .ws-cw-model {
+            margin-left: 0.4rem;
+            font-weight: 500;
+            letter-spacing: 0;
+            text-transform: none;
+            color: #6b7785;
+        }
+
+        .ws-cw-say {
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            line-height: 1.6;
+            color: var(--text-primary);
+        }
+
+        .ws-cw-say.is-streaming::after {
+            content: '';
+            display: inline-block;
+            width: 0.5em;
+            height: 1.05em;
+            margin-left: 1px;
+            vertical-align: -0.15em;
+            background: #5eead4;
+            animation: ws-cw-blink 1s steps(1) infinite;
+        }
+
+        @keyframes ws-cw-blink {
+            50% {
+                opacity: 0;
+            }
+        }
+
+        .ws-cw-ask {
+            display: flex;
+            flex-direction: column;
+            gap: 0.45rem;
+            padding: 0.75rem;
+            border-radius: 0.85rem;
+            border: 1px solid rgba(20, 184, 166, 0.3);
+            background: rgba(20, 184, 166, 0.08);
+        }
+
+        .ws-cw-ask-q {
+            font-weight: 700;
+            color: #fff;
+        }
+
+        .ws-cw-choice {
+            padding: 0.6rem 0.8rem;
+            border-radius: 0.65rem;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-primary);
+            font-size: 0.9rem;
+            text-align: left;
+        }
+
+        .ws-cw-choice:hover:not(:disabled) {
+            border-color: rgba(20, 184, 166, 0.55);
+            background: rgba(20, 184, 166, 0.2);
+        }
+
+        .ws-cw-choice.is-picked {
+            border-color: rgba(20, 184, 166, 0.55);
+            background: rgba(20, 184, 166, 0.2);
+            color: #fff;
+        }
+
+        .ws-cw-choice:disabled:not(.is-picked) {
+            opacity: 0.5;
+            cursor: default;
+        }
+
+        .ws-cw-other {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .ws-cw-other-input {
+            flex: 1;
+            min-width: 0;
+            padding: 0.5rem 0.75rem;
+            border-radius: 0.6rem;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            background: rgba(0, 0, 0, 0.3);
+            color: var(--text-primary);
+            /* 16px stops a phone zooming in when the field takes focus. */
+            font-size: 16px;
+        }
+
+        .ws-cw-other-input:focus,
+        .ws-cw-input:focus {
+            outline: none;
+            border-color: rgba(20, 184, 166, 0.6);
+        }
+
+        .ws-cw-unread {
+            font-size: 0.78rem;
+            color: #fbbf24;
+        }
+
+        .ws-cw-unread pre {
+            margin-top: 0.3rem;
+            padding: 0.5rem;
+            border-radius: 0.5rem;
+            background: rgba(0, 0, 0, 0.3);
+            color: #cbd5e1;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+        }
+
+        .ws-cw-error {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.5rem 0.75rem;
+            font-size: 0.85rem;
+            color: #fca5a5;
+        }
+
+        .ws-cw-starters {
+            display: grid;
+            gap: 0.5rem;
+        }
+
+        .ws-cw-starter {
+            display: flex;
+            flex-direction: column;
+            gap: 0.1rem;
+            padding: 0.75rem 0.9rem;
+            border-radius: 0.8rem;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            background: rgba(31, 41, 55, 0.55);
+            text-align: left;
+        }
+
+        .ws-cw-starter:hover:not(:disabled) {
+            border-color: rgba(20, 184, 166, 0.55);
+        }
+
+        .ws-cw-starter strong {
+            font-size: 0.92rem;
+            color: #fff;
+        }
+
+        .ws-cw-starter span {
+            font-size: 0.8rem;
+            color: #8b98a9;
+        }
+
+        .ws-cw-compose {
+            position: relative;
+            display: flex;
+            align-items: flex-end;
+            gap: 0.5rem;
+            padding: 0.6rem 0.75rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.07);
+            background: rgba(17, 24, 39, 0.85);
+        }
+
+        .ws-cw-input {
+            flex: 1;
+            min-width: 0;
+            min-height: 2.6rem;
+            max-height: 9rem;
+            resize: none;
+            field-sizing: content;
+            padding: 0.55rem 0.85rem;
+            border-radius: 1.1rem;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            background: rgba(0, 0, 0, 0.3);
+            color: var(--text-primary);
+            font-size: 16px;
+            line-height: 1.4;
+        }
+
+        .ws-cw-round {
+            width: 2.6rem;
+            height: 2.6rem;
+            flex-shrink: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+        }
+
+        .ws-cw-round.is-spark {
+            background: rgba(255, 255, 255, 0.06);
+            color: #5eead4;
+            font-size: 1rem;
+        }
+
+        .ws-cw-round.is-send {
+            background: #0f766e;
+            color: #fff;
+        }
+
+        .ws-cw-round.is-send:hover {
+            background: #0d9488;
+        }
+
+        .ws-cw-menu {
+            position: absolute;
+            left: 0.75rem;
+            right: 0.75rem;
+            bottom: calc(100% + 0.4rem);
+            z-index: 3;
+            display: grid;
+            gap: 0.4rem;
+            padding: 0.5rem;
+            border-radius: 0.9rem;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            background: #111827;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+        }
+
+        .ws-cw-menu.hidden {
+            display: none;
+        }
+
+        /* The notebook, in the drawer the history uses. */
+        .ws-cw-note {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.5rem;
+            padding: 0.6rem 0.7rem;
+            margin-top: 0.45rem;
+            border-radius: 0.65rem;
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            background: rgba(31, 41, 55, 0.55);
+        }
+
+        .ws-cw-note.is-editing {
+            flex-direction: column;
+            align-items: stretch;
+        }
+
+        .ws-cw-note-main {
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 0.15rem;
+            color: var(--text-primary);
+            text-align: left;
+            overflow-wrap: anywhere;
+        }
+
+        .ws-cw-note-main .ws-hint {
+            margin: 0;
+        }
+
+        .ws-cw-chat-meta {
+            flex-basis: 100%;
+            font-size: 0.72rem;
+            color: #6b7785;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .ws-cw-say.is-streaming::after {
+                animation: none;
+            }
         }

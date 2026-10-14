@@ -4995,6 +4995,253 @@ test("WorkshopPrompts: a steer, the co-writer's brief plus any note of yours, re
     assert.ok(!WorkshopPrompts.writeSection({ name: 'Kael', state: pinnedState(), sectionId: 'personality' }).messages[1].content.includes('What should change'));
 });
 
+/**
+ * The Workshop on screen for Kael with the co-writer: openingsPage's story, plus a model that streams
+ * plain replies (strings) and answers JSON for the writers (objects). {stop: 'partial'} streams the
+ * words, then stops as Stop would.
+ */
+function cowriterPage(answers = []) {
+    const events = [];
+    const notices = [];
+    const calls = [];
+    const streamed = [];
+    const handlers = {};
+    const elements = {};
+    const element = () => ({
+        innerHTML: '', outerHTML: '', value: '', textContent: '', style: {}, dataset: {},
+        classList: { add() { }, remove() { }, toggle() { }, contains: () => false },
+        querySelector: () => null, querySelectorAll: () => [], contains: () => false, focus() { }, setAttribute() { }, addEventListener() { }, setSelectionRange() { }
+    });
+    const byId = id => elements[id] || (elements[id] = element());
+    const characters = [
+        { id: 'me', name: 'You', is_user: true },
+        { id: 'ch1', name: 'Kael', description: '', model_instructions: 'Write as {character}.' }
+    ];
+    let saved = { id: 's1', name: 'Kael', characters, scenarios: openingsStory() };
+    const library = { active_story_id: 's1', stories: [JSON.parse(JSON.stringify(saved))] };
+    const store = {
+        state: { characters, evolved_characters: {}, chat_history: [...openingsStory()[0].example_dialogue, { character_id: 'ch1', content: 'Hello again.', type: 'chat' }] },
+        _isSaving: false,
+        _isSavingPaused: false,
+        async forceSave() { events.push('save'); },
+        pauseSaving() { this._isSavingPaused = true; },
+        resumeSaving() { this._isSavingPaused = false; }
+    };
+    const DBService = {
+        async getStory(id) { return id === saved.id ? JSON.parse(JSON.stringify(saved)) : null; },
+        async saveStory(story) { saved = JSON.parse(JSON.stringify(story)); }
+    };
+    const WorkshopAI = {
+        settings: () => ({ backend: 'openrouter', model: 'deepseek/deepseek-v4.1-flash', reasoning: 'medium' }),
+        async chat(opts) {
+            calls.push(opts);
+            const next = answers.shift();
+            if (next instanceof Error) throw next;
+            if (next && next.stop !== undefined) {
+                opts.onDelta({ text: next.stop, thinking: '' });
+                streamed.push(byId('ws-cw-stream').textContent);
+                const stopped = new Error('stopped');
+                stopped.name = 'AbortError';
+                throw stopped;
+            }
+            if (typeof next === 'string') {
+                opts.onDelta({ text: '', thinking: 'Hmm.' });
+                opts.onDelta({ text: next.slice(0, 7), thinking: 'Hmm.' });
+                streamed.push(byId('ws-cw-stream').textContent);
+                return { text: next, thinking: 'Hmm.', finishReason: 'stop', provider: 'Test' };
+            }
+            return { text: JSON.stringify(next), thinking: '', finishReason: 'stop', provider: 'Test', data: next, attempts: 1 };
+        }
+    };
+    const source = ['js/core/dom.js', 'js/services/workshop-store.js', 'js/util/workshop-prompts.js', 'js/util/cowriter-prompts.js', 'js/controllers/workshop.js']
+        .map(file => fs.readFileSync(path.join(__dirname, file), 'utf8')).join('\n');
+    const WC = vm.runInNewContext(source + '\nWorkshopController', {
+        document: { getElementById: byId, querySelector: element, querySelectorAll: () => [], activeElement: null, body: element() },
+        ReactiveStore: store, WorkshopAI, AbortController, setTimeout, UTILITY, DBService,
+        StateManager: { getLibrary: () => library },
+        UIManager: { showNotification: (text, type) => notices.push([text, type]) },
+        ActionHandler: { register: (name, fn) => { handlers[name] = fn; } }, window: { addEventListener() { }, matchMedia: () => ({ matches: false }) }, debounce: fn => fn,
+        LibraryController: { async exportCharacterCard() { } }
+    });
+    WC.registerActions();
+    WC.RUNTIME.view = { charId: 'ch1', ws: WorkshopStore.create({ now: 1, commitId: 'c0' }), tab: 'sections', editing: null, addingPin: null };
+    const chat = () => WorkshopStore.cowriterOf(WC.RUNTIME.view.ws).chats.find(c => c.id === WorkshopStore.cowriterOf(WC.RUNTIME.view.ws).open);
+    return {
+        WC, events, notices, calls, streamed, characters, store, elements, el: byId,
+        act: (name, dataset = {}, value) => handlers[name](dataset, value),
+        view: () => WC.RUNTIME.view,
+        chat,
+        say: async text => {
+            byId('ws-cw-input').value = text;
+            await handlers['workshop-cw-send']({});
+        },
+        log: () => {
+            WC.renderCowriter();
+            return byId('ws-cw-log').innerHTML;
+        },
+        head: () => {
+            WC.renderCowriter();
+            return byId('ws-cw-head').innerHTML;
+        },
+        sheet: () => byId('ws-cw-sheet-body').innerHTML
+    };
+}
+
+const ASK_PATIENCE = 'Agreed, she warms up too fast.\n<ask>{"question":"What gets through to her?","options":["Patience","A promise kept"]}</ask>';
+
+test('Co-writer: a message starts a chat named after it, the reply streams in, and its question waits with choices to tap', async () => {
+    const p = cowriterPage([ASK_PATIENCE]);
+    await p.say('She warms up to {{user}} too fast.');
+    const call = p.calls[0];
+    assert.ok(!call.json, 'a conversation, not JSON');
+    assert.equal(call.messages[0].role, 'system');
+    assert.match(call.messages[0].content, /^You are the co-writer in the Character Workshop/);
+    assert.ok(call.messages[0].content.includes('CHARACTER: Kael'));
+    assert.ok(call.messages[0].content.includes('O1 "Default Start"'), 'the lead reads its openings');
+    assert.ok(call.messages[0].content.includes('RECENT MESSAGES (oldest first):\nKael: Hello again.'), 'and what happened in the open chat');
+    assert.ok(!call.messages[0].content.includes('<card>'), 'cards come in a later step: for now it talks');
+    deepEq(call.messages.slice(1).map(m => [m.role, m.content]), [['user', 'She warms up to {{user}} too fast.']]);
+    deepEq(p.streamed, ['Agreed,'], 'the words appear as they arrive');
+
+    const chat = p.chat();
+    assert.equal(chat.title, 'She warms up to {{user}} too…');
+    const reply = chat.messages[1];
+    deepEq([reply.role, reply.text, reply.model, reply.variant], ['cowriter', 'Agreed, she warms up too fast.', 'deepseek/deepseek-v4.1-flash', 'v_main']);
+    deepEq(reply.ask, { question: 'What gets through to her?', options: ['Patience', 'A promise kept'], multi: false, picked: null });
+    assert.equal(p.el('ws-cw-input').value, '', 'the box is cleared');
+    assert.ok(p.characters[1].workshop.cowriter.chats[0].messages.length === 2, 'the chat is saved with the character');
+    assert.equal(p.view().ws.commits.length, 1, 'and talking changed nothing in the character');
+
+    const log = p.log();
+    assert.ok(log.includes('Agreed, she warms up too fast.'));
+    assert.ok(log.includes('What gets through to her?') && log.includes('data-action="workshop-cw-pick"'), 'its question, with choices to tap');
+    assert.ok(log.includes('id="ws-cw-other"'), 'and a box for another answer');
+    assert.equal(p.view().busy, null);
+});
+
+test('Co-writer: tapping a choice answers the question, and typing while a question is open answers it too', async () => {
+    const p = cowriterPage([ASK_PATIENCE, 'Patience it is.\n<ask>{"question":"How long?","options":["Weeks","Months"]}</ask>', 'Noted.']);
+    await p.say('Help me slow her down.');
+    const askId = p.chat().messages[1].id;
+    await p.act('workshop-cw-pick', { message: askId, index: '0' });
+    assert.equal(p.chat().messages[1].ask.picked, 0);
+    deepEq(p.chat().messages.slice(2).map(m => [m.role, m.text]), [['you', 'Patience'], ['cowriter', 'Patience it is.']], 'the choice is sent as your answer');
+    await p.act('workshop-cw-pick', { message: askId, index: '1' });
+    assert.equal(p.calls.length, 2, 'a question already answered stays answered');
+
+    await p.say("Neither. She just gets tired of fighting it.");
+    assert.equal(p.chat().messages[3].ask.picked, 'other', 'typing answers the open question in your own words');
+    assert.equal(p.chat().messages[4].text, 'Neither. She just gets tired of fighting it.');
+    assert.ok(p.calls[2].messages[2].content.includes('You asked: What gets through to her? (Patience / A promise kept)'), 'the next request knows what it asked');
+});
+
+test('Co-writer: Stop keeps what was said so far; a failure shows with Try again, which asks again without a new message', async () => {
+    const p = cowriterPage([{ stop: 'Half a thou' }, new Error('Too many requests right now.'), 'Second try.']);
+    await p.say('Go.');
+    deepEq(p.chat().messages.map(m => [m.role, m.text, !!m.stopped]), [['you', 'Go.', false], ['cowriter', 'Half a thou', true]]);
+    deepEq(p.view().errors, {}, 'a stop is not a failure');
+    assert.ok(p.log().includes('Stopped'));
+
+    await p.say('Again.');
+    assert.equal(p.view().errors._cowriter, 'Too many requests right now.');
+    assert.ok(p.log().includes('Too many requests right now.') && p.log().includes('data-action="workshop-cw-retry"'));
+    await p.act('workshop-cw-retry');
+    deepEq(p.chat().messages.map(m => m.text), ['Go.', 'Half a thou', 'Again.', 'Second try.']);
+    assert.equal(p.calls[2].messages.at(-1).content, 'Again.', 'the same question again');
+    assert.ok(p.calls[2].messages.some(m => m.content.includes('[The author stopped this reply part way.]')));
+});
+
+test('Co-writer: the notebook is edited by hand as steps in the history, and a removed decision can be brought back', async () => {
+    const p = cowriterPage([]);
+    p.act('workshop-cw-sheet', { sheet: 'notebook' });
+    assert.ok(p.sheet().includes('+ Add a decision'));
+    p.act('workshop-cw-note-new');
+    p.el('ws-cw-note-text').value = '  Slow burn over many scenes. ';
+    p.el('ws-cw-note-why').value = 'Hard to win over.';
+    await p.act('workshop-cw-note-add');
+    let last = p.view().ws.commits.at(-1);
+    deepEq([last.summary, last.origin], ['Added to the notebook: "Slow burn over many scenes."', 'you']);
+    const entry = WorkshopStore.active(p.view().ws).state.notebook[0];
+    deepEq([entry.text, entry.why], ['Slow burn over many scenes.', 'Hard to win over.']);
+    assert.ok(p.sheet().includes('Slow burn over many scenes.') && p.sheet().includes('Why: Hard to win over.'));
+
+    p.act('workshop-cw-note-edit', { decision: entry.id });
+    p.el('ws-cw-note-text').value = 'Slow burn, never in one scene.';
+    p.el('ws-cw-note-why').value = 'Hard to win over.';
+    await p.act('workshop-cw-note-save', { decision: entry.id });
+    assert.equal(p.view().ws.commits.at(-1).summary, 'Changed a decision: "Slow burn, never in one scene."');
+
+    await p.act('workshop-cw-note-remove', { decision: entry.id });
+    deepEq(WorkshopStore.active(p.view().ws).state.notebook, []);
+    assert.ok(p.sheet().includes('data-action="workshop-cw-undo"'), 'Undo, instead of asking first');
+    await p.act('workshop-cw-undo');
+    assert.equal(WorkshopStore.active(p.view().ws).state.notebook[0].text, 'Slow burn, never in one scene.');
+
+    last = p.view().ws.commits.at(-1);
+    const shown = p.WC._changeView(p.view().ws.commits.at(-3).changes[0]).toString();
+    assert.ok(shown.includes('Notebook') && shown.includes('Slow burn, never in one scene.'), 'the history shows what the notebook gained or lost');
+    assert.ok(p.head().includes('Notebook · 1'), 'the count is on the bar');
+});
+
+test('Co-writer: chats are listed newest first, renamed, hidden with Undo, and a new chat starts empty, with starters', async () => {
+    const p = cowriterPage(['One.', 'Two.']);
+    await p.say('The first chat.');
+    const first = p.chat().id;
+    p.act('workshop-cw-new');
+    assert.notEqual(p.chat().id, first);
+    const empty = p.log();
+    assert.ok(empty.includes('Interview me') && empty.includes('Pitch ideas') && empty.includes('What&#039;s missing?'), 'an empty chat offers the starters');
+    await p.say('The second chat.');
+    p.act('workshop-cw-sheet', { sheet: 'chats' });
+    const list = p.sheet();
+    assert.ok(list.indexOf('The second chat.') < list.indexOf('The first chat.'), 'newest first');
+    p.act('workshop-cw-open', { chat: first });
+    assert.equal(p.chat().id, first);
+    assert.equal(p.view().cwSheet, null, 'opening a chat closes the list');
+    p.act('workshop-cw-rename', { chat: first }, 'Harder to win over');
+    assert.equal(p.chat().title, 'Harder to win over');
+    p.act('workshop-cw-sheet', { sheet: 'chats' });
+    await p.act('workshop-cw-hide', { chat: first });
+    assert.notEqual(p.chat().id, first, 'hiding the open chat opens the other one');
+    assert.ok(p.sheet().includes('data-action="workshop-cw-undo"'));
+    await p.act('workshop-cw-undo');
+    assert.equal(WorkshopStore.cowriterOf(p.view().ws).chats.find(c => c.id === first).hiddenAt, undefined, 'brought back');
+});
+
+test('Co-writer: Talk it over opens it with "About …:" ready; starters send their request, and What happened in play waits for a chat to read', async () => {
+    const p = cowriterPage(['Sure.']);
+    p.act('workshop-cw-about', { about: 'Personality' });
+    assert.equal(p.el('ws-cw-input').value, 'About Personality: ');
+    deepEq([p.view().tab, p.view().side], ['cowriter', 'cowriter'], 'the co-writer comes into view, on the phone and on a wide screen');
+
+    p.el('ws-cw-input').value = '';
+    assert.ok(!p.log().includes('What happened in play?'), 'nothing to read yet: the open chat has only its opening');
+    p.store.state.chat_history.push({ character_id: 'me', content: 'Thanks.', type: 'chat' });
+    assert.ok(p.log().includes('What happened in play?'));
+    await p.act('workshop-cw-starter', { starter: 'interview' });
+    assert.equal(p.calls[0].messages.at(-1).content, 'Interview me about Kael, one question at a time, with choices to tap.');
+    assert.equal(p.chat().title, 'Interview me', 'a chat begun with a starter is named after it');
+
+    p.act('workshop-cw-reads');
+    const reads = p.log();
+    assert.ok(reads.includes('Kael: the concept, the 11 sections and their pins'), 'what it reads, listed at the top of the chat');
+    assert.ok(reads.includes('The openings and the example dialogue'));
+    assert.ok(reads.includes('The open chat: its last 2 messages'));
+    assert.ok(reads.includes('deepseek/deepseek-v4.1-flash'));
+    const sections = fs.readFileSync(path.join(__dirname, 'js', 'controllers', 'workshop.js'), 'utf8');
+    assert.ok((sections.match(/data-action="workshop-cw-about"/g) || []).length >= 3, 'Talk it over on the sections, the openings and the example dialogue');
+});
+
+test('Co-writer screen: its tab shows on the phone, and on a wide screen it shares the right column with the card', () => {
+    const html = fs.readFileSync(HTML_PATH, 'utf8');
+    for (const id of ['ws-cowriter', 'ws-cw-head', 'ws-cw-log', 'ws-cw-input', 'ws-cw-starters', 'ws-cw-sheet', 'ws-cw-sheet-body']) {
+        assert.ok(html.includes(`id="${id}"`), `${id} is in the page`);
+    }
+    assert.ok(!/class="ws-tab hidden"[^>]*data-tab="cowriter"/.test(html), 'the Co-writer tab is no longer hidden');
+    const side = html.slice(html.indexOf('class="ws-side"'), html.indexOf('id="ws-history"'));
+    assert.ok(side.includes('data-tab="cowriter"') && side.includes('data-tab="card"') && side.includes('id="ws-card"'), 'the right column holds both');
+});
+
 test('Co-writer prompts: loaded with the other Workshop files, before the actions are wired', () => {
     const html = fs.readFileSync(HTML_PATH, 'utf8');
     const at = html.indexOf('js/util/cowriter-prompts.js');
