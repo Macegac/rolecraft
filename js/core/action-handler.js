@@ -469,6 +469,12 @@
                         dmBtn.classList.toggle('hidden', !allow);
                     }
 
+                    // The Workshop is offered for the story's characters, not for you, the narrator or places.
+                    const workshopBtn = menu.querySelector('[data-action="open-workshop"]');
+                    if (workshopBtn) {
+                        workshopBtn.classList.toggle('hidden', !(typeof WorkshopController !== 'undefined' && WorkshopController.canOpen(charId)));
+                    }
+
                     // Unhide first so the menu can be measured, then keep it inside the viewport.
                     menu.classList.remove('hidden');
                     const rect = menu.getBoundingClientRect();

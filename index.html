@@ -87,6 +87,7 @@
     <link rel="stylesheet" href="css/agents.css?v=3e3df3752b">
     <link rel="stylesheet" href="css/history.css?v=e70592d647">
     <link rel="stylesheet" href="css/diagnostics.css?v=7068132bb0">
+    <link rel="stylesheet" href="css/workshop.css?v=f22b4d7b99">
 
 
 
@@ -715,6 +716,14 @@
                     </svg>
                     Character Details
                 </button>
+                <button data-action="open-workshop"
+                    class="char-ctx-btn w-full text-left px-4 py-2 hover:bg-indigo-600/50 text-white text-sm transition-colors flex items-center">
+                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                    </svg>
+                    Character Workshop
+                </button>
             </div>
         </main>
     </div>
@@ -918,6 +927,22 @@
                                     <div>
                                         <span class="font-semibold text-gray-200 block leading-tight">Blank Story</span>
                                         <span class="text-xs text-gray-500 leading-tight">Start from scratch</span>
+                                    </div>
+                                </button>
+                                <button type="button" data-action="workshop-new-character"
+                                    class="w-full text-left hover:bg-indigo-600/20 px-3 py-2.5 rounded-lg text-sm flex items-center gap-3 transition-colors group"
+                                    role="menuitem">
+                                    <div
+                                        class="flex-shrink-0 w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center group-hover:bg-indigo-500/30 transition-colors">
+                                        <svg class="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor"
+                                            viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+                                        </svg>
+                                    </div>
+                                    <div>
+                                        <span class="font-semibold text-white block leading-tight">New Character</span>
+                                        <span class="text-xs text-gray-500 leading-tight">Build one from an idea in the Workshop</span>
                                     </div>
                                 </button>
                             </div>
@@ -1217,6 +1242,34 @@
         <div id="character-detail-modal-content"
             class="bg-gray-800/80 backdrop-blur-md rounded-lg shadow-xl relative flex flex-col max-h-[90vh]"
             style="width: 95%; max-width: 1200px;"></div>
+    </div>
+
+    <!-- Character Workshop: the full-screen place to build a character section by section.
+         Filled in by WorkshopController ([SEC:JS:CTRL:WS]); styles in css/workshop.css. -->
+    <div id="character-workshop" class="hidden" role="dialog" aria-modal="true" aria-label="Character Workshop">
+        <header class="ws-header">
+            <button type="button" class="ws-icon-btn" data-action="workshop-close" aria-label="Close the Workshop" title="Close">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+                </svg>
+            </button>
+            <div class="ws-heading">
+                <span class="ws-kicker">Character Workshop</span>
+                <input type="text" id="ws-name" class="ws-name" data-action-change="workshop-rename" maxlength="80"
+                    aria-label="Character name" autocomplete="off">
+            </div>
+            <span id="ws-variant" class="ws-variant" title="The version of the character being worked on">Main</span>
+        </header>
+        <div id="ws-notice"></div>
+        <nav class="ws-tabs" role="tablist" aria-label="Workshop">
+            <button type="button" role="tab" class="ws-tab" data-action="workshop-tab" data-tab="sections">Sections</button>
+            <button type="button" role="tab" class="ws-tab hidden" data-action="workshop-tab" data-tab="cowriter">Co-writer</button>
+            <button type="button" role="tab" class="ws-tab" data-action="workshop-tab" data-tab="card">Card</button>
+        </nav>
+        <div class="ws-body">
+            <section id="ws-sections" class="ws-pane" data-pane="sections" aria-label="Sections"></section>
+            <aside id="ws-card" class="ws-pane" data-pane="card" aria-label="Card"></aside>
+        </div>
     </div>
 
     <!-- AI Character Generation Modal -->
@@ -4280,9 +4333,9 @@
 
     <!-- [SEC:JS:CORE] -->
     <!-- Application Logic -->
-    <script src="js/core/build-info.js?v=76967e701b"></script>
+    <script src="js/core/build-info.js?v=133dc02a88"></script>
     <script src="js/core/dom.js?v=63eb132604"></script>
-    <script src="js/core/action-handler.js?v=03f991f3d5"></script>
+    <script src="js/core/action-handler.js?v=0db5af7600"></script>
     <script src="js/core/debounce.js?v=dce774dcea"></script>
     <script src="js/services/db.js?v=3378a69e50"></script>
     <script src="js/services/visual-lore.js?v=0f65ddfa8a"></script>
@@ -4295,7 +4348,7 @@
     <script src="js/services/tts.js?v=b5903b4d34"></script>
     <script src="js/services/music.js?v=6de37ebcdc"></script>
     <script src="js/services/workshop-ai.js?v=92d01952d5"></script>
-    <script src="js/services/workshop-store.js?v=3b46051523"></script>
+    <script src="js/services/workshop-store.js?v=ac02f236bf"></script>
     <script src="js/ui/modal-manager.js?v=eedc205bd3"></script>
     <script src="js/util/utility.js?v=c9359e724e"></script>
     <script src="js/util/agent-schema.js?v=21a243728f"></script>
@@ -4311,7 +4364,7 @@
     <script src="js/services/agent-store.js?v=c42bea0f14"></script>
     <script src="js/state/reactive-store.js?v=15c3ac99a8"></script>
     <script src="js/ui/ui-components.js?v=dc91210157"></script>
-    <script src="js/ui/ui-manager.js?v=e2379ecdac"></script>
+    <script src="js/ui/ui-manager.js?v=5ca17a5ecf"></script>
     <script src="js/controllers/app.js?v=e698fea115"></script>
     <script src="js/controllers/story-generation.js?v=0327e295bc"></script>
     <script src="js/controllers/in-story-generation.js?v=7adf398b93"></script>
@@ -4328,9 +4381,9 @@
     <script src="js/controllers/agents.js?v=6a67e60458"></script>
     <script src="js/controllers/history.js?v=ef41f00c31"></script>
     <script src="js/controllers/diagnostics.js?v=b96c876187"></script>
-    <script src="js/controllers/workshop.js?v=89c6641ad5"></script>
+    <script src="js/controllers/workshop.js?v=9d1e60edca"></script>
     <script src="js/controllers/action-dispatcher.js?v=0ec1c44d71"></script>
-    <script src="js/boot.js?v=9b065260e6"></script>
+    <script src="js/boot.js?v=fdc6df7f3c"></script>
     <!-- Onboarding Welcome Modal: Shown on first launch to guide new users -->
     <div id="onboarding-modal" class="hidden fixed inset-0 z-[90] flex items-center justify-center onboarding-backdrop">
         <div class="onboarding-container">

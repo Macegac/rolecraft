@@ -4575,6 +4575,7 @@
                                     <button onclick="NarrativeController.viewEvolvedPersona('${char.id}')" class="micro-hover px-2 py-1 text-[10px] font-bold uppercase tracking-widest rounded-md transition-colors border ${hasEvolvedPersona ? 'bg-teal-950/40 text-teal-300 border-teal-500/50 hover:bg-teal-500 hover:text-white cursor-pointer' : 'bg-gray-800 text-gray-500 border-gray-700 opacity-50 cursor-not-allowed'}" ${hasEvolvedPersona ? '' : 'disabled'} title="View Narrative (Evolved) Persona">
                                         View Narrative Persona
                                     </button>
+                                    ${(!char.is_user && !char.is_narrator) ? DOM.html`<button data-action="open-workshop" data-id="${char.id}" class="micro-hover px-2 py-1 text-[10px] font-bold uppercase tracking-widest rounded-md transition-colors border bg-teal-950/40 text-teal-300 border-teal-500/50 hover:bg-teal-500 hover:text-white" title="Build this character section by section in the Character Workshop">Workshop</button>` : ''}
                                     <button data-action="enhance-persona" data-id="${char.id}" class="micro-hover text-teal-400 hover:text-teal-300 p-1.5 bg-teal-950/20 rounded-md transition-colors border border-transparent hover:border-teal-500/30" title="Enhance Persona via AI">
                                         ${this.getAIGenIcon()}
                                     </button>

@@ -1,0 +1,478 @@
+        /* ==========================================================================
+           [SEC:CSS:WORKSHOP]
+           CHARACTER WORKSHOP
+           The full-screen place to build a character section by section
+           (js/controllers/workshop.js). Styled here because css/tailwind.css is prebuilt.
+           It sits above the character editor (60) and below pickers and confirmations (70).
+           ========================================================================== */
+
+        #character-workshop {
+            position: fixed;
+            inset: 0;
+            z-index: 65;
+            height: 100dvh;
+            display: flex;
+            flex-direction: column;
+            background: #0e131b;
+            color: var(--text-primary);
+            font-family: var(--font-primary);
+            padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+        }
+
+        #character-workshop.hidden {
+            display: none;
+        }
+
+        /* --- Header --------------------------------------------------------------- */
+
+        .ws-header {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+            background: rgba(17, 24, 39, 0.85);
+        }
+
+        .ws-icon-btn {
+            flex-shrink: 0;
+            width: 2.5rem;
+            height: 2.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 0.6rem;
+            color: var(--text-secondary);
+            background: rgba(255, 255, 255, 0.05);
+            transition: background var(--transition-fast), color var(--transition-fast);
+        }
+
+        .ws-icon-btn:hover {
+            background: rgba(20, 184, 166, 0.2);
+            color: #fff;
+        }
+
+        .ws-heading {
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .ws-kicker {
+            font-size: 0.65rem;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--text-accent);
+            font-weight: 700;
+        }
+
+        .ws-name {
+            width: 100%;
+            background: transparent;
+            border: 1px solid transparent;
+            border-radius: 0.4rem;
+            padding: 0.1rem 0.25rem;
+            margin-left: -0.25rem;
+            font-size: 1.15rem;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        .ws-name:focus {
+            outline: none;
+            border-color: rgba(20, 184, 166, 0.5);
+            background: rgba(0, 0, 0, 0.25);
+        }
+
+        .ws-variant {
+            flex-shrink: 0;
+            font-size: 0.75rem;
+            padding: 0.2rem 0.6rem;
+            border-radius: 999px;
+            border: 1px solid rgba(20, 184, 166, 0.45);
+            color: #5eead4;
+            max-width: 9rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        /* --- A chat's own persona hides changes there ------------------------------ */
+
+        .ws-notice {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.5rem 0.75rem;
+            margin: 0.75rem 1rem 0;
+            padding: 0.65rem 0.85rem;
+            border-radius: 0.75rem;
+            border: 1px solid rgba(245, 158, 11, 0.45);
+            background: rgba(245, 158, 11, 0.1);
+            color: #fde68a;
+            font-size: 0.85rem;
+            line-height: 1.45;
+        }
+
+        .ws-notice span {
+            flex: 1 1 16rem;
+        }
+
+        .ws-btn {
+            padding: 0.4rem 0.8rem;
+            border-radius: 0.5rem;
+            background: rgba(255, 255, 255, 0.08);
+            color: #fff;
+            font-size: 0.8rem;
+            font-weight: 600;
+            transition: background var(--transition-fast);
+        }
+
+        .ws-btn:hover {
+            background: rgba(20, 184, 166, 0.35);
+        }
+
+        /* --- Tabs (phone) and panes ------------------------------------------------ */
+
+        .ws-tabs {
+            display: none;
+            gap: 0.25rem;
+            padding: 0.5rem 1rem 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+        }
+
+        .ws-tab {
+            padding: 0.55rem 0.9rem;
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            border-bottom: 2px solid transparent;
+        }
+
+        .ws-tab.is-active {
+            color: #fff;
+            border-bottom-color: var(--text-accent);
+        }
+
+        .ws-body {
+            flex: 1;
+            min-height: 0;
+            display: grid;
+            grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+        }
+
+        .ws-pane {
+            min-height: 0;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            padding: 1rem;
+        }
+
+        #ws-card {
+            border-left: 1px solid rgba(255, 255, 255, 0.07);
+            background: rgba(0, 0, 0, 0.15);
+        }
+
+        /* On a phone, or any narrow window: one pane at a time, picked with the tabs. */
+        body.layout-vertical .ws-tabs {
+            display: flex;
+        }
+
+        body.layout-vertical .ws-body {
+            display: block;
+        }
+
+        body.layout-vertical .ws-pane {
+            display: none;
+            height: 100%;
+        }
+
+        body.layout-vertical .ws-pane.is-active {
+            display: block;
+        }
+
+        body.layout-vertical #ws-card {
+            border-left: none;
+        }
+
+        @media (max-width: 760px) {
+            .ws-tabs {
+                display: flex;
+            }
+
+            .ws-body {
+                display: block;
+            }
+
+            .ws-pane {
+                display: none;
+                height: 100%;
+            }
+
+            .ws-pane.is-active {
+                display: block;
+            }
+
+            #ws-card {
+                border-left: none;
+            }
+        }
+
+        /* --- Cards ----------------------------------------------------------------- */
+
+        .ws-card {
+            margin: 0 auto 0.85rem;
+            max-width: 46rem;
+            padding: 0.85rem 1rem 1rem;
+            border-radius: 0.85rem;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            background: rgba(31, 41, 55, 0.55);
+        }
+
+        .ws-concept {
+            border-color: rgba(20, 184, 166, 0.35);
+        }
+
+        .ws-unsorted {
+            border-color: rgba(245, 158, 11, 0.35);
+        }
+
+        .ws-label {
+            display: block;
+            font-size: 0.7rem;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            font-weight: 700;
+            color: var(--text-accent);
+        }
+
+        .ws-hint {
+            margin: 0.2rem 0 0.6rem;
+            font-size: 0.78rem;
+            line-height: 1.4;
+            color: #8b98a9;
+        }
+
+        .ws-field {
+            display: block;
+            width: 100%;
+            min-height: 3rem;
+            resize: none;
+            overflow: hidden;
+            /* Grows with its text, and re-fits when the screen turns or a hidden tab is shown. */
+            field-sizing: content;
+            padding: 0.6rem 0.75rem;
+            border-radius: 0.6rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(0, 0, 0, 0.3);
+            color: var(--text-primary);
+            /* 16px stops a phone zooming in when the field takes focus. */
+            font-size: 16px;
+            line-height: 1.55;
+            font-family: var(--chat-font-family);
+        }
+
+        .ws-field:focus {
+            outline: none;
+            border-color: rgba(20, 184, 166, 0.6);
+        }
+
+        /* --- Sections -------------------------------------------------------------- */
+
+        .ws-section.is-locked {
+            border-color: rgba(148, 163, 184, 0.35);
+        }
+
+        .ws-section-head {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.4rem 0.6rem;
+            margin-bottom: 0.55rem;
+        }
+
+        .ws-section-title {
+            flex: 1 1 auto;
+            min-width: 8rem;
+            font-size: 1rem;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        .ws-tally {
+            font-size: 0.72rem;
+            color: #5eead4;
+        }
+
+        .ws-tally.is-short {
+            color: #fbbf24;
+        }
+
+        .ws-length {
+            display: inline-flex;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 0.5rem;
+            overflow: hidden;
+        }
+
+        .ws-length-btn {
+            min-width: 2rem;
+            height: 2rem;
+            font-size: 0.72rem;
+            font-weight: 700;
+            color: #8b98a9;
+            background: rgba(0, 0, 0, 0.2);
+        }
+
+        .ws-length-btn + .ws-length-btn {
+            border-left: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .ws-length-btn.is-on {
+            color: #fff;
+            background: rgba(20, 184, 166, 0.35);
+        }
+
+        .ws-lock {
+            width: 2rem;
+            height: 2rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 0.5rem;
+            color: #8b98a9;
+            background: rgba(0, 0, 0, 0.2);
+        }
+
+        .ws-lock.is-on {
+            color: #fff;
+            background: rgba(148, 163, 184, 0.35);
+        }
+
+        /* --- Pins: kept, suggested, and kept but not in the text yet ----------------- */
+
+        .ws-pins {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.4rem;
+            margin-bottom: 0.6rem;
+        }
+
+        .ws-pin {
+            display: inline-flex;
+            align-items: center;
+            max-width: 100%;
+            border-radius: 999px;
+            font-size: 0.8rem;
+            line-height: 1.2;
+        }
+
+        .ws-pin-text {
+            padding: 0.35rem 0.15rem 0.35rem 0.7rem;
+            overflow-wrap: anywhere;
+        }
+
+        .ws-pin.is-kept {
+            background: rgba(20, 184, 166, 0.18);
+            border: 1px solid rgba(20, 184, 166, 0.6);
+            color: #ccfbf1;
+        }
+
+        .ws-pin.is-suggested {
+            border: 1px dashed rgba(148, 163, 184, 0.7);
+            color: #cbd5e1;
+        }
+
+        .ws-pin.is-missing {
+            background: rgba(245, 158, 11, 0.12);
+            border: 1px solid rgba(245, 158, 11, 0.7);
+            color: #fde68a;
+        }
+
+        .ws-pin-btn {
+            flex-shrink: 0;
+            min-width: 1.9rem;
+            height: 1.9rem;
+            border-radius: 999px;
+            color: inherit;
+            opacity: 0.75;
+            font-size: 0.95rem;
+        }
+
+        .ws-pin-btn:hover {
+            opacity: 1;
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .ws-pin.is-suggested .ws-pin-btn:first-child + .ws-pin-text {
+            padding-left: 0.1rem;
+        }
+
+        .ws-pin-add {
+            padding: 0.35rem 0.75rem;
+            border-radius: 999px;
+            border: 1px dashed rgba(20, 184, 166, 0.5);
+            color: #5eead4;
+            font-size: 0.8rem;
+        }
+
+        .ws-pin-input {
+            flex: 1 1 14rem;
+            padding: 0.35rem 0.75rem;
+            border-radius: 999px;
+            border: 1px solid rgba(20, 184, 166, 0.6);
+            background: rgba(0, 0, 0, 0.3);
+            color: #fff;
+            font-size: 16px;
+        }
+
+        .ws-pin-input:focus {
+            outline: none;
+        }
+
+        /* --- Section text, with each pin that made it in highlighted ------------------ */
+
+        .ws-text {
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            line-height: 1.6;
+            font-family: var(--chat-font-family);
+            color: var(--text-primary);
+            padding: 0.6rem 0.75rem;
+            border-radius: 0.6rem;
+            border: 1px solid transparent;
+            background: rgba(0, 0, 0, 0.18);
+            cursor: text;
+        }
+
+        .ws-text:hover,
+        .ws-text:focus {
+            outline: none;
+            border-color: rgba(255, 255, 255, 0.12);
+        }
+
+        .ws-text.is-empty {
+            color: #6b7785;
+            font-style: italic;
+        }
+
+        .ws-mark {
+            color: inherit;
+            background: rgba(20, 184, 166, 0.2);
+            border-bottom: 1px solid rgba(45, 212, 191, 0.8);
+            border-radius: 0.15rem;
+        }
+
+        /* --- The card as replies read it --------------------------------------------- */
+
+        .ws-preview {
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            font-size: 0.9rem;
+            line-height: 1.55;
+            color: var(--text-secondary);
+            padding: 0.65rem 0.75rem;
+            border-radius: 0.6rem;
+            background: rgba(0, 0, 0, 0.25);
+        }

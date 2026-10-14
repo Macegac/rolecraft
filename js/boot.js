@@ -310,6 +310,9 @@
                     window.scrollTo(0, document.body.scrollHeight);
                 }, 100);
 
+                // A character made with "New character" opens in the Workshop once its story has loaded.
+                WorkshopController.openPending();
+
                 // --- Onboarding: Show welcome modal on first-ever launch ---
                 if (isFirstLaunch && !localStorage.getItem('onboarding_dismissed')) {
                     setTimeout(() => {

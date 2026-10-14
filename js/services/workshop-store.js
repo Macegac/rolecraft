@@ -34,15 +34,34 @@
                 { id: 'likes', title: 'Likes & dislikes', target: 'description', length: 'short' }
             ],
 
+            /** Headings found in cards and written by the Story Architect, and the section each belongs to. */
+            HEADINGS: {
+                appearance: ['appearance & body', 'appearance and body', 'appearance', 'body', 'looks', 'physical description'],
+                personality: ['personality', 'description', 'traits', 'personality traits'],
+                sexuality: ['sexuality'],
+                relationship: ['relationship to {{user}}', 'relationship to user', 'relationship', 'relationships'],
+                background: ['background', 'personal history', 'history', 'backstory'],
+                voice: ['voice', 'speech', 'speech style', 'speaking style'],
+                scenario: ['scenario'],
+                kinks: ['kinks & limits', 'kinks and limits', 'kinks', 'limits'],
+                secrets: ['secrets & wants', 'secrets and wants', 'secrets', 'wants', 'goals', 'character intentions'],
+                wardrobe: ['wardrobe', 'clothing', 'outfit', 'outfits'],
+                likes: ['likes & dislikes', 'likes and dislikes', 'likes', 'dislikes', 'fears and joys']
+            },
+
             newId(prefix) {
                 return `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
             },
 
-            /** A character with no concept, no notes and every section empty. */
+            /**
+             * A character with nothing in it yet. `unsorted` holds card text that has not been put into
+             * a section; it stays in the description word for word until it is sorted.
+             */
             blankState() {
                 return {
                     concept: '',
                     notes: '',
+                    unsorted: '',
                     sections: this.sectionDefs.map(d => ({
                         id: d.id, title: d.title, target: d.target, pins: [], text: '', pinMap: {}, locked: false, length: d.length, at: 0
                     }))
@@ -65,13 +84,15 @@
                 const changes = [
                     { section: '_concept', before: null, after: state.concept || '' },
                     { section: '_notes', before: null, after: state.notes || '' },
+                    { section: '_unsorted', before: null, after: state.unsorted || '' },
                     ...state.sections.map(s => ({ section: s.id, before: null, after: this._copy(s) }))
                 ];
+                const start = { concept: state.concept || '', notes: state.notes || '', unsorted: state.unsorted || '', sections: this._copy(state.sections) };
                 return {
                     v: this.VERSION,
                     active: 'v_main',
                     original: { description: original.description || '', scenario: original.scenario || '' },
-                    variants: [{ id: 'v_main', name: 'Main', head: commitId, at: now, state: { concept: state.concept || '', notes: state.notes || '', sections: this._copy(state.sections) } }],
+                    variants: [{ id: 'v_main', name: 'Main', head: commitId, at: now, state: start }],
                     commits: [{ id: commitId, parent: null, variant: 'v_main', at: now, origin, summary, changes }],
                     avoid: {}
                 };
@@ -110,6 +131,7 @@
                 const changes = [];
                 if ((a.concept || '') !== (b.concept || '')) changes.push({ section: '_concept', before: a.concept || '', after: b.concept || '' });
                 if ((a.notes || '') !== (b.notes || '')) changes.push({ section: '_notes', before: a.notes || '', after: b.notes || '' });
+                if ((a.unsorted || '') !== (b.unsorted || '')) changes.push({ section: '_unsorted', before: a.unsorted || '', after: b.unsorted || '' });
                 const before = new Map(a.sections.map(s => [s.id, s]));
                 const after = new Map(b.sections.map(s => [s.id, s]));
                 for (const id of new Set([...before.keys(), ...after.keys()])) {
@@ -136,7 +158,7 @@
             stateAt(ws, commitId) {
                 const path = this.lineage(ws, commitId);
                 if (path.length === 0) return null;
-                return path.reduce((state, c) => this._apply(state, c.changes), { concept: '', notes: '', sections: [] });
+                return path.reduce((state, c) => this._apply(state, c.changes), { concept: '', notes: '', unsorted: '', sections: [] });
             },
 
             /**
@@ -165,14 +187,73 @@
             },
 
             /**
-             * The description every reply reads: each section with words in it, under its heading.
-             * Scenario is left out; it goes to the card's scenario field instead.
+             * The description every reply reads: card text not yet sorted into a section, as it was,
+             * then each section with words in it, under its heading. Scenario is left out; it goes to
+             * the card's scenario field instead.
              */
             compile(state) {
-                return state.sections
+                const unsorted = String(state.unsorted || '').trim();
+                const sections = state.sections
                     .filter(s => s.target === 'description' && String(s.text || '').trim())
-                    .map(s => `## ${s.title}\n${s.text.trim()}`)
-                    .join('\n\n');
+                    .map(s => `## ${s.title}\n${s.text.trim()}`);
+                return (unsorted ? [unsorted, ...sections] : sections).join('\n\n');
+            },
+
+            /**
+             * Splits a card's description by its headings, without any AI. A heading the Workshop
+             * knows sends its text to that section. Text before the first heading, and text under a
+             * heading it does not know (kept with its heading), stays unsorted, word for word.
+             * @param {string} text
+             * @returns {{sections: Object<string, string>, unsorted: string}}
+             */
+            splitCard(text) {
+                const lookup = new Map();
+                for (const [id, names] of Object.entries(this.HEADINGS)) names.forEach(name => lookup.set(name, id));
+                const sections = {};
+                const unsorted = [];
+                let block = { id: null, heading: null, lines: [] };
+                const finish = () => {
+                    const body = block.lines.join('\n').trim();
+                    if (block.id) {
+                        if (body) sections[block.id] = sections[block.id] ? `${sections[block.id]}\n\n${body}` : body;
+                    } else {
+                        const kept = [block.heading, body].filter(Boolean).join('\n').trim();
+                        if (kept) unsorted.push(kept);
+                    }
+                };
+                for (const line of String(text || '').split(/\r?\n/)) {
+                    const heading = line.match(/^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$/);
+                    if (heading) {
+                        finish();
+                        const name = heading[1].replace(/[*_:]+/g, '').trim().toLowerCase();
+                        block = { id: lookup.get(name) || null, heading: line.trim(), lines: [] };
+                    } else {
+                        block.lines.push(line);
+                    }
+                }
+                finish();
+                return { sections, unsorted: unsorted.join('\n\n') };
+            },
+
+            /**
+             * The pin check for one section: each kept pin is found, with its place, or missing. A
+             * pin counts as found where the model said it landed or, failing that, where its own
+             * words appear. An empty section has nothing to check yet.
+             * @returns {{landed: Array<{id: string, start: number, end: number}>, missing: string[]}}
+             */
+            checkPins(section) {
+                const text = String(section.text || '');
+                const kept = (section.pins || []).filter(p => p.state === 'kept');
+                if (!text.trim() || kept.length === 0) return { landed: [], missing: [] };
+                const map = section.pinMap || {};
+                const landed = [];
+                const missing = [];
+                for (const pin of kept) {
+                    const where = this.locate(text, map[pin.id]) || this.locate(text, pin.text);
+                    if (where) landed.push({ id: pin.id, start: where[0], end: where[1] });
+                    else missing.push(pin.id);
+                }
+                return { landed, missing };
             },
 
             /**
@@ -239,11 +320,12 @@
             },
 
             _apply(state, changes) {
-                let { concept, notes } = state;
+                let { concept, notes, unsorted } = state;
                 const sections = state.sections.slice();
                 for (const ch of changes) {
                     if (ch.section === '_concept') concept = ch.after;
                     else if (ch.section === '_notes') notes = ch.after;
+                    else if (ch.section === '_unsorted') unsorted = ch.after;
                     else {
                         const i = sections.findIndex(s => s.id === ch.section);
                         if (ch.after === null) {
@@ -255,7 +337,7 @@
                         }
                     }
                 }
-                return { concept, notes, sections };
+                return { concept, notes, unsorted: unsorted || '', sections };
             },
 
             /**
@@ -267,6 +349,7 @@
                 return {
                     concept: next.concept || '',
                     notes: next.notes || '',
+                    unsorted: next.unsorted || '',
                     sections: next.sections.map(s => {
                         const copy = this._copy(s);
                         const old = before.get(s.id);

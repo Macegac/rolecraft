@@ -3101,7 +3101,7 @@ test('WorkshopStore: eleven sections in card order, with Scenario aimed at the s
 test('WorkshopStore: a commit holds only what changed, before and after, and stamps that section', () => {
     const ws0 = WorkshopStore.create({ state: { ...WorkshopStore.blankState(), concept: 'A medic on the night shift.' },
         original: { description: 'Old card text.', scenario: 'Old scenario.' }, now: 100, commitId: 'c0' });
-    assert.equal(ws0.commits[0].changes.length, 13, 'the first commit holds every part: concept, notes and eleven sections');
+    assert.equal(ws0.commits[0].changes.length, 14, 'the first commit holds every part: concept, notes, unsorted text and eleven sections');
     deepEq(ws0.original, { description: 'Old card text.', scenario: 'Old scenario.' });
 
     const untouched = JSON.stringify(ws0);
@@ -3251,4 +3251,89 @@ test('Workshop changes: when a save is already running, wait for it, then save a
     setTimeout(() => { p.store._isSaving = false; }, 150);
     await p.WC.applyWorkshop('ch1', WorkshopStore.create({ now: 1, commitId: 'c0' }));
     deepEq(p.events, ['saved'], 'saved after the other save finished, not skipped while it ran');
+});
+
+// ─── The Workshop screen ─────────────────────────────────────────────────────
+
+test('WorkshopStore: a card splits by its headings, and everything it cannot place stays unsorted word for word', () => {
+    const card = 'Intro line before any heading.\n\n### Appearance\nTall and lean.\n\n### Description\nWry, guarded.\n\n'
+        + '### Mannerisms\nTaps the table when thinking.\n\n## Fears and Joys\nHates boats.\n\n## Likes\nRain.';
+    const split = WorkshopStore.splitCard(card);
+    deepEq(split.sections, { appearance: 'Tall and lean.', personality: 'Wry, guarded.', likes: 'Hates boats.\n\nRain.' },
+        "the Story Architect's headings land in the Workshop's sections; two headings for one section are joined");
+    assert.equal(split.unsorted, 'Intro line before any heading.\n\n### Mannerisms\nTaps the table when thinking.',
+        'text before the first heading, and an unknown heading with its text, are kept as they were');
+    deepEq(WorkshopStore.splitCard('Just prose, no headings.'), { sections: {}, unsorted: 'Just prose, no headings.' });
+
+    const state = withTexts(WorkshopStore.blankState(), { appearance: 'Tall.', relationship: 'Owes you a favour.', scenario: 'A storm.' });
+    const again = WorkshopStore.splitCard(WorkshopStore.compile(state));
+    deepEq(again, { sections: { appearance: 'Tall.', relationship: 'Owes you a favour.' }, unsorted: '' }, "the Workshop's own headings split back where they came from");
+});
+
+test('WorkshopStore: unsorted card text comes first in the description, exactly as it was', () => {
+    const state = { ...withTexts(WorkshopStore.blankState(), { voice: 'Clipped.' }), unsorted: '  Loose intro.  ' };
+    assert.equal(WorkshopStore.compile(state), 'Loose intro.\n\n## Voice\nClipped.');
+    const plain = { ...WorkshopStore.blankState(), unsorted: 'A card with no headings at all.' };
+    assert.equal(WorkshopStore.compile(plain), 'A card with no headings at all.', 'a card with no headings compiles back to itself');
+    let ws = WorkshopStore.create({ state: plain, now: 1, commitId: 'c0' });
+    ws = WorkshopStore.commit(ws, { ...WorkshopStore.active(ws).state, unsorted: 'Trimmed.' }, { now: 2, commitId: 'c1' });
+    assert.equal(WorkshopStore.stateAt(ws, 'c0').unsorted, 'A card with no headings at all.', 'unsorted text has a history too');
+    assert.equal(ws.commits.at(-1).changes[0].section, '_unsorted');
+});
+
+test('WorkshopStore: the pin check counts kept pins only, by where the model put them or by their own words', () => {
+    const section = {
+        text: 'She never raises her voice. Rain makes her restless.',
+        pinMap: { a: 'never raises her voice' },
+        pins: [
+            { id: 'a', text: 'calm', state: 'kept' },
+            { id: 'b', text: 'Rain makes her restless', state: 'kept' },
+            { id: 'c', text: 'afraid of dogs', state: 'kept' },
+            { id: 'd', text: 'a suggestion', state: 'suggested' }
+        ]
+    };
+    const check = WorkshopStore.checkPins(section);
+    deepEq(check.landed.map(l => [l.id, section.text.slice(l.start, l.end)]), [['a', 'never raises her voice'], ['b', 'Rain makes her restless']]);
+    deepEq(check.missing, ['c'], 'a suggested pin is not checked until it is kept');
+    deepEq(WorkshopStore.checkPins({ ...section, text: '  ' }), { landed: [], missing: [] }, 'an empty section has nothing to check yet');
+});
+
+test('Workshop screen: a character without a Workshop starts from its card, and nothing is saved by opening it', () => {
+    const p = workshopApplyPage();
+    const ws = p.WC._fromCard({ id: 'ch1', description: 'Loose intro.\n\n### Appearance\nTall.' });
+    const state = WorkshopStore.active(ws).state;
+    assert.equal(state.unsorted, 'Loose intro.');
+    assert.equal(state.sections.find(s => s.id === 'appearance').text, 'Tall.');
+    deepEq(ws.original, { description: 'Loose intro.\n\n### Appearance\nTall.', scenario: '' });
+    assert.equal(ws.commits[0].summary, 'Taken from the card');
+    deepEq(p.events, [], 'nothing saved');
+    assert.equal(p.characters[0].workshop, undefined, 'and nothing written to the character');
+
+    const blank = p.WC._fromCard({ id: 'ch1', description: '' });
+    assert.equal(blank.commits[0].summary, 'Started');
+    assert.equal(WorkshopStore.compile(WorkshopStore.active(p.WC._fromCard({ description: 'No headings here.' })).state), 'No headings here.',
+        'a card with no headings compiles back to exactly itself, so a first edit elsewhere loses nothing');
+});
+
+test('Workshop screen: wired in, with every way in and every button handled', () => {
+    const html = fs.readFileSync(HTML_PATH, 'utf8');
+    const controller = fs.readFileSync(path.join(__dirname, 'js', 'controllers', 'workshop.js'), 'utf8');
+    for (const id of ['character-workshop', 'ws-name', 'ws-variant', 'ws-notice', 'ws-sections', 'ws-card']) {
+        assert.ok(html.includes(`id="${id}"`), `${id} is in the page`);
+    }
+    assert.match(html, /<link rel="stylesheet" href="css\/workshop\.css\?v=[0-9a-f]+">/, 'its stylesheet is linked');
+    const actions = new Set([...html.matchAll(/data-action(?:-change)?="(workshop-[a-z-]+|open-workshop)"/g), ...controller.matchAll(/data-action="(workshop-[a-z-]+)"/g)].map(m => m[1]));
+    for (const action of actions) assert.ok(controller.includes(`ActionHandler.register('${action}'`), `${action} has a handler`);
+
+    const ui = fs.readFileSync(path.join(__dirname, 'js', 'ui', 'ui-manager.js'), 'utf8');
+    assert.ok(ui.includes('data-action="open-workshop" data-id="${char.id}"'), "the character editor's Prompts tab opens it");
+    const menu = html.slice(html.indexOf('id="character-context-menu"'), html.indexOf('id="message-context-menu"'));
+    assert.ok(menu.includes('data-action="open-workshop"'), 'a long press on a name in the chat opens it');
+    const handler = fs.readFileSync(path.join(__dirname, 'js', 'core', 'action-handler.js'), 'utf8');
+    assert.ok(handler.includes('WorkshopController.canOpen(charId)'), 'and is hidden there for you, the narrator and places');
+    const dropdown = html.slice(html.indexOf('id="new-story-dropdown"'), html.indexOf('<!-- Close Button -->', html.indexOf('id="new-story-dropdown"')));
+    assert.ok(dropdown.includes('data-action="workshop-new-character"'), 'New Character is in the library');
+    const boot = fs.readFileSync(path.join(__dirname, 'js', 'boot.js'), 'utf8');
+    assert.ok(boot.includes('WorkshopController.openPending();'), 'a new character opens in the Workshop after its story loads');
+    assert.ok(controller.includes("history.pushState(") && controller.includes("addEventListener('popstate'"), "Android's back button closes it");
 });
