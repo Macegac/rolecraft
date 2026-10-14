@@ -99,7 +99,7 @@
              * @param {string} primaryCharId - The ID of the primary character.
              * @returns {Promise<Uint8Array>} - The PNG buffer with embedded data.
              */
-            async exportStoryAsV2(story, narrative, primaryCharId) {
+            async exportStoryAsV2(story, narrative, primaryCharId, pick = 'current') {
                 const primaryChar = story.characters.find(c => c.id === primaryCharId);
                 if (!primaryChar) throw new Error("V2 export requires a selected primary character.");
                 let originalImageBlob = null;
@@ -110,17 +110,66 @@
                         if (response.ok) originalImageBlob = await response.blob();
                     } catch (fetchError) { }
                 }
-                if (!originalImageBlob) throw new Error("V2 export requires the primary character to have a valid image.");
+                if (!originalImageBlob) originalImageBlob = await this._standInPortrait(primaryChar.name || 'Unnamed');
 
                 let pngBlob;
                 try {
-                    if (originalImageBlob.type === 'image/png') pngBlob = originalImageBlob;
+                    if (await this._isPngBlob(originalImageBlob)) pngBlob = originalImageBlob;
                     else pngBlob = await ImageProcessor.convertBlobToPNGBlob(originalImageBlob);
                 } catch (conversionError) { throw new Error("Failed to convert character image to PNG format for export."); }
 
-                const v2Object = this._convertEllipsistoV2(story, narrative, primaryCharId);
+                const v2Object = this._convertEllipsistoV2(story, narrative, primaryCharId, pick);
                 const pngImageBuffer = await pngBlob.arrayBuffer();
                 return this._injectDataIntoPng(pngImageBuffer, v2Object);
+            },
+
+            /**
+             * Whether an image really is a PNG, by its first bytes. Its type comes from the file name,
+             * and a JPEG saved as .png (like the demo portraits) says image/png.
+             * @private
+             */
+            async _isPngBlob(blob) {
+                const head = new Uint8Array(await blob.slice(0, 8).arrayBuffer());
+                return [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A].every((byte, i) => head[i] === byte);
+            },
+
+            /**
+             * A plain portrait for a character with no image yet, so its card can still be exported:
+             * the name on a dark ground, 512 by 768, the usual card shape.
+             * @param {string} name
+             * @returns {Promise<Blob>} A PNG.
+             * @private
+             */
+            async _standInPortrait(name) {
+                const W = 512;
+                const H = 768;
+                const canvas = document.createElement('canvas');
+                canvas.width = W;
+                canvas.height = H;
+                const ctx = canvas.getContext('2d');
+                const ground = ctx.createLinearGradient(0, 0, 0, H);
+                ground.addColorStop(0, '#16202b');
+                ground.addColorStop(1, '#0b1016');
+                ctx.fillStyle = ground;
+                ctx.fillRect(0, 0, W, H);
+                ctx.strokeStyle = 'rgba(45, 212, 191, 0.45)';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(18, 18, W - 36, H - 36);
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                // A long name shrinks until it fits.
+                let size = 44;
+                ctx.font = `700 ${size}px Inter, sans-serif`;
+                while (size > 18 && ctx.measureText(name).width > W - 80) {
+                    size -= 2;
+                    ctx.font = `700 ${size}px Inter, sans-serif`;
+                }
+                ctx.fillStyle = '#ccfbf1';
+                ctx.fillText(name, W / 2, H / 2 - 12);
+                ctx.font = '500 16px Inter, sans-serif';
+                ctx.fillStyle = 'rgba(204, 251, 241, 0.45)';
+                ctx.fillText('No portrait yet', W / 2, H / 2 + 32);
+                return new Promise((resolve, reject) => canvas.toBlob(blob => (blob ? resolve(blob) : reject(new Error('Could not draw a stand-in portrait.'))), 'image/png'));
             },
 
             /**
@@ -656,6 +705,9 @@
             async _parseEllipsisJSON(file) {
                 const jsonString = await file.text();
                 const story = JSON.parse(jsonString);
+                // A character card saved as JSON comes in the way a PNG card does.
+                const card = this._cardFromJSON(story);
+                if (card) return { story: this._convertV2toEllipsis(card), imageBlob: null };
                 if (!story.id || !story.name || !story.characters) throw new Error("Invalid Ellipsis JSON file.");
 
                 story.id = UTILITY.uuid();
@@ -719,6 +771,18 @@
                 (story.dynamic_entries || []).forEach(e => e.id = UTILITY.uuid());
 
                 return { story, imageBlob: null };
+            },
+
+            /**
+             * A character card's fields when a JSON file is one: V3 or V2 (under data), or V1 (flat).
+             * Null for anything else, such as a Rolecraft story, which has a list of characters.
+             * @private
+             */
+            _cardFromJSON(json) {
+                if (!json || typeof json !== 'object' || Array.isArray(json.characters)) return null;
+                if ((json.spec === 'chara_card_v2' || json.spec === 'chara_card_v3') && json.data && typeof json.data === 'object') return json.data;
+                const v1 = typeof json.name === 'string' && ['description', 'personality', 'first_mes'].some(key => typeof json[key] === 'string');
+                return v1 ? json : null;
             },
 
             /**
@@ -1052,6 +1116,19 @@
                     is_narrator: false
                 };
 
+                // A card made in the Workshop brings the whole Workshop back, and replies read the
+                // description it builds, as they did before the card left.
+                const extensions = (v2Data.extensions && typeof v2Data.extensions === 'object') ? v2Data.extensions : {};
+                const carried = extensions[WorkshopStore.CARD_KEY];
+                const workshop = carried ? WorkshopStore.fromCard(carried, { description: v2Data.description, personality: v2Data.personality, scenario: v2Data.scenario }) : null;
+                if (workshop) {
+                    aiChar.workshop = workshop;
+                    aiChar.description = WorkshopStore.compile(WorkshopStore.active(workshop).state);
+                    aiChar.short_description = UTILITY.truncateShortDescription(aiChar.description);
+                }
+                // Its own Scenario section stays in the Workshop, out of replies, as it was.
+                const scenarioIsWorkshops = !!(workshop && carried.exported && carried.exported.ownScenario);
+
                 // Who made the card, kept with the story rather than lost on the way in.
                 if (v2Data.creator) story.card_creator = String(v2Data.creator);
                 if (v2Data.character_version) story.card_version = String(v2Data.character_version);
@@ -1113,7 +1190,7 @@
 
                 // NEW: Parse V2 Scenario into Static Entry
                 const staticEntries = [];
-                if (v2Data.scenario) {
+                if (v2Data.scenario && !scenarioIsWorkshops) {
                     staticEntries.push({
                         id: UTILITY.uuid(),
                         title: "Imported Scenario",
@@ -1164,12 +1241,17 @@
              * @returns {Object} - The V2 data object.
              * @private
              */
-            _convertEllipsistoV2(story, narrative, primaryCharId) {
+            _convertEllipsistoV2(story, narrative, primaryCharId, pick = 'current') {
                 const primaryChar = story.characters.find(c => c.id === primaryCharId);
                 const activeIDs = narrative.active_character_ids || story.characters.map(c => c.id);
                 const otherAiChars = story.characters.filter(c => !c.is_user && c.id !== primaryCharId && activeIDs.includes(c.id));
                 if (!primaryChar) throw new Error("Primary character not found.");
-                let fullDescription = primaryChar.description || "";
+                // A character built in the Workshop shows the version picked for the card, and its
+                // Scenario section is the card's scenario when it has one.
+                const workshop = primaryChar.workshop || null;
+                const fields = workshop ? WorkshopStore.cardFields(workshop, pick) : null;
+                if (workshop && !fields) throw new Error("That version of the character is no longer in its Workshop.");
+                let fullDescription = fields ? fields.description : (primaryChar.description || "");
                 if (otherAiChars.length > 0) {
                     fullDescription += "\n\n--- Other Characters ---\n";
                     otherAiChars.forEach(char => {
@@ -1229,7 +1311,9 @@
                 }).join('\n');
                 const firstMessageEntry = (narrative.state.chat_history || []).find(m => !m.isHidden && m.type === 'chat');
                 const firstMes = firstMessageEntry ? replacePlaceholdersV2(firstMessageEntry.content) : replacePlaceholdersV2(`The story of ${primaryChar.name} begins.`);
-                const scenarioText = (narrative.state.static_entries || []).map(entry => `[${entry.title || 'Untitled Entry'}]\n${entry.content || '(No content)'}`).join('\n\n---\n\n');
+                const ownScenario = !!(fields && fields.scenario);
+                const scenarioText = ownScenario ? fields.scenario
+                    : (narrative.state.static_entries || []).map(entry => `[${entry.title || 'Untitled Entry'}]\n${entry.content || '(No content)'}`).join('\n\n---\n\n');
                 const v2Data = {
                     name: primaryChar.name || "",
                     description: replacePlaceholdersV2(fullDescription),
@@ -1253,6 +1337,11 @@
                     tags: primaryChar.tags || [],
                     creator: story.card_creator || "", character_version: story.card_version || "", extensions: {}
                 };
+                // The whole Workshop rides along, so importing the card brings it back.
+                if (workshop) {
+                    v2Data.extensions[WorkshopStore.CARD_KEY] = WorkshopStore.toCard(workshop, pick,
+                        { description: v2Data.description, personality: v2Data.personality, scenario: v2Data.scenario, ownScenario });
+                }
                 return { spec: 'chara_card_v2', spec_version: '2.0', data: v2Data };
             },
 
@@ -1404,7 +1493,8 @@
             _utf8_to_b64(str) { return btoa(unescape(encodeURIComponent(str))); },
 
             /**
-             * Extracts V2 data from a PNG buffer.
+             * The card data in a PNG, still base64: a V3 card (ccv3) when there is one, otherwise a V2
+             * or V1 card (chara). Either can be in a tEXt, zTXt or iTXt chunk.
              * @param {ArrayBuffer} arrayBuffer - The PNG buffer.
              * @returns {Promise<string|null>} - The extracted data string or null.
              * @private
@@ -1413,82 +1503,84 @@
                 const dataView = new DataView(arrayBuffer);
                 const PNG_SIGNATURE = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
                 for (let i = 0; i < PNG_SIGNATURE.length; i++) { if (dataView.getUint8(i) !== PNG_SIGNATURE[i]) throw new Error("Invalid PNG signature."); }
+                const found = {};
                 let offset = 8;
                 while (offset < arrayBuffer.byteLength) {
                     const length = dataView.getUint32(offset);
                     const type = String.fromCharCode.apply(null, new Uint8Array(arrayBuffer, offset + 4, 4));
-                    if (['tEXt', 'zTXt'].includes(type)) {
-                        let keywordEnd = -1;
-                        for (let i = 0; i < length; i++) { if (dataView.getUint8(offset + 8 + i) === 0) { keywordEnd = i; break; } }
-                        if (keywordEnd !== -1) {
-                            const keyword = new TextDecoder().decode(new Uint8Array(arrayBuffer, offset + 8, keywordEnd));
-                            if (keyword === 'chara') {
-                                if (type === 'tEXt') return new TextDecoder().decode(new Uint8Array(arrayBuffer, offset + 8 + keywordEnd + 1, length - keywordEnd - 1));
-                                if (type === 'zTXt') return new TextDecoder().decode(pako.inflate(new Uint8Array(arrayBuffer, offset + 8 + keywordEnd + 2, length - keywordEnd - 2)));
-                            }
-                        }
-                    }
                     if (type === 'IEND') break;
+                    if (['tEXt', 'zTXt', 'iTXt'].includes(type)) {
+                        const body = new Uint8Array(arrayBuffer, offset + 8, length);
+                        const keywordEnd = body.indexOf(0);
+                        const keyword = keywordEnd > 0 ? new TextDecoder().decode(body.subarray(0, keywordEnd)).toLowerCase() : '';
+                        if ((keyword === 'chara' || keyword === 'ccv3') && !(keyword in found)) found[keyword] = this._chunkText(type, body, keywordEnd);
+                    }
                     offset += 12 + length;
                 }
-                return null;
+                return found.ccv3 || found.chara || null;
+            },
+
+            /** The text of a tEXt, zTXt or iTXt chunk, after its keyword. */
+            _chunkText(type, body, keywordEnd) {
+                const decode = bytes => new TextDecoder().decode(bytes);
+                if (type === 'tEXt') return decode(body.subarray(keywordEnd + 1));
+                if (type === 'zTXt') return decode(pako.inflate(body.subarray(keywordEnd + 2)));
+                // iTXt: a compressed flag and a method byte, then a language tag and a translated keyword, each ending in a zero byte.
+                const compressed = body[keywordEnd + 1] === 1;
+                const languageEnd = body.indexOf(0, keywordEnd + 3);
+                const translatedEnd = body.indexOf(0, languageEnd + 1);
+                const text = body.subarray(translatedEnd + 1);
+                return decode(compressed ? pako.inflate(text) : text);
             },
 
             /**
-             * Injects V2 data into a PNG buffer.
+             * Writes the card into a PNG as a tEXt chunk named chara, just before IEND. SillyTavern
+             * reads card data from tEXt chunks only, so a compressed zTXt card is invisible to it. Any
+             * card chunk already in the image (chara or ccv3, of any text type) is taken out first, so
+             * an older card can't be read in place of this one.
              * @param {ArrayBuffer} imageBuffer - The source PNG buffer.
              * @param {Object} v2Object - The V2 data object.
-             * @returns {Promise<Uint8Array>} - The new PNG buffer.
+             * @returns {Promise<Blob>} - The new PNG.
              * @private
              */
             async _injectDataIntoPng(imageBuffer, v2Object) {
                 const _CRC_TABLE = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1); return c; });
                 const _crc32 = (bytes) => { let crc = -1; for (const byte of bytes) crc = (crc >>> 8) ^ _CRC_TABLE[(crc ^ byte) & 0xff]; return (crc ^ -1) >>> 0; };
-                const jsonDataString = JSON.stringify(v2Object);
-                const base64Data = this._utf8_to_b64(jsonDataString);
-                const base64Bytes = new TextEncoder().encode(base64Data);
-                const compressedData = pako.deflate(base64Bytes);
-                const keyword = 'chara';
-                const keywordBytes = new TextEncoder().encode(keyword);
-                const chunkData = new Uint8Array(keywordBytes.length + 1 + 1 + compressedData.length);
-                chunkData.set(keywordBytes);
-                chunkData[keywordBytes.length] = 0;
-                chunkData[keywordBytes.length + 1] = 0;
-                chunkData.set(compressedData, keywordBytes.length + 2);
-                const chunkType = new TextEncoder().encode('zTXt');
+                const encoder = new TextEncoder();
+                const chunkData = encoder.encode(`chara\0${this._utf8_to_b64(JSON.stringify(v2Object))}`);
+                const chunkType = encoder.encode('tEXt');
                 const dataForCrc = new Uint8Array(chunkType.length + chunkData.length);
                 dataForCrc.set(chunkType);
                 dataForCrc.set(chunkData, chunkType.length);
-                const crc = _crc32(dataForCrc);
+                const newChunk = new Uint8Array(12 + chunkData.length);
+                const newChunkView = new DataView(newChunk.buffer);
+                newChunkView.setUint32(0, chunkData.length);
+                newChunk.set(chunkType, 4);
+                newChunk.set(chunkData, 8);
+                newChunkView.setUint32(8 + chunkData.length, _crc32(dataForCrc));
+
                 const originalPng = new Uint8Array(imageBuffer);
-                const dataView = new DataView(originalPng.buffer);
-                let iendOffset = -1;
+                const dataView = new DataView(originalPng.buffer, originalPng.byteOffset, originalPng.byteLength);
+                const parts = [originalPng.subarray(0, 8)];
                 let offset = 8;
+                let ended = false;
                 while (offset < originalPng.length) {
                     const length = dataView.getUint32(offset);
-                    const type = String.fromCharCode.apply(null, originalPng.slice(offset + 4, offset + 8));
+                    const type = String.fromCharCode.apply(null, originalPng.subarray(offset + 4, offset + 8));
+                    const chunk = originalPng.subarray(offset, offset + 12 + length);
                     if (type === 'IEND') {
-                        iendOffset = offset;
+                        parts.push(newChunk, chunk);
+                        ended = true;
                         break;
                     }
+                    const body = originalPng.subarray(offset + 8, offset + 8 + length);
+                    const keywordEnd = body.indexOf(0);
+                    const keyword = keywordEnd > 0 ? new TextDecoder().decode(body.subarray(0, keywordEnd)).toLowerCase() : '';
+                    const oldCard = ['tEXt', 'zTXt', 'iTXt'].includes(type) && (keyword === 'chara' || keyword === 'ccv3');
+                    if (!oldCard) parts.push(chunk);
                     offset += 12 + length;
                 }
-                if (iendOffset === -1) throw new Error('Could not find IEND chunk.');
-                const newChunkLength = chunkData.length;
-                const newPngSize = iendOffset + (12 + newChunkLength) + 12;
-                const newPng = new Uint8Array(newPngSize);
-                const newPngView = new DataView(newPng.buffer);
-                newPng.set(originalPng.slice(0, iendOffset));
-                let writeOffset = iendOffset;
-                newPngView.setUint32(writeOffset, newChunkLength);
-                writeOffset += 4;
-                newPng.set(chunkType, writeOffset);
-                writeOffset += chunkType.length;
-                newPng.set(chunkData, writeOffset);
-                writeOffset += chunkData.length;
-                newPngView.setUint32(writeOffset, crc);
-                writeOffset += 4;
-                newPng.set(originalPng.slice(iendOffset, iendOffset + 12), writeOffset);
-                return new Blob([newPng], { type: 'image/png' });
+                if (!ended) throw new Error('Could not find IEND chunk.');
+                return new Blob(parts, { type: 'image/png' });
             }
         };

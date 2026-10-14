@@ -3229,6 +3229,78 @@ test('WorkshopStore: proposals stay with the variant they were written for', () 
     deepEq(ws.parked, { v_dark: { _sort: { kind: 'sort', leftover: 'For Darker.' } } });
 });
 
+/** A Workshop with a history and a second variant, from a card that said "Old card text." */
+function cardWorkshop() {
+    let ws = WorkshopStore.create({
+        state: withTexts(WorkshopStore.blankState(), { appearance: 'Tall.', scenario: 'A storm traps you both.' }),
+        original: { description: 'Old card text.', scenario: '' }, now: 1, commitId: 'c0'
+    });
+    ws = WorkshopStore.commit(ws, withTexts(WorkshopStore.active(ws).state, { personality: 'Guarded.' }), { now: 2, commitId: 'c1', summary: 'Guarded' });
+    ws = WorkshopStore.branch(ws, 'c0', { name: 'Softer', now: 3, variantId: 'v_soft' });
+    ws = WorkshopStore.commit(ws, withTexts(WorkshopStore.active(ws).state, { personality: 'Gentle.' }), { now: 4, commitId: 'c2' });
+    return WorkshopStore.switchVariant(ws, 'v_main');
+}
+
+test('WorkshopStore: a card shows any version of the character: as it is now, the original, a variant or a saved point', () => {
+    const ws = cardWorkshop();
+    deepEq(WorkshopStore.cardFields(ws, 'current'),
+        { description: '## Appearance & body\nTall.\n\n## Personality\nGuarded.', scenario: 'A storm traps you both.' },
+        'the sections under their headings, and the Scenario section for the scenario');
+    deepEq(WorkshopStore.cardFields(ws), JSON.parse(JSON.stringify(WorkshopStore.cardFields(ws, 'current'))), 'as it is now, by default');
+    deepEq(WorkshopStore.cardFields(ws, 'original'), { description: 'Old card text.', scenario: '' }, 'the card exactly as it came in');
+    assert.equal(WorkshopStore.cardFields(ws, 'v_soft').description, '## Appearance & body\nTall.\n\n## Personality\nGentle.');
+    assert.equal(WorkshopStore.cardFields(ws, 'c0').description, '## Appearance & body\nTall.', 'any saved point');
+    assert.equal(WorkshopStore.cardFields(ws, 'nope'), null);
+});
+
+test('WorkshopStore: a card carries the whole Workshop, and a fingerprint of the text it was written with', () => {
+    const ws = cardWorkshop();
+    const written = { description: 'D', personality: '', scenario: 'S', ownScenario: true };
+    const carried = WorkshopStore.toCard(ws, 'v_soft', written, 9);
+    assert.equal(carried.format, 1);
+    deepEq(carried.exported, { pick: 'v_soft', at: 9, ownScenario: true, check: WorkshopStore.cardCheck('D', '', 'S') });
+    deepEq(carried.workshop, JSON.parse(JSON.stringify(ws)), 'every variant and every step');
+    assert.notEqual(carried.workshop, ws, 'a copy');
+    assert.notEqual(WorkshopStore.cardCheck('D', '', 'S'), WorkshopStore.cardCheck('D', 'x', 'S'));
+    assert.notEqual(WorkshopStore.cardCheck('ab', 'c'), WorkshopStore.cardCheck('a', 'bc'), 'where one field ends counts');
+    assert.equal(WorkshopStore.cardCheck('Line one\r\nLine two\n'), WorkshopStore.cardCheck('Line one\nLine two'), 'tidied line endings and spaces are not a change');
+    assert.match(WorkshopStore.cardCheck('anything'), /^[0-9a-f]{8}$/);
+});
+
+test('WorkshopStore: an imported card brings its Workshop back as it was, unless its text was changed in another app', () => {
+    const ws = cardWorkshop();
+    const fields = WorkshopStore.cardFields(ws, 'current');
+    const carried = WorkshopStore.toCard(ws, 'current', { description: fields.description, personality: '', scenario: fields.scenario, ownScenario: true });
+    deepEq(WorkshopStore.fromCard(carried, { description: fields.description, personality: '', scenario: fields.scenario }), JSON.parse(JSON.stringify(ws)),
+        'untouched: exactly as it was');
+
+    const edited = {
+        description: `${fields.description.replace('Tall.', 'Tall and lean.')}\n\n--- Other Characters ---\n\nName: Elara\nDescription: An elf.\n`,
+        personality: 'Kind to strangers.', scenario: 'A flood traps you both.'
+    };
+    const back = WorkshopStore.fromCard(carried, edited, 10);
+    assert.equal(back.commits.length, ws.commits.length + 1, 'one new step');
+    const step = back.commits.at(-1);
+    assert.equal(step.origin, 'card');
+    assert.equal(step.summary, 'Changed outside Rolecraft');
+    const state = WorkshopStore.active(back).state;
+    assert.equal(state.sections.find(s => s.id === 'appearance').text, 'Tall and lean.');
+    assert.equal(state.sections.find(s => s.id === 'personality').text, 'Guarded.');
+    assert.equal(state.sections.find(s => s.id === 'scenario').text, 'A flood traps you both.', 'the scenario came from the Workshop, so the change goes there');
+    assert.equal(state.unsorted, 'Kind to strangers.', 'a personality added elsewhere waits as unsorted card text');
+    assert.ok(!JSON.stringify(state).includes('Other Characters'), "the story's other characters are not part of this one");
+    assert.equal(WorkshopStore.stateAt(back, 'c1').sections.find(s => s.id === 'appearance').text, 'Tall.', 'and the history before it stays');
+
+    const fromStory = WorkshopStore.toCard(ws, 'current', { description: fields.description, personality: '', scenario: 'Story lore.', ownScenario: false });
+    const kept = WorkshopStore.fromCard(fromStory, { description: fields.description, personality: '', scenario: 'Story lore, edited.' });
+    assert.equal(WorkshopStore.active(kept).state.sections.find(s => s.id === 'scenario').text, 'A storm traps you both.',
+        "a scenario that was the story's own leaves the Scenario section alone");
+
+    for (const bad of [null, {}, { workshop: { v: 99, variants: [{ state: { sections: [] } }], commits: [] } }, { workshop: { v: 1, variants: [], commits: [] } }]) {
+        assert.equal(WorkshopStore.fromCard(bad, edited), null, 'nothing it cannot read');
+    }
+});
+
 test('WorkshopStore: the description is each filled section under its heading, with Scenario left out', () => {
     const state = withTexts(WorkshopStore.blankState(), {
         appearance: '  Tall, ink-stained hands.  ', voice: 'Clipped and dry.', scenario: 'A storm traps you both at the clinic.', sexuality: '   '
@@ -3503,6 +3575,7 @@ test('WorkshopStore: proposals wait outside the history, and accepting them is o
 function workshopAiPage(answers, state = pinnedState()) {
     const calls = [];
     const notices = [];
+    const cards = [];
     const element = () => {
         const classes = new Set();
         return {
@@ -3530,13 +3603,14 @@ function workshopAiPage(answers, state = pinnedState()) {
         document: { getElementById: byId, querySelector: element, querySelectorAll: () => [], activeElement: null },
         ReactiveStore: store, WorkshopAI, AbortController, setTimeout, UTILITY,
         UIManager: { showNotification: (text, type) => notices.push([text, type]) },
-        ActionHandler: { register: (name, fn) => { handlers[name] = fn; } }, window: { addEventListener() { } }, debounce: fn => fn
+        ActionHandler: { register: (name, fn) => { handlers[name] = fn; } }, window: { addEventListener() { } }, debounce: fn => fn,
+        LibraryController: { async exportCharacterCard(...args) { cards.push(args); } }
     });
     WC.registerActions();
     WC.RUNTIME.view = { charId: 'ch1', ws: WorkshopStore.create({ state, now: 1, commitId: 'c0' }), tab: 'sections', editing: null, addingPin: null };
     /** Presses a button on the screen: the action's handler, with the button's data-* values. */
     const act = (name, dataset = {}, value) => handlers[name](dataset, value);
-    return { WC, calls, characters, elements, notices, act, view: () => WC.RUNTIME.view };
+    return { WC, calls, characters, elements, notices, cards, act, view: () => WC.RUNTIME.view };
 }
 
 const settle = () => new Promise(resolve => setTimeout(resolve, 0));
@@ -3889,4 +3963,196 @@ test('Workshop AI: while it works, a strip under the tabs says what it is doing,
     deepEq([title('write', 'voice'), title('reweave', 'voice'), title('suggest'), title('write-all'), title('sort')],
         ['Writing Voice', 'Re-weaving Voice', 'Suggesting pins', 'Writing the empty sections', 'Drafting pins from the text']);
     assert.equal(workshopAiPage([], looseState()).WC._busyTitle({ kind: 'sort' }), 'Sorting the card into sections');
+});
+
+// ─── Character cards: export and import ──────────────────────────────────────
+
+const zlib = require('zlib');
+
+/** The import/export service, with Node standing in for the browser's text, base64 and inflate tools. */
+function cardService() {
+    return vm.runInNewContext(
+        fs.readFileSync(path.join(__dirname, 'js', 'services', 'import-export.js'), 'utf8') + '\nImportExportService', {
+            UTILITY, WorkshopStore, TextEncoder, TextDecoder, Blob, atob, btoa,
+            pako: { inflate: bytes => new Uint8Array(zlib.inflateSync(bytes)) }
+        });
+}
+
+/** One PNG chunk: length, type, data and CRC. */
+function pngChunk(type, data) {
+    const body = Buffer.concat([Buffer.from(type, 'latin1'), Buffer.from(data)]);
+    const out = Buffer.alloc(12 + data.length);
+    out.writeUInt32BE(data.length, 0);
+    body.copy(out, 4);
+    out.writeUInt32BE(zlib.crc32(body), 8 + data.length);
+    return out;
+}
+
+/** A 1x1 PNG, with any extra chunks just before IEND. */
+function tinyPng(extra = []) {
+    const header = Buffer.alloc(13);
+    header.writeUInt32BE(1, 0);
+    header.writeUInt32BE(1, 4);
+    header[8] = 8;
+    header[9] = 6;
+    return Buffer.concat([
+        Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]),
+        pngChunk('IHDR', header),
+        pngChunk('IDAT', zlib.deflateSync(Buffer.from([0, 0, 0, 0, 0]))),
+        ...extra,
+        pngChunk('IEND', Buffer.alloc(0))
+    ]);
+}
+
+const arrayBufferOf = buffer => buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+const cardB64 = value => Buffer.from(JSON.stringify(value), 'utf8').toString('base64');
+const textChunk = (keyword, text) => pngChunk('tEXt', Buffer.from(`${keyword}\0${text}`, 'latin1'));
+const zChunk = (keyword, value) => pngChunk('zTXt', Buffer.concat([Buffer.from(`${keyword}\0\0`, 'latin1'), zlib.deflateSync(Buffer.from(cardB64(value)))]));
+
+/** Every chunk in a PNG, and whether its CRC is right. */
+function readChunks(arrayBuffer) {
+    const bytes = Buffer.from(arrayBuffer);
+    const chunks = [];
+    for (let at = 8; at < bytes.length;) {
+        const length = bytes.readUInt32BE(at);
+        const data = bytes.subarray(at + 8, at + 8 + length);
+        chunks.push({ type: bytes.toString('latin1', at + 4, at + 8), data, crcOk: bytes.readUInt32BE(at + 8 + length) === zlib.crc32(bytes.subarray(at + 4, at + 8 + length)) });
+        at += 12 + length;
+    }
+    return chunks;
+}
+
+test('Character cards: written as a tEXt chunk SillyTavern can read, with any card already in the image taken out', async () => {
+    const IE = cardService();
+    const old = tinyPng([textChunk('ccv3', cardB64({ data: { name: 'Stale V3' } })), textChunk('Software', 'Paint'), zChunk('chara', { data: { name: 'Stale' } })]);
+    const card = { spec: 'chara_card_v2', spec_version: '2.0', data: { name: 'Kael', description: 'Grey at the temples, café regular — 🗡' } };
+    const out = await (await IE._injectDataIntoPng(arrayBufferOf(old), card)).arrayBuffer();
+    const chunks = readChunks(out);
+    assert.ok(chunks.every(c => c.crcOk), 'every chunk checks out');
+    deepEq(chunks.map(c => c.type), ['IHDR', 'IDAT', 'tEXt', 'tEXt', 'IEND'], 'the old cards are gone, other text stays, the card sits before IEND');
+    assert.equal(chunks[2].data.toString('latin1'), 'Software\0Paint');
+    const [keyword, text] = chunks[3].data.toString('latin1').split('\0');
+    assert.equal(keyword, 'chara');
+    deepEq(JSON.parse(Buffer.from(text, 'base64').toString('utf8')), card, 'base64 of the JSON, accents and emoji intact');
+    deepEq(JSON.parse(IE._b64_to_utf8(await IE._extractV2Data(out))), card, 'and Rolecraft reads it back');
+});
+
+test('Character cards: a V3 card is read before a V2 one, from tEXt, zTXt or iTXt chunks', async () => {
+    const IE = cardService();
+    const nameIn = async png => JSON.parse(IE._b64_to_utf8(await IE._extractV2Data(arrayBufferOf(png)))).data.name;
+    const v2 = zChunk('chara', { data: { name: 'From V2' } });
+    const v3 = pngChunk('iTXt', Buffer.concat([Buffer.from('ccv3\0', 'latin1'), Buffer.from([1, 0, 0, 0]),
+        zlib.deflateSync(Buffer.from(cardB64({ spec: 'chara_card_v3', data: { name: 'From V3' } })))]));
+    assert.equal(await nameIn(tinyPng([v2, v3])), 'From V3', 'ccv3 wins, as it does in SillyTavern');
+    assert.equal(await nameIn(tinyPng([v2])), 'From V2');
+    const plain = pngChunk('iTXt', Buffer.concat([Buffer.from('Chara\0', 'latin1'), Buffer.from([0, 0]), Buffer.from('en\0\0', 'latin1'),
+        Buffer.from(cardB64({ data: { name: 'Uncompressed' } }))]));
+    assert.equal(await nameIn(tinyPng([plain])), 'Uncompressed', 'any case of the keyword, with a language tag');
+    assert.equal(await IE._extractV2Data(arrayBufferOf(tinyPng([textChunk('Software', 'Paint')]))), null);
+});
+
+test('Character cards: an image counts as a PNG by its bytes, not its name, so a JPEG called .png is converted first', async () => {
+    const IE = cardService();
+    assert.equal(await IE._isPngBlob(new Blob([tinyPng()], { type: 'image/png' })), true);
+    const jpegNamedPng = new Blob([Buffer.from([0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46])], { type: 'image/png' });
+    assert.equal(await IE._isPngBlob(jpegNamedPng), false, 'the demo portraits are JPEGs named .png');
+    assert.equal(await IE._isPngBlob(new Blob([])), false);
+});
+
+/** A story whose one character, Kael, was built in the Workshop. */
+function workshopStory(ws) {
+    const kael = { id: 'ch1', name: 'Kael', description: WorkshopStore.compile(WorkshopStore.active(ws).state), model_instructions: 'Write as {character}.', tags: ['ranger'], workshop: ws };
+    const story = { name: 'Kael', characters: [{ id: 'u1', name: 'You', is_user: true }, kael], scenarios: [{ message: 'Rain on the roof.' }], dynamic_entries: [] };
+    const narrative = {
+        active_character_ids: ['u1', 'ch1'],
+        state: { chat_history: [{ character_id: 'ch1', content: 'Rain on the roof.', type: 'chat' }], static_entries: [{ title: 'The inn', content: 'A warm inn.' }], worldMap: { grid: [] } }
+    };
+    return { story, narrative };
+}
+
+test("Character cards: a Workshop character's card shows the version picked, and importing it brings the whole Workshop back", async () => {
+    const IE = cardService();
+    const ws = cardWorkshop();
+    const { story, narrative } = workshopStory(ws);
+
+    const now = IE._convertEllipsistoV2(story, narrative, 'ch1');
+    assert.equal(now.data.description, '## Appearance & body\nTall.\n\n## Personality\nGuarded.', 'the sections under their headings');
+    assert.equal(now.data.personality, '', 'personality stays empty: the sections cover it');
+    assert.equal(now.data.scenario, 'A storm traps you both.', 'the Scenario section');
+    deepEq(now.data.extensions.rolecraft_workshop.workshop, JSON.parse(JSON.stringify(ws)));
+
+    const original = IE._convertEllipsistoV2(story, narrative, 'ch1', 'original');
+    assert.equal(original.data.description, 'Old card text.');
+    assert.equal(original.data.scenario, '[The inn]\nA warm inn.', "with no Scenario section of its own, the story's scenario");
+    assert.equal(IE._convertEllipsistoV2(story, narrative, 'ch1', 'v_soft').data.description, '## Appearance & body\nTall.\n\n## Personality\nGentle.');
+    assert.equal(IE._convertEllipsistoV2(story, narrative, 'ch1', 'c0').data.description, '## Appearance & body\nTall.');
+    assert.throws(() => IE._convertEllipsistoV2(story, narrative, 'ch1', 'c_gone'), /no longer in its Workshop/);
+
+    const roundTrip = async v2 => {
+        const png = await (await IE._injectDataIntoPng(arrayBufferOf(tinyPng()), v2)).arrayBuffer();
+        return IE._convertV2toEllipsis(JSON.parse(IE._b64_to_utf8(await IE._extractV2Data(png))).data);
+    };
+    const back = await roundTrip(now);
+    const kael = back.characters.find(c => !c.is_user);
+    deepEq(kael.workshop, JSON.parse(JSON.stringify(ws)), 'every variant and step comes back');
+    assert.equal(kael.description, story.characters[1].description, 'and replies read the same description');
+    deepEq(back.scenarios[0].static_entries, [], 'its Scenario section stays in the Workshop, out of replies');
+
+    const fromOriginal = await roundTrip(original);
+    deepEq(fromOriginal.characters.find(c => !c.is_user).workshop, JSON.parse(JSON.stringify(ws)), 'a card showing the original still brings the Workshop back as it was');
+    assert.equal(fromOriginal.scenarios[0].static_entries[0].content, '[The inn]\nA warm inn.', "the story's own scenario comes in as before");
+
+    const edited = JSON.parse(JSON.stringify(now));
+    edited.data.description = edited.data.description.replace('Guarded.', 'Guarded, then kind.');
+    const changed = (await roundTrip(edited)).characters.find(c => !c.is_user);
+    assert.equal(changed.workshop.commits.at(-1).summary, 'Changed outside Rolecraft');
+    assert.match(changed.description, /## Personality\nGuarded, then kind\./, 'a change made in another app wins');
+
+    const plainKael = { ...story.characters[1], description: 'Plain.' };
+    delete plainKael.workshop;
+    const plain = IE._convertEllipsistoV2({ ...story, characters: [story.characters[0], plainKael] }, narrative, 'ch1');
+    deepEq(plain.data.extensions, {}, 'a character never opened in the Workshop carries nothing extra');
+    assert.equal(plain.data.description, 'Plain.');
+});
+
+test('Workshop screen: the Card tab exports the version picked, and the history exports any earlier point', async () => {
+    const p = workshopAiPage([]);
+    p.view().ws = cardWorkshop();
+    p.WC.renderCard();
+    const card = () => p.elements['ws-card'].innerHTML;
+    assert.match(card(), /<option value="current" selected>As it is now \(Main\)<\/option>/);
+    assert.ok(card().includes('<option value="original">The original card</option>'));
+    assert.ok(card().includes('<option value="v_soft">Variant: Softer</option>'), 'every other variant');
+    assert.ok(card().includes('data-action="workshop-export"'));
+
+    p.act('workshop-export-pick', {}, 'v_soft');
+    p.WC.renderCard();
+    assert.ok(card().includes('<option value="v_soft" selected>'), 'the pick is kept when the card is drawn again');
+    p.act('workshop-export', {});
+    p.act('workshop-export', { pick: 'c1' });
+    await settle();
+    deepEq(p.cards, [['ch1', 'v_soft', 'Test - Softer'], ['ch1', 'c1', 'Test - Guarded']], 'the file is named after the version it shows');
+    assert.equal(p.WC._exportName('current'), 'Test');
+    assert.equal(p.WC._exportName('original'), 'Test - original');
+
+    p.act('workshop-history-open');
+    p.act('workshop-commit-toggle', { commit: 'c0' });
+    assert.ok(p.elements['ws-history-body'].innerHTML.includes('data-action="workshop-export" data-pick="c0"'), 'an earlier point can be exported from the history');
+
+    p.view().ws = WorkshopStore.create({ now: 1, commitId: 'c0' });
+    p.WC.renderCard();
+    assert.ok(!card().includes('The original card'), 'a character that started blank has no original card to offer');
+});
+
+test('Character cards: a card saved as JSON (V1, V2 or V3) imports like a PNG card; a Rolecraft story still imports as a story', async () => {
+    const IE = cardService();
+    deepEq(IE._cardFromJSON({ spec: 'chara_card_v3', spec_version: '3.0', data: { name: 'Nikki' } }), { name: 'Nikki' });
+    deepEq(IE._cardFromJSON({ spec: 'chara_card_v2', data: { name: 'Kael' } }), { name: 'Kael' });
+    deepEq(IE._cardFromJSON({ name: 'Old', description: 'A V1 card.' }), { name: 'Old', description: 'A V1 card.' });
+    assert.equal(IE._cardFromJSON({ id: 's1', name: 'A story', description: 'x', characters: [] }), null);
+    assert.equal(IE._cardFromJSON({ name: 'No card fields' }), null);
+    const file = { text: async () => JSON.stringify({ spec: 'chara_card_v2', spec_version: '2.0', data: { name: 'Nikki', description: '{{char}} fixes bikes.', first_mes: 'Hey.' } }) };
+    const nikki = (await IE._parseEllipsisJSON(file)).story.characters.find(c => !c.is_user);
+    assert.equal(nikki.name, 'Nikki');
+    assert.equal(nikki.description, 'Nikki fixes bikes.');
 });

@@ -2458,14 +2458,7 @@ OPENING SCENE: ${firstMsg.substring(0, 200)}`;
                             break;
                     }
 
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = filename.replace(/[/\\?%*:|"<>]/g, '-');
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    URL.revokeObjectURL(url);
+                    this._download(blob, filename);
 
                 } catch (e) {
                     console.error(e);
@@ -2473,6 +2466,42 @@ OPENING SCENE: ${firstMsg.substring(0, 200)}`;
                 } finally {
                     UIManager.hideLoadingSpinner();
                 }
+            },
+
+            /**
+             * One character's card as a PNG, from the open story, showing the version of its Workshop
+             * that was picked: 'current', 'original', a variant id or a commit id.
+             * @param {string} charId
+             * @param {string} pick
+             * @param {string} name - The file name, without .png.
+             */
+            async exportCharacterCard(charId, pick, name) {
+                const library = StateManager.getLibrary();
+                UIManager.showLoadingSpinner('Making the card...');
+                try {
+                    const story = await DBService.getStory(library.active_story_id);
+                    const narrative = await DBService.getNarrative(library.active_narrative_id);
+                    if (!story || !narrative) throw new Error("The story isn't loaded.");
+                    if (!narrative.state) narrative.state = { worldMap: {}, chat_history: [], static_entries: [] };
+                    const blob = await ImportExportService.exportStoryAsV2(story, narrative, charId, pick);
+                    this._download(blob, `${name}.png`);
+                } catch (e) {
+                    console.error(e);
+                    UIManager.showNotification(`The card could not be exported: ${e.message}`, 'error');
+                } finally {
+                    UIManager.hideLoadingSpinner();
+                }
+            },
+
+            _download(blob, filename) {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename.replace(/[/\\?%*:|"<>]/g, '-');
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
             },
 
             // --- Meta / AI Helpers ---

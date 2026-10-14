@@ -438,9 +438,16 @@
 
             /** The card as replies and an export will see it. */
             renderCard() {
-                const state = WorkshopStore.active(this.RUNTIME.view.ws).state;
+                const view = this.RUNTIME.view;
+                const active = WorkshopStore.active(view.ws);
+                const state = active.state;
                 const description = WorkshopStore.compile(state);
                 const scenario = String((this._section(state, 'scenario') || {}).text || '').trim();
+                // What a card can show: the character now, the card it started from, or another variant.
+                const picks = [{ value: 'current', label: `As it is now (${active.name})` }];
+                if (String((view.ws.original || {}).description || '').trim()) picks.push({ value: 'original', label: 'The original card' });
+                view.ws.variants.filter(v => !v.deletedAt && v.id !== active.id).forEach(v => picks.push({ value: v.id, label: `Variant: ${v.name}` }));
+                const chosen = picks.some(p => p.value === view.exportPick) ? view.exportPick : 'current';
                 document.getElementById('ws-card').innerHTML = DOM.html`
                     <div class="ws-card">
                         <h3 class="ws-label">Description</h3>
@@ -451,7 +458,39 @@
                         <h3 class="ws-label">Scenario</h3>
                         <p class="ws-hint">Goes into the card's scenario field when you export it. Replies don't read it.</p>
                         <div class="ws-preview">${scenario || 'Empty.'}</div>
+                    </div>
+                    <div class="ws-card">
+                        <h3 class="ws-label">Export as a card</h3>
+                        <p class="ws-hint">A PNG card for SillyTavern and other apps, showing the version you pick. The whole Workshop rides inside it, so importing it into Rolecraft brings everything back.</p>
+                        <div class="ws-export-row">
+                            <select id="ws-export-pick" class="ws-select" data-action-change="workshop-export-pick" aria-label="Version the card shows">
+                                ${picks.map(p => DOM.html`<option value="${p.value}"${p.value === chosen ? DOM.unsafe(' selected') : ''}>${p.label}</option>`)}
+                            </select>
+                            <button type="button" class="ws-btn is-primary" data-action="workshop-export">Export PNG</button>
+                        </div>
+                        <p class="ws-hint">For an earlier point, open it in the history (tap the version name at the top).</p>
                     </div>`.toString();
+            },
+
+            /** Saves a card showing one version of the character: 'current', 'original', a variant or a step. */
+            async exportCard(pick) {
+                const view = this.RUNTIME.view;
+                if (!view) return;
+                await this._saveNow();
+                await LibraryController.exportCharacterCard(view.charId, pick, this._exportName(pick));
+            },
+
+            /** The card's file name: the character's name, and which version it shows when that isn't the current one. */
+            _exportName(pick) {
+                const view = this.RUNTIME.view;
+                const character = this._character(view.charId);
+                const name = (character && character.name) || 'Character';
+                if (pick === 'current') return name;
+                if (pick === 'original') return `${name} - original`;
+                const variant = view.ws.variants.find(v => v.id === pick);
+                if (variant) return `${name} - ${variant.name}`;
+                const step = view.ws.commits.find(c => c.id === pick);
+                return `${name} - ${String((step && step.summary) || 'earlier point').slice(0, 40)}`;
             },
 
             _section(state, id) {
@@ -1110,6 +1149,7 @@
                                 ? DOM.html`<span class="ws-hint">This is where the character is now.</span>`
                                 : DOM.html`<button type="button" class="ws-btn is-primary" data-action="workshop-restore" data-commit="${c.id}">Go back to here</button>`}
                             <button type="button" class="ws-btn" data-action="workshop-branch" data-commit="${c.id}">New variant from here</button>
+                            <button type="button" class="ws-btn" data-action="workshop-export" data-pick="${c.id}">Export this point</button>
                         </div>
                     </div>`;
                 return DOM.html`
@@ -1191,6 +1231,10 @@
             },
 
             registerActions() {
+                ActionHandler.register('workshop-export-pick', (ds, value) => {
+                    if (this.RUNTIME.view) this.RUNTIME.view.exportPick = value;
+                });
+                ActionHandler.register('workshop-export', (ds) => this.exportCard(ds.pick || (this.RUNTIME.view && this.RUNTIME.view.exportPick) || 'current'));
                 ActionHandler.register('workshop-history-open', () => this.openHistory());
                 ActionHandler.register('workshop-history-close', () => this.closeHistory());
                 ActionHandler.register('workshop-commit-toggle', (ds) => {

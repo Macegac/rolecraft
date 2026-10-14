@@ -312,6 +312,95 @@
                 return (unsorted ? [unsorted, ...sections] : sections).join('\n\n');
             },
 
+            // A card shows one version of the character in its standard fields. The whole Workshop
+            // rides along in data.extensions[CARD_KEY], so importing the card brings it back.
+
+            CARD_KEY: 'rolecraft_workshop',
+
+            /**
+             * The card's own text for one version of the character: the description built from its
+             * sections, and the Scenario section's text.
+             * @param {Object} ws
+             * @param {string} [pick] - 'current', 'original', a variant id or a commit id.
+             * @returns {{description: string, scenario: string}|null} Null for a version that isn't there.
+             */
+            cardFields(ws, pick = 'current') {
+                if (pick === 'original') {
+                    const original = ws.original || {};
+                    return { description: original.description || '', scenario: original.scenario || '' };
+                }
+                const variant = ws.variants.find(v => v.id === pick);
+                const state = pick === 'current' ? this.active(ws).state : (variant ? variant.state : this.stateAt(ws, pick));
+                if (!state) return null;
+                const scenario = state.sections.find(s => s.target === 'scenario');
+                return { description: this.compile(state), scenario: String((scenario && scenario.text) || '').trim() };
+            },
+
+            /**
+             * A short fingerprint of the text a card was written with, so an import can tell it was
+             * changed since. Line endings and space around each field don't count: other apps tidy those.
+             */
+            cardCheck(...texts) {
+                let hash = 0x811c9dc5;
+                for (const ch of texts.map(t => String(t || '').replace(/\r\n?/g, '\n').trim()).join('\u0000')) {
+                    hash ^= ch.codePointAt(0);
+                    hash = Math.imul(hash, 0x01000193) >>> 0;
+                }
+                return hash.toString(16).padStart(8, '0');
+            },
+
+            /**
+             * What a card carries in data.extensions[CARD_KEY]: the whole Workshop, which version the
+             * card shows, and a fingerprint of the fields exactly as written.
+             * @param {Object} ws
+             * @param {string} pick
+             * @param {{description: string, personality: string, scenario: string, ownScenario: boolean}} written -
+             *        ownScenario says the scenario is the Scenario section's, not the story's.
+             */
+            toCard(ws, pick, written, now = Date.now()) {
+                return {
+                    format: 1,
+                    exported: {
+                        pick, at: now, ownScenario: !!written.ownScenario,
+                        check: this.cardCheck(written.description, written.personality, written.scenario)
+                    },
+                    workshop: this._copy(ws)
+                };
+            },
+
+            /**
+             * The Workshop a card carries, ready to put on the imported character, or null when there
+             * is none that can be read. If the card's text was changed in another app since it was
+             * written, that text wins: it becomes a new step on the variant in use, split by its
+             * headings like any card, and everything before it stays in the history.
+             * @param {Object} carried - data.extensions[CARD_KEY]
+             * @param {{description: string, personality: string, scenario: string}} card - The fields as found.
+             */
+            fromCard(carried, card, now = Date.now()) {
+                const ws = carried && carried.workshop;
+                const readable = ws && ws.v === this.VERSION && Array.isArray(ws.commits) && Array.isArray(ws.variants) && ws.variants.length > 0
+                    && ws.variants.every(v => v && v.state && Array.isArray(v.state.sections));
+                if (!readable) return null;
+                const copy = this._copy(ws);
+                const check = carried.exported && carried.exported.check;
+                if (check === this.cardCheck(card.description, card.personality, card.scenario)) return copy;
+
+                // Rolecraft adds the story's other characters below the description; they aren't this character.
+                const description = String(card.description || '').split('\n\n--- Other Characters ---\n')[0];
+                const split = this.splitCard(description);
+                const base = this.active(copy).state;
+                const ownScenario = !!(carried.exported && carried.exported.ownScenario);
+                const next = {
+                    ...base,
+                    unsorted: [split.unsorted, String(card.personality || '').trim()].filter(Boolean).join('\n\n'),
+                    sections: base.sections.map(s => {
+                        if (s.target !== 'scenario') return { ...s, text: split.sections[s.id] || '' };
+                        return ownScenario ? { ...s, text: String(card.scenario || '').trim() } : s;
+                    })
+                };
+                return this.commit(copy, next, { origin: 'card', summary: 'Changed outside Rolecraft', now });
+            },
+
             /**
              * Splits a card's description by its headings, without any AI. A heading the Workshop
              * knows sends its text to that section. Text before the first heading, and text under a
