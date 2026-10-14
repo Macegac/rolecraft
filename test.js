@@ -2980,7 +2980,10 @@ test('Workshop model settings: wired into Settings → Model, the model browser,
         assert.ok(app.includes(`setListener('${id}', '${key}')`), `${id} saves as you type`);
     }
     assert.ok(app.includes("this.RUNTIME.modelBrowserMode === 'workshop'"), 'the model browser can pick the Workshop model');
-    assert.ok(app.includes('WorkshopController.renderSettings()'), 'the block is filled in when the tab opens');
+    const filled = app.indexOf("setListener('workshop-reasoning', 'workshopReasoning')");
+    const defaults = app.indexOf('WorkshopController.renderSettings()');
+    assert.ok(defaults > filled && defaults - filled < 400,
+        'defaults go in straight after the fields are filled, so set-up code failing further down cannot leave them blank');
 
     const controller = fs.readFileSync(path.join(__dirname, 'js', 'controllers', 'workshop.js'), 'utf8');
     for (const action of new Set([...html.matchAll(/data-action(?:-change)?="(workshop-[a-z-]+)"/g), ...controller.matchAll(/data-action="(workshop-[a-z-]+)"/g)].map(m => m[1]))) {
@@ -3019,6 +3022,21 @@ function workshopSettingsPage({ answer = true } = {}) {
     });
     return { WC, els, globalSettings, toasts, asked, saves: () => saves, setAnswer: a => { answer = a; } };
 }
+
+test('Workshop settings: a choice never made shows the default in use, not a blank box', () => {
+    const p = workshopSettingsPage();
+    // What the settings binding leaves behind for a setting that was never chosen.
+    p.els['workshop-backend'].value = '';
+    p.els['workshop-reasoning'].value = '';
+    p.WC.renderSettings();
+    assert.equal(p.els['workshop-backend'].value, 'openrouter');
+    assert.equal(p.els['workshop-reasoning'].value, 'medium');
+
+    p.els['workshop-reasoning'].value = '';
+    p.WC.updateSettingsVisibility();
+    assert.equal(p.els['workshop-reasoning'].value, 'medium', 'and again whenever the rows are shown or hidden');
+    assert.equal(p.saves(), 0, 'shown only; nothing is saved that was not chosen');
+});
 
 test('Workshop setups: saved by name, switched with one tap, replaced only when confirmed', () => {
     const p = workshopSettingsPage();

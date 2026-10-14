@@ -842,7 +842,6 @@
                 } else if (tabName === 'model') {
                     this.renderSavedOpenRouterModels();
                     this.renderProviderBlacklist();
-                    if (typeof WorkshopController !== 'undefined') WorkshopController.renderSettings();
                     this.renderSavedNanoGPTModels();
                     // NEW: Populate Gemini Models dynamically
                     this.populateGeminiModels();
@@ -1278,6 +1277,9 @@
                 if (document.getElementById('workshop-model')) setListener('workshop-model', 'workshopModel');
                 if (document.getElementById('workshop-openrouter-key')) setListener('workshop-openrouter-key', 'workshopOpenRouterKey');
                 if (document.getElementById('workshop-reasoning')) setListener('workshop-reasoning', 'workshopReasoning');
+                // Straight after the fields are filled, so a blank select shows the Workshop's default even
+                // if set-up code further down fails part way.
+                if (typeof WorkshopController !== 'undefined') WorkshopController.renderSettings();
 
                 // --- Bindings: Image Generation Tab ---
                 if (document.getElementById('image-gen-backend')) setListener('image-gen-backend', 'imageGenBackend', () => {

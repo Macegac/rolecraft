@@ -12,13 +12,8 @@
                 testAbort: null
             },
 
-            /** Fills in the Workshop block whenever Settings → Model opens. */
+            /** Fills in the Workshop block. Runs every time the settings fields are filled from storage. */
             renderSettings() {
-                // With nothing saved yet a select shows blank, so show the default the Workshop will use.
-                const backend = document.getElementById('workshop-backend');
-                if (backend && !backend.value) backend.value = WorkshopAI.DEFAULTS.backend;
-                const reasoning = document.getElementById('workshop-reasoning');
-                if (reasoning && !reasoning.value) reasoning.value = WorkshopAI.DEFAULTS.reasoning;
                 this.updateSettingsVisibility();
             },
 
@@ -29,6 +24,12 @@
             updateSettingsVisibility() {
                 const select = document.getElementById('workshop-backend');
                 if (!select) return;
+                // A select whose setting was never chosen is filled with nothing and shows blank. Show the
+                // default the Workshop actually uses instead. Done here as well, so a row that was hidden
+                // while it happened is right again the moment it shows.
+                if (!select.value) select.value = WorkshopAI.DEFAULTS.backend;
+                const reasoning = document.getElementById('workshop-reasoning');
+                if (reasoning && !reasoning.value) reasoning.value = WorkshopAI.DEFAULTS.reasoning;
                 const backend = WorkshopAI.BACKENDS[select.value] ? select.value : WorkshopAI.DEFAULTS.backend;
                 const isLocal = backend !== 'openrouter';
                 const show = (id, visible) => {
