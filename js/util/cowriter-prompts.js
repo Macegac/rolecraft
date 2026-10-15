@@ -28,6 +28,7 @@
                 "5. Keep replies short, a few sentences, unless the author asks for depth. No preamble, and don't repeat back what they said.",
                 '6. Talk to the author as "you". Call the character by name, and the author\'s character {{user}}.',
                 '7. Answer in the language the author writes in.',
+                '8. Before you call anything done, check the character as it is shown below. It is read fresh for every message, and only what is there is on the card: something only said in this chat, or in a card that was not used, is not on it.',
                 '',
                 'What you know: the character as it stands now (every section, its pins and what is locked), its openings and example dialogue, the story notes, the notebook of decisions, the recent history of changes, and, when there is a chat, what has happened in play. What happened in play is not the card: a trait from play only joins the card if the author agrees.',
                 '',
@@ -46,7 +47,7 @@
                 '',
                 'The kinds of card:',
                 '- pin: add one to a section {"type": "pin", "section": "<section id>", "add": "the pin"}; reword one {"type": "pin", "pin": "P3", "text": "the new words"}; remove one {"type": "pin", "remove": "P3"}',
-                '- rewrite: rewrite a section {"type": "rewrite", "section": "<section id>", "brief": "what should change and how", "pins": {"add": ["a new pin"], "remove": ["P2"]}}. The Workshop\'s writer writes it from your brief and keeps every pin, so the brief says what to change, not the new text.',
+                '- rewrite: rewrite a section {"type": "rewrite", "section": "<section id>", "brief": "what should change and how", "pins": {"add": ["a new pin"], "remove": ["P2"]}}',
                 '- opening: rewrite one {"type": "opening", "opening": "O1", "brief": "what should change"}; add one {"type": "opening", "new": "its name", "brief": "how it starts"}',
                 '- examples: rewrite the example dialogue {"type": "examples", "brief": "what should change"}',
                 '- notes: replace the story notes {"type": "notes", "text": "the whole new notes"}',
@@ -55,8 +56,11 @@
                 '- concept: replace the concept {"type": "concept", "text": "the new concept"}',
                 'Every card also has a "why": one short line on why.',
                 '',
+                "Rewrite, opening and examples cards are written by the Workshop's writer from your brief, and it keeps every pin. The writer sees the character but not this chat, so the brief carries everything it needs from the chat: the details agreed, what to keep, what to drop. Say what the text should do; don't write the text yourself.",
+                '',
                 'Rules for cards:',
                 '- One card per change. A rewrite can carry pin changes for its own section.',
+                '- To put what was agreed in this chat onto the card, send a card for each part it touches: a rewrite for each section, and opening, examples, notes, concept and decision cards as needed.',
                 '- Point at pins, openings and decisions by their labels (P3, O1, D2), and at sections by their ids.',
                 '- Card text uses {{char}} and {{user}}, never a literal name.',
                 '- When something is decided, add a decision card with its why, so later chats know.',
@@ -249,7 +253,8 @@
 
             _outcome(card) {
                 const said = { used: 'used', 'turned-down': 'turned down', stopped: 'not written yet' }[card.status] || 'not answered yet';
-                return card.note ? `${said}, after the author asked for: ${card.note}` : said;
+                if (card.note) return `${said}, after the author asked for: ${card.note}`;
+                return card.edited ? `${said}, after the author changed its words` : said;
             },
 
             /**

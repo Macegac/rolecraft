@@ -108,10 +108,15 @@
             writeSection({ name, state, sectionId, pending = {}, reweave = false, extras = null, steer = '' }) {
                 const s = state.sections.find(x => x.id === sectionId);
                 const pins = this.labels(s);
+                const hasText = !!String(s.text || '').trim();
+                let first = `TASK: Write the "${s.title}" section${hasText ? ', replacing its current text' : ''}.`;
+                if (reweave) {
+                    first = `TASK: Re-weave the "${s.title}" section. Its pins have changed. Rewrite it around the pins below, keeping every sentence of the current text that still fits. Change only what bringing the pins in, or dropping what now contradicts them, requires.`;
+                } else if (steer && hasText) {
+                    first = `TASK: Rewrite the "${s.title}" section as asked below, keeping whatever the request doesn't touch.`;
+                }
                 const task = [
-                    reweave
-                        ? `TASK: Re-weave the "${s.title}" section. Its pins have changed. Rewrite it around the pins below, keeping every sentence of the current text that still fits. Change only what bringing the pins in, or dropping what now contradicts them, requires.`
-                        : `TASK: Write the "${s.title}" section${String(s.text || '').trim() ? ', replacing its current text' : ''}.`,
+                    first,
                     `Length: ${this.LENGTHS[s.length] || this.LENGTHS.medium}.`,
                     pins.length ? `It must carry every one of these pins:\n${this._pinLines(pins)}` : 'It has no pins yet. Follow the concept, the story notes and the other sections.',
                     // From the co-writer: what should change, and why, plus anything you added to it.
@@ -226,18 +231,22 @@
             },
 
             /**
-             * Write one of the story's openings, or re-weave it to fit the character as it is now.
+             * Write one of the story's openings, or re-weave it to fit the character as it is now. With
+             * `newName` instead of an opening, a new one: another way a chat can start.
              * @returns {{messages: Array, temperature: undefined, read: Function}} read gives {text}.
              */
-            writeOpening({ name, state, extras, openingId, reweave = false, steer = '' }) {
+            writeOpening({ name, state, extras, openingId, reweave = false, steer = '', newName = '' }) {
                 const o = this._opening(extras, openingId);
+                const hasText = !!String(o.message || '').trim();
+                let first = `TASK: Write the opening "${o.name}" (${o.label})${hasText ? ', replacing its current text' : ''}.`;
+                if (newName) first = `TASK: Write a new opening, "${newName}": another way a chat with {{char}} can start.`;
+                else if (reweave) first = `TASK: Re-weave the opening "${o.name}" (${o.label}). Rewrite it to fit the character as the concept and the sections have it now, keeping whatever still fits.`;
+                else if (steer && hasText) first = `TASK: Rewrite the opening "${o.name}" (${o.label}) as asked below, keeping whatever the request doesn't touch.`;
                 const task = [
-                    reweave
-                        ? `TASK: Re-weave the opening "${o.name}" (${o.label}). Rewrite it to fit the character as the concept and the sections have it now, keeping whatever still fits.`
-                        : `TASK: Write the opening "${o.name}" (${o.label})${String(o.message || '').trim() ? ', replacing its current text' : ''}.`,
+                    first,
                     this.OPENING_RULES,
-                    `Length: ${this.LENGTHS.medium}, unless the opening is much longer or shorter now.`,
-                    steer ? `What should change: ${steer}` : '',
+                    `Length: ${this.LENGTHS.medium}${newName ? '' : ', unless the opening is much longer or shorter now'}.`,
+                    steer ? `${newName ? 'What it should be' : 'What should change'}: ${steer}` : '',
                     'Reply with JSON: {"text": "the opening"}'
                 ];
                 return {
@@ -278,10 +287,11 @@
              */
             writeExamples({ name, state, extras, reweave = false, steer = '' }) {
                 const current = String((extras && extras.examples) || '').trim();
+                let first = `TASK: Write the example dialogue${current ? ', replacing what is there' : ''}.`;
+                if (reweave) first = 'TASK: Re-weave the example dialogue. Rewrite it to fit the character as it is now, keeping whatever still fits.';
+                else if (steer && current) first = "TASK: Rewrite the example dialogue as asked below, keeping whatever the request doesn't touch.";
                 const task = [
-                    reweave
-                        ? 'TASK: Re-weave the example dialogue. Rewrite it to fit the character as it is now, keeping whatever still fits.'
-                        : `TASK: Write the example dialogue${current ? ', replacing what is there' : ''}.`,
+                    first,
                     'Example dialogue shows the roleplay model how {{char}} talks: two to four short exchanges between {{user}} and {{char}}, true to the Voice section and the rest of the character. Every turn starts with "{{user}}:" or "{{char}}:" at the start of a line. {{char}}\'s lines carry the voice; keep {{user}}\'s short. Actions can go between asterisks.',
                     steer ? `What should change: ${steer}` : '',
                     'Reply with JSON: {"text": "the dialogue, each turn on its own line"}'

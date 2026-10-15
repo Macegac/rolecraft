@@ -967,7 +967,8 @@
                 }
                 if (busy.kind === 'examples-write') return 'Writing the example dialogue';
                 if (busy.kind === 'examples-reweave') return 'Re-weaving the example dialogue';
-                if (busy.kind === 'cowriter') return 'The co-writer is answering';
+                if (busy.kind === 'cowriter') return view.cardWriting ? "Writing the co-writer's cards" : 'The co-writer is answering';
+                if (busy.kind === 'card-write') return 'Writing a card';
                 return {
                     write: `Writing ${title}`, reweave: `Re-weaving ${title}`, takes: `3 takes for ${title}`,
                     suggest: 'Suggesting pins', 'write-all': 'Writing the empty sections'
@@ -1082,6 +1083,7 @@
                     else if (kind === 'opening-takes') await this._openingTakes(view, name, target, creativity, onDelta);
                     else if (kind === 'examples-write' || kind === 'examples-reweave') await this._writeExamples(view, name, kind === 'examples-reweave', onDelta);
                     else if (kind === 'cowriter') await this._cowriterReply(view, name, target, onDelta);
+                    else if (kind === 'card-write') await this._draftCard(view, name, target, onDelta);
                     else await this._write(view, name, sectionId, kind === 'reweave', onDelta);
                 } catch (err) {
                     let where = sectionId || (target ? `o:${target}` : (kind.startsWith('examples') ? '_examples' : '_all'));
@@ -1100,7 +1102,7 @@
                     this.renderOpenings();
                     return;
                 }
-                if (kind === 'cowriter') {
+                if (kind === 'cowriter' || kind === 'card-write') {
                     this.renderCowriter();
                     return;
                 }
@@ -1518,6 +1520,18 @@
                     return;
                 }
                 const title = String(name || '').trim() || `Opening ${this._scenarios().length + 1}`;
+                const id = await this._addScenario(view, title, message);
+                if (!id) {
+                    UIManager.showNotification('Could not add the opening to the story.', 'error');
+                    return;
+                }
+                view.editing = null;
+                await this._change(summary || `Added the opening "${title}"`, state => { state.openings = { ...(state.openings || {}), [id]: { name: title, message } }; },
+                    () => this.renderOpenings(), origin);
+            },
+
+            /** A new opening in the story, with the first opening's cast and knowledge. Its id, or null when the story could not take it. */
+            async _addScenario(view, title, message) {
                 const id = UTILITY.uuid();
                 const made = await this._writeStory(story => {
                     const first = story.scenarios[0];
@@ -1526,13 +1540,7 @@
                     story.scenarios.push(scenario);
                     return true;
                 });
-                if (!made) {
-                    UIManager.showNotification('Could not add the opening to the story.', 'error');
-                    return;
-                }
-                view.editing = null;
-                await this._change(summary || `Added the opening "${title}"`, state => { state.openings = { ...(state.openings || {}), [id]: { name: title, message } }; },
-                    () => this.renderOpenings(), origin);
+                return made ? id : null;
             },
 
             async _writeOpening(view, name, id, reweave, onDelta) {
@@ -1704,6 +1712,7 @@
                 this.renderCowriterHead();
                 this.renderCowriterLog();
                 this.renderCowriterMenu();
+                this.renderCowriterDot();
             },
 
             /** The bar: the chat's name, which opens the list of chats, the notebook, and a new chat. */
@@ -1858,8 +1867,6 @@
                             ${this._cwActions(m, { isLast, after, failed })}
                         </div>`.toString();
                 }
-                const proposed = m.proposed ? DOM.html`
-                    <p class="ws-hint">It also wrote ${m.proposed === 1 ? 'a change card' : `${m.proposed} change cards`}. Change cards come in the next update; until then, make the change yourself.</p>` : '';
                 const unread = (m.unreadable || []).map(u => DOM.html`
                     <details class="ws-cw-unread"><summary>Part of this reply couldn't be read. ${u.reason}</summary><pre>${u.raw}</pre></details>`);
                 return DOM.html`
@@ -1868,7 +1875,7 @@
                         ${m.text ? DOM.html`<div class="ws-cw-say">${DOM.unsafe(this._cwFormat(m.text))}</div>` : ''}
                         ${m.stopped ? DOM.html`<p class="ws-hint">Stopped.</p>` : ''}
                         ${m.ask ? this._askBlock(m, isLast) : ''}
-                        ${proposed}
+                        ${this._cardsBlock(m)}
                         ${unread}
                         ${this._cwActions(m, { isLast, after })}
                     </div>`.toString();
@@ -2051,7 +2058,7 @@
                     variants: { active: active.name, others: view.ws.variants.filter(v => !v.deletedAt && v.id !== active.id).map(v => v.name) },
                     history: WorkshopStore.lineage(view.ws, active.head).reverse().map(c => ({ at: c.at, origin: c.origin, summary: c.summary })),
                     play: CowriterPrompts.playFrom(ReactiveStore.state, { characters, leadId: view.charId }),
-                    chat: again ? { ...chat, messages: chat.messages.slice(0, -1) } : chat, cards: cw.cards, withCards: false,
+                    chat: again ? { ...chat, messages: chat.messages.slice(0, -1) } : chat, cards: cw.cards, withCards: true,
                     turns: this._turnsRead()
                 });
                 view.cwStreaming = { chatId, text: '', reroll: !!again };
@@ -2078,10 +2085,16 @@
                 const read = CowriterPrompts.readReply(reply.text, labels);
                 const message = { role: 'cowriter', text: read.prose, variant: view.ws.active, model: WorkshopAI.settings().model || '', provider: reply.provider || '' };
                 if (read.ask) message.ask = { ...read.ask, picked: null };
-                if (read.cards.length) message.proposed = read.cards.length;
                 if (read.unreadable.length) message.unreadable = read.unreadable;
                 keep(message);
+                // Its cards wait under it, each marked with the variant it was written for.
+                const shown = WorkshopStore.cowriterOf(view.ws).chats.find(c => c.id === chatId);
+                const messageId = again ? again.id : shown.messages[shown.messages.length - 1].id;
+                if (read.cards.length) {
+                    view.ws = WorkshopStore.addCards(view.ws, chatId, messageId, read.cards.map(card => this._withBasis(view, card)), { variant: view.ws.active });
+                }
                 await this._saveWs(view);
+                if (read.cards.length) await this._draftCards(view, name, messageId, onDelta);
             },
 
             /** Reroll: the newest reply asked for again. The new one shows, and the old one is kept to flip back to. */
@@ -2167,6 +2180,511 @@
                     if (box.setSelectionRange) box.setSelectionRange(words.length, words.length);
                 }
                 return this._saveWs(view);
+            },
+
+            // ---------------------------------------------------------------------------------------
+            // Change cards: what the co-writer proposes, under its reply. Nothing changes until one
+            // is used, and each use is one step in the history, from "cowriter".
+            // ---------------------------------------------------------------------------------------
+
+            /** Cards the Workshop's writer writes from the co-writer's brief: rewrites, openings and the example dialogue. */
+            _isWritten(card) {
+                return card.type === 'rewrite' || card.type === 'opening' || card.type === 'examples';
+            },
+
+            /** A new card with what its part says now, so a later change to that part shows on it. Written cards note theirs when written. */
+            _withBasis(view, card) {
+                return this._isWritten(card) ? card : { ...card, basis: this._cardPart(view, card) };
+            },
+
+            /** What the part a card changes says now: '' when there is nothing to compare, null when the part is gone. */
+            _cardPart(view, card) {
+                const state = WorkshopStore.active(view.ws).state;
+                const section = state.sections.find(s => s.id === card.section);
+                switch (card.type) {
+                    case 'pin': {
+                        if (!section) return null;
+                        if (card.action === 'add') return '';
+                        const pin = section.pins.find(p => p.id === card.pin);
+                        return pin ? pin.text : null;
+                    }
+                    case 'rewrite':
+                        return section ? String(section.text || '') : null;
+                    case 'opening': {
+                        if (!card.opening) return '';
+                        const scenario = this._scenarios().find(s => s.id === card.opening);
+                        return scenario ? WorkshopStore.openingIn(state, view.ws.original, scenario).message : null;
+                    }
+                    case 'examples':
+                        return this._examples(view, state);
+                    case 'notes':
+                    case 'concept':
+                        return String(state[card.type] || '');
+                    case 'decision': {
+                        if (card.action === 'add') return '';
+                        const decision = (state.notebook || []).find(d => d.id === card.decision);
+                        return decision ? decision.text : null;
+                    }
+                    default:
+                        return '';
+                }
+            },
+
+            /** Why a waiting card can't be used now, or null: it was written for another variant, its section is locked, or its part is gone. */
+            _cardProblem(view, card) {
+                if (card.variant && card.variant !== view.ws.active) {
+                    const variant = view.ws.variants.find(v => v.id === card.variant);
+                    return `Written for ${variant ? variant.name : 'another variant'}. Switch to it to use this.`;
+                }
+                const section = WorkshopStore.active(view.ws).state.sections.find(s => s.id === card.section);
+                if (card.type === 'rewrite' && section && section.locked) return `${section.title} is locked. Unlock it to rewrite it.`;
+                if (this._cardPart(view, card) !== null) return null;
+                return { pin: 'Its pin is gone.', decision: 'That decision is gone.', opening: 'That opening is gone from the story.' }[card.type] || 'That section is gone.';
+            },
+
+            /** Whether the part a card changes was changed since the card was written. */
+            _cardChanged(view, card) {
+                const basis = this._isWritten(card) ? (card.draft ? card.draft.basis : undefined) : card.basis;
+                if (basis === undefined || basis === null) return false;
+                const part = this._cardPart(view, card);
+                return part !== null && part !== basis;
+            },
+
+            /** A card that can be used now. */
+            _cardReady(view, card) {
+                return card.status === 'waiting' && !this._cardProblem(view, card) && (!this._isWritten(card) || !!card.draft);
+            },
+
+            /** The chat and reply a card came with. */
+            _cardMessage(view, cardId) {
+                for (const chat of WorkshopStore.cowriterOf(view.ws).chats) {
+                    const message = chat.messages.find(m => (m.cards || []).includes(cardId));
+                    if (message) return { chat, message };
+                }
+                return null;
+            },
+
+            /** Cards waiting to be used on the variant in use, in the replies as they show now. */
+            _waitingCards(view) {
+                const cw = WorkshopStore.cowriterOf(view.ws);
+                let count = 0;
+                for (const chat of cw.chats) {
+                    if (chat.hiddenAt) continue;
+                    for (const m of chat.messages) {
+                        for (const id of m.cards || []) {
+                            const card = cw.cards[id];
+                            if (card && card.status === 'waiting' && card.variant === view.ws.active) count += 1;
+                        }
+                    }
+                }
+                return count;
+            },
+
+            /** A dot on the Co-writer tab while cards wait. */
+            renderCowriterDot() {
+                const view = this.RUNTIME.view;
+                const waiting = !!view && this._waitingCards(view) > 0;
+                document.querySelectorAll('#character-workshop [data-action="workshop-tab"][data-tab="cowriter"]').forEach(btn => btn.classList.toggle('has-dot', waiting));
+            },
+
+            /** Right after a reply, the writer drafts each of its rewrite, opening and examples cards, one after another. */
+            async _draftCards(view, name, messageId, onDelta) {
+                const message = this._findMessage(view, messageId);
+                const ids = ((message && message.cards) || []).filter(id => {
+                    const card = WorkshopStore.cowriterOf(view.ws).cards[id];
+                    return card && this._isWritten(card) && card.status === 'waiting' && !card.draft && !this._cardProblem(view, card);
+                });
+                for (const [i, id] of ids.entries()) {
+                    view.busy.label = `Card ${i + 1} of ${ids.length}: `;
+                    await this._draftCard(view, name, id, onDelta);
+                }
+            },
+
+            /** A reply in any chat, by its id. */
+            _findMessage(view, messageId) {
+                for (const chat of WorkshopStore.cowriterOf(view.ws).chats) {
+                    const message = chat.messages.find(m => m.id === messageId);
+                    if (message) return message;
+                }
+                return null;
+            },
+
+            /**
+             * The writer drafts one rewrite, opening or examples card from the co-writer's brief, plus
+             * your note when you asked for a change, and the draft notes what its part said then, for
+             * the changed-since check. Drafts of the same reply's other rewrites are read as if used,
+             * so the sections fit together. A failure stays on the card, to show with Write it; Stop
+             * ends the job.
+             */
+            async _draftCard(view, name, cardId, onDelta) {
+                const card = WorkshopStore.cowriterOf(view.ws).cards[cardId];
+                if (!card || !this._isWritten(card) || card.status !== 'waiting' || this._cardProblem(view, card)) return;
+                const state = WorkshopStore.active(view.ws).state;
+                const extras = this._extras(view);
+                const steer = [card.brief, card.note ? `The author also asked: ${card.note}` : ''].filter(Boolean).join('\n');
+                view.cardWriting = cardId;
+                if (this.RUNTIME.view === view) {
+                    this.renderProgress();
+                    this.renderCowriterLog();
+                }
+                try {
+                    let draft;
+                    if (card.type === 'rewrite') {
+                        const newPins = (card.addPins || []).map(text => ({ id: WorkshopStore.newId('p'), text }));
+                        const read = JSON.parse(JSON.stringify(state));
+                        const section = read.sections.find(s => s.id === card.section);
+                        section.pins = [...section.pins.filter(p => !(card.removePins || []).includes(p.id)), ...newPins.map(p => ({ ...p, state: 'kept', origin: 'cowriter' }))];
+                        const ask = WorkshopPrompts.writeSection({ name, state: read, sectionId: card.section, steer, extras, pending: this._cardDrafts(view, cardId) });
+                        const result = ask.read((await this._chat(view, ask, onDelta)).data);
+                        const kept = section.pins.filter(p => p.state === 'kept').map(p => p.id);
+                        draft = { text: result.text, pinMap: result.pinMap, newPins, missing: WorkshopStore.verifyPins(result.text, result.pinMap, kept).missing };
+                    } else if (card.type === 'opening') {
+                        const scenario = card.opening ? this._scenarios().find(s => s.id === card.opening) : null;
+                        const ask = WorkshopPrompts.writeOpening({ name, state, extras, openingId: card.opening, newName: card.opening ? '' : card.name, steer });
+                        const result = ask.read((await this._chat(view, ask, onDelta)).data);
+                        draft = { text: result.text, name: scenario ? WorkshopStore.openingIn(state, view.ws.original, scenario).name : card.name };
+                    } else {
+                        const ask = WorkshopPrompts.writeExamples({ name, state, extras, steer });
+                        draft = { text: ask.read((await this._chat(view, ask, onDelta)).data).text };
+                    }
+                    view.ws = WorkshopStore.setCard(view.ws, cardId, { draft: { ...draft, basis: this._cardPart(view, card), at: Date.now() }, error: null });
+                } catch (err) {
+                    if (err && err.name === 'AbortError') throw err;
+                    view.ws = WorkshopStore.setCard(view.ws, cardId, { error: (err && err.message) || 'The writer did not answer.' });
+                } finally {
+                    view.cardWriting = null;
+                }
+                await this._saveWs(view);
+                if (this.RUNTIME.view === view) this.renderCowriterLog();
+            },
+
+            /** Drafts of the same reply's other rewrite cards, by section, for the writer to read in place of the sections. */
+            _cardDrafts(view, cardId) {
+                const found = this._cardMessage(view, cardId);
+                const cards = WorkshopStore.cowriterOf(view.ws).cards;
+                const pending = {};
+                for (const id of (found ? found.message.cards || [] : [])) {
+                    const card = cards[id];
+                    if (id !== cardId && card && card.type === 'rewrite' && card.status === 'waiting' && card.draft) pending[card.section] = { text: card.draft.text };
+                }
+                return pending;
+            },
+
+            /** Write it, or Write it again: the writer drafts the card from its brief and your note. */
+            writeCard(cardId) {
+                const view = this.RUNTIME.view;
+                const card = view && WorkshopStore.cowriterOf(view.ws).cards[cardId];
+                if (!card || !this._isWritten(card) || card.status !== 'waiting') return Promise.resolve();
+                if (view.busy) {
+                    UIManager.showNotification('Wait for the AI to finish, or stop it, first.', 'info');
+                    return Promise.resolve();
+                }
+                view.cardEditing = null;
+                return this._ask('card-write', null, null, cardId);
+            },
+
+            useCard(cardId) {
+                const view = this.RUNTIME.view;
+                const card = view && WorkshopStore.cowriterOf(view.ws).cards[cardId];
+                if (!card) return Promise.resolve();
+                return card.type === 'variant' ? this._useVariantCard(card) : this._useCards([card]);
+            },
+
+            /** Use all: every card still waiting under a reply, as one step. A new variant is started on its own. */
+            useAllCards(messageId) {
+                const view = this.RUNTIME.view;
+                const message = view && this._findMessage(view, messageId);
+                if (!message) return Promise.resolve();
+                const cards = WorkshopStore.cowriterOf(view.ws).cards;
+                return this._useCards((message.cards || []).map(id => cards[id]).filter(c => c && c.type !== 'variant'));
+            },
+
+            /**
+             * Puts cards into the character as one step from "cowriter", and marks them used with it.
+             * A new opening joins the story first, and an opening or the examples keep the story's own
+             * text the first time, as editing them by hand does.
+             */
+            async _useCards(cards) {
+                const view = this.RUNTIME.view;
+                if (!view) return;
+                if (view.busy) {
+                    UIManager.showNotification('Wait for the AI to finish, or stop it, first.', 'info');
+                    return;
+                }
+                const used = [];
+                for (const card of cards.filter(c => this._cardReady(view, c))) {
+                    if (card.type === 'opening' && !card.opening) {
+                        const id = await this._addScenario(view, card.draft.name, card.draft.text);
+                        if (!id) {
+                            UIManager.showNotification(`Could not add the opening "${card.draft.name}" to the story.`, 'error');
+                            continue;
+                        }
+                        used.push({ ...card, opening: id, added: true });
+                        continue;
+                    }
+                    if (card.type === 'opening') view.ws = WorkshopStore.keepOriginalOpening(view.ws, this._scenarios().find(s => s.id === card.opening));
+                    if (card.type === 'examples') view.ws = WorkshopStore.keepOriginalExamples(view.ws, WorkshopStore.storyExamples(this._scenarios(), view.charId));
+                    used.push(card);
+                }
+                if (used.length === 0) return;
+                const before = WorkshopStore.active(view.ws).head;
+                const next = used.reduce((state, card) => WorkshopStore.cardInto(state, card), WorkshopStore.active(view.ws).state);
+                const summary = used.length === 1 ? this._cardSummary(view, used[0]) : `Used ${used.length} cards from the co-writer`;
+                let ws = WorkshopStore.commit(view.ws, next, { origin: 'cowriter', summary });
+                const head = WorkshopStore.active(ws).head;
+                for (const card of used) {
+                    ws = WorkshopStore.setCard(ws, card.id, { status: 'used', commit: head !== before ? head : null, ...(card.type === 'opening' ? { opening: card.opening } : {}) });
+                }
+                await this._commitWs(ws, () => this._afterCards());
+            },
+
+            _afterCards() {
+                this.renderSections();
+                this.renderOpenings();
+                this.renderCowriter();
+            },
+
+            /** The history's line for a card used on its own. */
+            _cardSummary(view, card) {
+                const title = (WorkshopStore.active(view.ws).state.sections.find(s => s.id === card.section) || {}).title || '';
+                switch (card.type) {
+                    case 'pin':
+                        if (card.action === 'add') return `Pinned "${card.text}" to ${title}`;
+                        return card.action === 'remove' ? `Removed the pin "${card.basis || ''}"` : `Reworded the pin "${card.text}"`;
+                    case 'rewrite': return `Rewrote ${title} with the co-writer`;
+                    case 'opening': return card.added ? `Added the opening "${card.draft.name}"` : `Rewrote the opening "${card.draft.name}" with the co-writer`;
+                    case 'examples': return 'Rewrote the example dialogue with the co-writer';
+                    case 'notes': return 'New story notes from the co-writer';
+                    case 'concept': return 'New concept from the co-writer';
+                    case 'decision': return { add: `Added to the notebook: "${card.text}"`, change: `Changed a decision: "${card.text}"` }[card.action] || `Removed from the notebook: "${card.basis || ''}"`;
+                    default: return 'A change from the co-writer';
+                }
+            },
+
+            /** A new variant from the character as it is now. The reply's other cards waiting for the old one go with it. */
+            _useVariantCard(card) {
+                const view = this.RUNTIME.view;
+                if (!view || card.status !== 'waiting' || this._cardProblem(view, card)) return Promise.resolve();
+                if (view.busy) {
+                    UIManager.showNotification('Wait for the AI to finish, or stop it, first.', 'info');
+                    return Promise.resolve();
+                }
+                const from = view.ws.active;
+                const found = this._cardMessage(view, card.id);
+                let ws = WorkshopStore.branch(view.ws, WorkshopStore.active(view.ws).head, { name: card.name });
+                const made = ws.active;
+                for (const id of (found ? found.message.cards || [] : [])) {
+                    const sibling = WorkshopStore.cowriterOf(ws).cards[id];
+                    if (id !== card.id && sibling && sibling.status === 'waiting' && sibling.variant === from) ws = WorkshopStore.setCard(ws, id, { variant: made });
+                }
+                return this._variantChange(WorkshopStore.setCard(ws, card.id, { status: 'used', made, from }));
+            },
+
+            rejectCard(cardId) {
+                const view = this.RUNTIME.view;
+                const card = view && WorkshopStore.cowriterOf(view.ws).cards[cardId];
+                if (!card || card.status !== 'waiting') return Promise.resolve();
+                view.ws = WorkshopStore.setCard(view.ws, cardId, { status: 'turned-down' });
+                view.cardEditing = null;
+                this.renderCowriter();
+                return this._saveWs(view);
+            },
+
+            /**
+             * Undo on a used card goes back to before its step, and the cards used with it wait again.
+             * With a step since, it opens the history instead, to go back from there.
+             */
+            undoCard(cardId) {
+                const view = this.RUNTIME.view;
+                const cw = view && WorkshopStore.cowriterOf(view.ws);
+                const card = cw && cw.cards[cardId];
+                if (!card || card.status !== 'used') return Promise.resolve();
+                if (view.busy) {
+                    UIManager.showNotification('Wait for the AI to finish, or stop it, first.', 'info');
+                    return Promise.resolve();
+                }
+                if (card.type === 'variant') return this._undoVariantCard(card);
+                if (!card.commit) return this._commitWs(WorkshopStore.setCard(view.ws, cardId, { status: 'waiting' }), () => this.renderCowriter());
+                const variant = view.ws.variants.find(v => v.id === card.variant);
+                const commit = view.ws.commits.find(c => c.id === card.commit);
+                if (!commit || !variant || view.ws.active !== variant.id || variant.head !== card.commit) {
+                    this.openHistory();
+                    return Promise.resolve();
+                }
+                let ws = WorkshopStore.restore(view.ws, commit.parent);
+                for (const c of Object.values(cw.cards)) {
+                    if (c.commit === card.commit) ws = WorkshopStore.setCard(ws, c.id, { status: 'waiting', commit: null });
+                }
+                return this._commitWs(ws, () => this._afterCards());
+            },
+
+            /** A variant card's Undo: back to the variant it came from, while the new one has no steps of its own. */
+            _undoVariantCard(card) {
+                const view = this.RUNTIME.view;
+                const made = view.ws.variants.find(v => v.id === card.made);
+                const untouched = made && !made.deletedAt && view.ws.active === card.made && !view.ws.commits.some(c => c.variant === card.made);
+                if (!untouched) {
+                    this.openHistory();
+                    return Promise.resolve();
+                }
+                let ws = WorkshopStore.deleteVariant(WorkshopStore.switchVariant(view.ws, card.from), card.made);
+                for (const c of Object.values(WorkshopStore.cowriterOf(ws).cards)) {
+                    if (c.variant === card.made && c.status === 'waiting') ws = WorkshopStore.setCard(ws, c.id, { variant: card.from });
+                }
+                return this._variantChange(WorkshopStore.setCard(ws, card.id, { status: 'waiting' }));
+            },
+
+            /** Change it: a written card asks what should change and is written again; any other card has its words edited in place. */
+            cardChangeSave(cardId) {
+                const view = this.RUNTIME.view;
+                const card = view && WorkshopStore.cowriterOf(view.ws).cards[cardId];
+                if (!card || card.status !== 'waiting') return Promise.resolve();
+                if (view.busy) {
+                    UIManager.showNotification('Wait for the AI to finish, or stop it, first.', 'info');
+                    return Promise.resolve();
+                }
+                // The field still has focus, and the log won't redraw over a field being typed in.
+                if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+                view.cardEditing = null;
+                if (this._isWritten(card)) {
+                    const field = document.getElementById('ws-card-note');
+                    view.ws = WorkshopStore.setCard(view.ws, cardId, { note: String((field && field.value) || '').trim() });
+                    return this._ask('card-write', null, null, cardId);
+                }
+                const field = document.getElementById('ws-card-text');
+                const words = String((field && field.value) || '').trim();
+                if (words) view.ws = WorkshopStore.setCard(view.ws, cardId, card.type === 'variant' ? { name: words, edited: true } : { text: words, edited: true });
+                this.renderCowriterLog();
+                return words ? this._saveWs(view) : Promise.resolve();
+            },
+
+            /** A reply's cards, each with what it would change and what can be done with it, and Use all when more than one is ready. */
+            _cardsBlock(m) {
+                const view = this.RUNTIME.view;
+                const cw = WorkshopStore.cowriterOf(view.ws);
+                const cards = (m.cards || []).map(id => cw.cards[id]).filter(Boolean);
+                if (cards.length === 0) return '';
+                const ready = cards.filter(c => c.type !== 'variant' && this._cardReady(view, c));
+                const all = ready.length > 1 ? DOM.html`
+                    <button type="button" class="ws-btn is-primary ws-cw-use-all" data-action="workshop-card-all" data-message="${m.id}" ${view.busy ? 'disabled' : ''}>Use all ${ready.length}</button>` : '';
+                return DOM.html`<div class="ws-cw-cards">${cards.map(c => this._cardHtml(view, c))}${all}</div>`;
+            },
+
+            _cardHtml(view, card) {
+                const off = view.busy ? 'disabled' : '';
+                const why = card.why ? DOM.html`<p class="ws-cw-card-why">Why: ${card.why}</p>` : '';
+                let foot;
+                if (card.status === 'used') {
+                    foot = DOM.html`
+                        <div class="ws-cw-card-foot">
+                            <span class="ws-cw-card-tag is-used">Used</span>
+                            <button type="button" class="ws-cw-act" data-action="workshop-card-undo" data-card="${card.id}" ${off}>Undo</button>
+                        </div>`;
+                } else if (card.status === 'turned-down') {
+                    foot = DOM.html`<div class="ws-cw-card-foot"><span class="ws-cw-card-tag">Turned down</span></div>`;
+                } else if (view.cardEditing === card.id) {
+                    foot = this._cardEditor(card);
+                } else {
+                    const problem = this._cardProblem(view, card);
+                    const written = this._isWritten(card);
+                    const unwritten = written && !card.draft;
+                    const changed = !problem && this._cardChanged(view, card);
+                    let note = '';
+                    if (problem) note = problem;
+                    else if (unwritten && view.cardWriting !== card.id) note = card.error || 'Not written yet.';
+                    else if (changed) note = written ? 'Changed since it was written.' : 'Changed since the co-writer wrote this.';
+                    const buttons = [];
+                    if (!problem && !unwritten) buttons.push(DOM.html`<button type="button" class="ws-btn is-primary" data-action="workshop-card-use" data-card="${card.id}" ${off}>Use it</button>`);
+                    if (!problem && written && (unwritten || changed)) {
+                        buttons.push(DOM.html`<button type="button" class="ws-btn" data-action="workshop-card-write" data-card="${card.id}" ${off}>${unwritten ? 'Write it' : 'Write it again'}</button>`);
+                    }
+                    // A card that only removes something has no words to change.
+                    if (!problem && !unwritten && card.action !== 'remove') buttons.push(DOM.html`<button type="button" class="ws-btn" data-action="workshop-card-change" data-card="${card.id}" ${off}>Change it</button>`);
+                    buttons.push(DOM.html`<button type="button" class="ws-cw-act" data-action="workshop-card-reject" data-card="${card.id}" ${off}>Not this</button>`);
+                    foot = DOM.html`
+                        ${note ? DOM.html`<p class="ws-cw-card-note">${note}</p>` : ''}
+                        <div class="ws-cw-card-foot">${buttons}</div>`;
+                }
+                return DOM.html`
+                    <div class="ws-cw-card is-${card.status}">
+                        <div class="ws-cw-card-head">${this._cardTitle(view, card)}</div>
+                        ${this._cardBody(view, card)}
+                        ${why}
+                        ${foot}
+                    </div>`;
+            },
+
+            _cardTitle(view, card) {
+                const title = (WorkshopStore.active(view.ws).state.sections.find(s => s.id === card.section) || {}).title || card.section;
+                switch (card.type) {
+                    case 'pin': return `${{ add: 'New pin', reword: 'Reword a pin', remove: 'Remove a pin' }[card.action]} · ${title}`;
+                    case 'rewrite': return `Rewrite · ${title}`;
+                    case 'opening': return card.opening ? `Rewrite the opening · ${this._openingName(view, card.opening)}` : `New opening · ${card.name}`;
+                    case 'examples': return 'Rewrite the example dialogue';
+                    case 'notes': return 'New story notes';
+                    case 'concept': return 'New concept';
+                    case 'decision': return { add: 'New decision', change: 'Change a decision', remove: 'Remove a decision' }[card.action];
+                    case 'variant': return `New variant · ${card.name}`;
+                    default: return 'A change';
+                }
+            },
+
+            /** What a card would change: the words it brings, or, for a written card, its brief, its pin changes and the writer's draft. */
+            _cardBody(view, card) {
+                const words = text => DOM.html`<div class="ws-cw-card-text">${text}</div>`;
+                switch (card.type) {
+                    case 'pin':
+                        if (card.action === 'add') return words(`"${card.text}"`);
+                        return words(card.action === 'remove' ? `"${card.basis || ''}"` : `"${card.basis || ''}" → "${card.text}"`);
+                    case 'decision':
+                        return words(card.action === 'remove' ? (card.basis || '') : card.text);
+                    case 'notes':
+                    case 'concept':
+                        return words(card.text);
+                    case 'variant':
+                        return DOM.html`<p class="ws-cw-card-why">Starts a new variant from the character as it is now. This reply's other cards go with it.</p>`;
+                    default: {
+                        const section = WorkshopStore.active(view.ws).state.sections.find(s => s.id === card.section);
+                        const pinText = id => ((section && section.pins.find(p => p.id === id)) || ((card.draft && card.draft.newPins) || []).find(p => p.id === id) || {}).text || '';
+                        const pins = [
+                            ...(card.addPins || []).map(text => DOM.html`<li>+ pin: ${text}</li>`),
+                            ...(card.removePins || []).map(id => DOM.html`<li>− pin: ${pinText(id)}</li>`)
+                        ];
+                        const missing = ((card.draft && card.draft.missing) || []).map(pinText).filter(Boolean);
+                        let text = '';
+                        if (view.cardWriting === card.id) text = DOM.html`<div class="ws-cw-card-text is-writing">Writing…</div>`;
+                        else if (card.draft) text = DOM.html`<div class="ws-cw-card-text">${DOM.unsafe(this._cwFormat(card.draft.text))}</div>`;
+                        return DOM.html`
+                            <p class="ws-cw-card-brief">${card.brief}</p>
+                            ${pins.length ? DOM.html`<ul class="ws-cw-card-pins">${pins}</ul>` : ''}
+                            ${text}
+                            ${missing.length ? DOM.html`<p class="ws-cw-card-note">Missing ${missing.length === 1 ? 'a pin' : 'pins'}: ${missing.join('; ')}</p>` : ''}`;
+                    }
+                }
+            },
+
+            /** Change it, open on a card. */
+            _cardEditor(card) {
+                const cancel = DOM.html`<button type="button" class="ws-btn" data-action="workshop-card-change-cancel">Cancel</button>`;
+                if (this._isWritten(card)) {
+                    return DOM.html`
+                        <div class="ws-cw-card-edit">
+                            <label class="ws-cw-card-note" for="ws-card-note">What should change?</label>
+                            <textarea id="ws-card-note" class="ws-field" rows="2">${card.note || ''}</textarea>
+                            <div class="ws-cw-card-foot">
+                                <button type="button" class="ws-btn is-primary" data-action="workshop-card-change-save" data-card="${card.id}">Write it again</button>
+                                ${cancel}
+                            </div>
+                        </div>`;
+                }
+                return DOM.html`
+                    <div class="ws-cw-card-edit">
+                        <textarea id="ws-card-text" class="ws-field" rows="2" aria-label="The card's words">${card.type === 'variant' ? card.name : card.text}</textarea>
+                        <div class="ws-cw-card-foot">
+                            <button type="button" class="ws-btn is-primary" data-action="workshop-card-change-save" data-card="${card.id}">Save</button>
+                            ${cancel}
+                        </div>
+                    </div>`;
             },
 
             /** Talk it over: the co-writer comes into view with "About …: " ready in the box. */
@@ -2722,6 +3240,22 @@
                 ActionHandler.register('workshop-cw-delete-after', (ds) => this._cowriterCut(ds.message, { after: true }));
                 ActionHandler.register('workshop-cw-delete-cancel', withView(view => {
                     view.cwDeleting = null;
+                    this.renderCowriterLog();
+                }));
+                ActionHandler.register('workshop-card-use', (ds) => this.useCard(ds.card));
+                ActionHandler.register('workshop-card-all', (ds) => this.useAllCards(ds.message));
+                ActionHandler.register('workshop-card-reject', (ds) => this.rejectCard(ds.card));
+                ActionHandler.register('workshop-card-undo', (ds) => this.undoCard(ds.card));
+                ActionHandler.register('workshop-card-write', (ds) => this.writeCard(ds.card));
+                ActionHandler.register('workshop-card-change', withView((view, ds) => {
+                    view.cardEditing = ds.card;
+                    this.renderCowriterLog();
+                    const field = document.getElementById('ws-card-note') || document.getElementById('ws-card-text');
+                    if (field) field.focus();
+                }));
+                ActionHandler.register('workshop-card-change-save', (ds) => this.cardChangeSave(ds.card));
+                ActionHandler.register('workshop-card-change-cancel', withView(view => {
+                    view.cardEditing = null;
                     this.renderCowriterLog();
                 }));
                 ActionHandler.register('workshop-cw-log-undo', withView(view => {

@@ -1255,6 +1255,121 @@
             margin: 0;
         }
 
+        /* Change cards under a co-writer reply. */
+        .ws-cw-cards {
+            display: flex;
+            flex-direction: column;
+            gap: 0.6rem;
+        }
+
+        .ws-cw-card {
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+            padding: 0.75rem 0.85rem;
+            border-radius: 0.85rem;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            background: rgba(31, 41, 55, 0.55);
+        }
+
+        .ws-cw-card.is-used {
+            border-color: rgba(20, 184, 166, 0.35);
+            background: rgba(20, 184, 166, 0.06);
+        }
+
+        .ws-cw-card.is-turned-down {
+            opacity: 0.6;
+        }
+
+        .ws-cw-card-head {
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--text-accent);
+        }
+
+        .ws-cw-card-text {
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            line-height: 1.55;
+            color: var(--text-primary);
+        }
+
+        .ws-cw-card-text.is-writing {
+            color: #8b98a9;
+            font-style: italic;
+        }
+
+        .ws-cw-card-brief,
+        .ws-cw-card-why {
+            margin: 0;
+            font-size: 0.8rem;
+            line-height: 1.45;
+            color: #8b98a9;
+        }
+
+        .ws-cw-card-brief {
+            font-style: italic;
+        }
+
+        .ws-cw-card-pins {
+            margin: 0;
+            padding-left: 1rem;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+
+        .ws-cw-card-note {
+            margin: 0;
+            font-size: 0.8rem;
+            line-height: 1.45;
+            color: #fbbf24;
+        }
+
+        .ws-cw-card-foot {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.5rem 0.75rem;
+        }
+
+        .ws-cw-card-foot .ws-cw-act {
+            font-size: 0.8rem;
+        }
+
+        .ws-cw-card-tag {
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: #8b98a9;
+        }
+
+        .ws-cw-card-tag.is-used {
+            color: #5eead4;
+        }
+
+        .ws-cw-card-edit {
+            display: flex;
+            flex-direction: column;
+            gap: 0.45rem;
+        }
+
+        .ws-cw-use-all {
+            align-self: flex-start;
+        }
+
+        /* A dot on the Co-writer tab while cards wait. */
+        .ws-tab.has-dot::after {
+            content: '';
+            display: inline-block;
+            width: 0.45rem;
+            height: 0.45rem;
+            margin-left: 0.4rem;
+            border-radius: 999px;
+            background: #5eead4;
+            vertical-align: 0.15em;
+        }
+
         .ws-cw-who {
             font-size: 0.7rem;
             font-weight: 700;

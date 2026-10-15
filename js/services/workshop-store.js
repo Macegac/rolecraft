@@ -538,6 +538,63 @@
                 return { ...ws, cowriter: { ...cw, cards: { ...cw.cards, [cardId]: { ...cw.cards[cardId], ...patch } } } };
             },
 
+            /**
+             * The character with a co-writer card's change in it. Rewrite, opening and examples cards
+             * carry what the Workshop's writer wrote for them in `draft`, a rewrite with its new pins.
+             * A card that no longer fits (its pin or decision is gone, its section is locked, nothing is
+             * written for it yet) gives back the state it was given. A new opening is added through the
+             * story first, so it arrives here with the opening's id.
+             */
+            cardInto(state, card, now = Date.now()) {
+                const next = this._copy(state);
+                const section = next.sections.find(s => s.id === card.section);
+                switch (card.type) {
+                    case 'pin': {
+                        if (!section) return state;
+                        if (card.action === 'add') {
+                            section.pins.push({ id: this.newId('p'), text: card.text, origin: 'cowriter', state: 'kept', at: now });
+                            return next;
+                        }
+                        const pin = section.pins.find(p => p.id === card.pin);
+                        if (!pin) return state;
+                        if (card.action === 'remove') section.pins = section.pins.filter(p => p.id !== card.pin);
+                        else Object.assign(pin, { text: card.text, state: 'kept', origin: 'cowriter' });
+                        delete section.pinMap[card.pin];
+                        return next;
+                    }
+                    case 'rewrite': {
+                        if (!section || section.locked || !card.draft) return state;
+                        const removed = card.removePins || [];
+                        section.pins = [
+                            ...section.pins.filter(p => !removed.includes(p.id)),
+                            ...(card.draft.newPins || []).map(p => ({ id: p.id, text: p.text, origin: 'cowriter', state: 'kept', at: now }))
+                        ];
+                        section.text = card.draft.text;
+                        section.pinMap = { ...(card.draft.pinMap || {}) };
+                        return next;
+                    }
+                    case 'opening':
+                        if (!card.draft || !card.opening) return state;
+                        next.openings = { ...(next.openings || {}), [card.opening]: { name: card.draft.name, message: card.draft.text } };
+                        return next;
+                    case 'examples':
+                        if (!card.draft) return state;
+                        next.examples = card.draft.text;
+                        return next;
+                    case 'notes':
+                    case 'concept':
+                        next[card.type] = card.text;
+                        return next;
+                    case 'decision': {
+                        if (card.action === 'add') return this.addDecision(next, { text: card.text, why: card.why, origin: 'cowriter', now });
+                        if (!(next.notebook || []).some(d => d.id === card.decision)) return state;
+                        return card.action === 'remove' ? this.removeDecision(next, card.decision) : this.changeDecision(next, card.decision, { text: card.text, why: card.why }, now);
+                    }
+                    default:
+                        return state;
+                }
+            },
+
             _mapChat(ws, chatId, change) {
                 const cw = this.cowriterOf(ws);
                 if (!cw.chats.some(c => c.id === chatId)) return ws;

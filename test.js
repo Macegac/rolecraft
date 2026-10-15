@@ -4985,6 +4985,38 @@ function cowriterState() {
 
 const COWRITER_EXTRAS = { openings: [{ id: 'sc1', label: 'O1', name: 'At the bar', message: 'Coin first.' }], examples: '{{user}}: Hi\n{{char}}: Hello.' };
 
+test('WorkshopStore: a co-writer card changes the character it is used on, and one that no longer fits changes nothing', () => {
+    const state = cowriterState();
+    const sectionOf = (s, id) => s.sections.find(x => x.id === id);
+    let next = WorkshopStore.cardInto(state, { type: 'pin', action: 'add', section: 'appearance', text: 'a scar over one eye' }, 5);
+    deepEq(sectionOf(next, 'appearance').pins.map(p => [p.text, p.state, p.origin, p.at]), [['a scar over one eye', 'kept', 'cowriter', 5]]);
+    next = WorkshopStore.cardInto(state, { type: 'pin', action: 'reword', section: 'personality', pin: 'pa', text: 'slow to trust anyone' });
+    assert.equal(sectionOf(next, 'personality').pins[0].text, 'slow to trust anyone');
+    next = WorkshopStore.cardInto(state, { type: 'pin', action: 'remove', section: 'personality', pin: 'pb' });
+    deepEq(sectionOf(next, 'personality').pins.map(p => p.id), ['pa', 'pc']);
+    assert.equal(WorkshopStore.cardInto(state, { type: 'pin', action: 'remove', section: 'personality', pin: 'gone' }), state, 'a pin that is gone');
+
+    const rewrite = {
+        type: 'rewrite', section: 'personality', brief: 'Colder.', removePins: ['pb'],
+        draft: { text: 'Cold, and slow to trust.', pinMap: { pa: 'slow to trust', pn: 'Cold' }, newPins: [{ id: 'pn', text: 'cold at first' }] }
+    };
+    const personality = sectionOf(WorkshopStore.cardInto(state, rewrite, 7), 'personality');
+    deepEq([personality.text, personality.pins.map(p => p.id), personality.pinMap], ['Cold, and slow to trust.', ['pa', 'pc', 'pn'], { pa: 'slow to trust', pn: 'Cold' }]);
+    deepEq([personality.pins[2].state, personality.pins[2].origin], ['kept', 'cowriter'], 'its new pins come in kept');
+    assert.equal(WorkshopStore.cardInto(state, { ...rewrite, section: 'voice' }), state, 'a locked section is never rewritten');
+    assert.equal(WorkshopStore.cardInto(state, { ...rewrite, draft: null }), state, 'nor one with nothing written yet');
+
+    deepEq(WorkshopStore.cardInto(state, { type: 'opening', opening: 'sc1', draft: { name: 'At the bar', text: 'No free drink.' } }).openings, { sc1: { name: 'At the bar', message: 'No free drink.' } });
+    assert.equal(WorkshopStore.cardInto(state, { type: 'examples', draft: { text: '{{char}}: No.' } }).examples, '{{char}}: No.');
+    assert.equal(WorkshopStore.cardInto(state, { type: 'notes', text: 'Act 2 at the festival.' }).notes, 'Act 2 at the festival.');
+    assert.equal(WorkshopStore.cardInto(state, { type: 'concept', text: 'A medic who trusts no one.' }).concept, 'A medic who trusts no one.');
+    deepEq(WorkshopStore.cardInto(state, { type: 'decision', action: 'add', text: 'Slow burn.', why: 'Hard to win over.' }).notebook.map(d => [d.text, d.why, d.origin]).at(-1), ['Slow burn.', 'Hard to win over.', 'cowriter']);
+    assert.equal(WorkshopStore.cardInto(state, { type: 'decision', action: 'change', decision: 'n1', text: 'She never says sorry.' }).notebook[0].text, 'She never says sorry.');
+    deepEq(WorkshopStore.cardInto(state, { type: 'decision', action: 'remove', decision: 'n2' }).notebook.map(d => d.id), ['n1']);
+    assert.equal(WorkshopStore.cardInto(state, { type: 'decision', action: 'remove', decision: 'gone' }), state, 'a decision that is gone');
+    assert.equal(sectionOf(state, 'personality').pins.length, 3, 'the state it was given is left as it was');
+});
+
 test('CowriterPrompts: pins, openings and decisions get short labels, and the labels in a reply turn back into ids', () => {
     const labels = CowriterPrompts.labels(cowriterState(), COWRITER_EXTRAS);
     deepEq(labels.byLabel.P1, { kind: 'pin', id: 'pa', section: 'personality' });
@@ -5156,6 +5188,15 @@ test('CowriterPrompts: a request reads the last 30 messages of its chat, or as m
     deepEq([CowriterPrompts.LIMITS.turns, CowriterPrompts.LIMITS.turnsOpenRouter], [30, 100]);
 });
 
+test("CowriterPrompts: the co-writer checks the card before calling anything done, and its briefs carry what the writer can't see", () => {
+    assert.match(CowriterPrompts.JOB, /Before you call anything done, check the character as it is shown below/);
+    const sent = CowriterPrompts.request({ name: 'Kael', state: cowriterState(), chat: { messages: [{ role: 'you', text: 'Put it on the card.' }] }, withCards: true }).messages[0].content;
+    assert.ok(sent.includes('The writer sees the character but not this chat, so the brief carries everything it needs from the chat'));
+    assert.ok(sent.includes('To put what was agreed in this chat onto the card'));
+    const card = { type: 'pin', action: 'add', section: 'voice', text: 'goes quiet', status: 'used', edited: true };
+    assert.equal(CowriterPrompts._outcome(card), 'used, after the author changed its words');
+});
+
 test('CowriterPrompts: back-to-back messages from one side go as one turn, since some backends refuse two in a row', () => {
     const chat = {
         messages: [
@@ -5174,6 +5215,22 @@ test("WorkshopPrompts: a steer, the co-writer's brief plus any note of yours, re
     const ask = WorkshopPrompts.writeSection({ name: 'Kael', state: pinnedState(), sectionId: 'personality', reweave: true, steer: 'Slow the thaw. Note: colder.' });
     assert.match(ask.messages[1].content, /What should change: Slow the thaw\. Note: colder\./);
     assert.ok(!WorkshopPrompts.writeSection({ name: 'Kael', state: pinnedState(), sectionId: 'personality' }).messages[1].content.includes('What should change'));
+});
+
+test("WorkshopPrompts: a co-writer brief rewrites a section, an opening or the examples, keeping what it doesn't touch, or starts a new opening", () => {
+    const rewrite = WorkshopPrompts.writeSection({ name: 'Kael', state: pinnedState(), sectionId: 'appearance', steer: 'Older, and scarred.' }).messages[1].content;
+    assert.match(rewrite, /TASK: Rewrite the "Appearance & body" section as asked below, keeping whatever the request doesn't touch\./);
+    assert.match(rewrite, /What should change: Older, and scarred\./);
+    const empty = WorkshopPrompts.writeSection({ name: 'Kael', state: pinnedState(), sectionId: 'background', steer: 'A dockside childhood.' }).messages[1].content;
+    assert.match(empty, /TASK: Write the "Background" section\./, 'an empty section is written from the brief');
+    const extras = { openings: [{ id: 'sc1', label: 'O1', name: 'At the bar', message: 'Coin first.' }], examples: '{{user}}: Hi\n{{char}}: Hello.' };
+    const opening = WorkshopPrompts.writeOpening({ name: 'Kael', state: pinnedState(), extras, openingId: 'sc1', steer: 'No free drink.' }).messages[1].content;
+    assert.match(opening, /TASK: Rewrite the opening "At the bar" \(O1\) as asked below, keeping whatever the request doesn't touch\./);
+    const fresh = WorkshopPrompts.writeOpening({ name: 'Kael', state: pinnedState(), extras, newName: 'Storm night', steer: 'A quiet start.' }).messages[1].content;
+    assert.match(fresh, /TASK: Write a new opening, "Storm night": another way a chat with \{\{char\}\} can start\./);
+    assert.match(fresh, /What it should be: A quiet start\./);
+    const examples = WorkshopPrompts.writeExamples({ name: 'Kael', state: pinnedState(), extras, steer: 'Drier.' }).messages[1].content;
+    assert.match(examples, /TASK: Rewrite the example dialogue as asked below, keeping whatever the request doesn't touch\./);
 });
 
 /**
@@ -5280,7 +5337,7 @@ test('Co-writer: a message starts a chat named after it, the reply streams in, a
     assert.ok(call.messages[0].content.includes('CHARACTER: Kael'));
     assert.ok(call.messages[0].content.includes('O1 "Default Start"'), 'the lead reads its openings');
     assert.ok(call.messages[0].content.includes('RECENT MESSAGES (oldest first):\nKael: Hello again.'), 'and what happened in the open chat');
-    assert.ok(!call.messages[0].content.includes('<card>'), 'cards come in a later step: for now it talks');
+    assert.ok(call.messages[0].content.includes('<card>'), 'it proposes changes as cards');
     deepEq(call.messages.slice(1).map(m => [m.role, m.content]), [['user', 'She warms up to {{user}} too fast.']]);
     deepEq(p.streamed, ['Agreed,'], 'the words appear as they arrive');
 
@@ -5536,6 +5593,143 @@ test('Co-writer: Edit takes your message and everything after it out and puts yo
     deepEq(p.chat().messages.map(m => m.text), ['Help me slow her down.', 'Agreed, she warms up too fast.', 'A promise kept, and kept again.', 'A promise, then.']);
     assert.equal(p.chat().messages[1].ask.picked, 'other', 'the new words answer the open question');
     deepEq(p.calls[2].messages.slice(1).map(m => m.role), ['user', 'assistant', 'user'], 'and the co-writer reads the chat as it is now');
+});
+
+const CARDS_REPLY = [
+    "Here's what I'd change.",
+    '<card>{"type":"pin","section":"appearance","add":"a scar over one eye","why":"A history you can see."}</card>',
+    '<card>{"type":"rewrite","section":"personality","brief":"Colder at first.","pins":{"add":["cold at first"],"remove":["P2"]},"why":"Fits the slow burn."}</card>',
+    '<card>{"type":"notes","text":"Act 2 at the festival.","why":"Pacing."}</card>',
+    '<card>{"type":"opening","opening":"O1","brief":"No free drink.","why":"Too warm."}</card>'
+].join('\n');
+
+/** cowriterPage with cowriterState's character in its Workshop: pins on Personality, Voice locked, two decisions. */
+function cardsPage(answers) {
+    const p = cowriterPage(answers);
+    p.view().ws = WorkshopStore.create({ state: cowriterState(), now: 1, commitId: 'c0' });
+    p.card = id => WorkshopStore.cowriterOf(p.view().ws).cards[id];
+    return p;
+}
+
+test("Co-writer cards: a reply's cards wait under it, the writer drafts its rewrites and openings from the briefs, and using them is one step", async () => {
+    const p = cardsPage([CARDS_REPLY, { text: 'Cold, and slow to trust.', pins: { P1: 'slow to trust', P2: 'Cold' } }, { text: 'Kael waits for the coin.' }, 'Noted.']);
+    await p.say('Make her harder to win over.');
+    const reply = p.chat().messages[1];
+    const ids = reply.cards;
+    deepEq(ids.map(id => [p.card(id).type, p.card(id).status, p.card(id).variant]),
+        [['pin', 'waiting', 'v_main'], ['rewrite', 'waiting', 'v_main'], ['notes', 'waiting', 'v_main'], ['opening', 'waiting', 'v_main']]);
+    assert.equal(p.calls.length, 3, 'right after the reply, the writer drafts the rewrite, then the opening');
+    assert.match(p.calls[1].messages[1].content, /What should change: Colder at first\./, "the co-writer's brief steers the writer");
+    const draft = p.card(ids[1]).draft;
+    deepEq([draft.text, draft.newPins.map(x => x.text), draft.missing, Object.values(draft.pinMap)], ['Cold, and slow to trust.', ['cold at first'], [], ['slow to trust', 'Cold']], 'with the pin check');
+    deepEq([p.card(ids[3]).draft.text, p.card(ids[3]).draft.name], ['Kael waits for the coin.', 'Default Start']);
+    const log = p.log();
+    assert.ok(log.includes('Cold, and slow to trust.') && log.includes('data-action="workshop-card-use"') && log.includes('data-action="workshop-card-all"'));
+    assert.equal(p.view().ws.commits.length, 1, 'nothing changes until a card is used');
+
+    await p.act('workshop-card-use', { card: ids[0] });
+    let last = p.view().ws.commits.at(-1);
+    deepEq([last.origin, last.summary, p.card(ids[0]).status, p.card(ids[0]).commit], ['cowriter', 'Pinned "a scar over one eye" to Appearance & body', 'used', last.id]);
+    await p.act('workshop-card-reject', { card: ids[3] });
+    assert.equal(p.card(ids[3]).status, 'turned-down');
+    await p.act('workshop-card-all', { message: reply.id });
+    last = p.view().ws.commits.at(-1);
+    deepEq([last.summary, p.view().ws.commits.length], ['Used 2 cards from the co-writer', 3], 'Use all is one step for what still waits');
+    let state = WorkshopStore.active(p.view().ws).state;
+    const personality = state.sections.find(s => s.id === 'personality');
+    deepEq([personality.text, personality.pins.map(x => x.text), state.notes], ['Cold, and slow to trust.', ['slow to trust', 'an idea not kept yet', 'cold at first'], 'Act 2 at the festival.']);
+
+    await p.act('workshop-card-undo', { card: ids[2] });
+    state = WorkshopStore.active(p.view().ws).state;
+    deepEq([p.view().ws.commits.at(-1).origin, state.notes, p.card(ids[1]).status, p.card(ids[2]).status], ['restore', 'Slow burn.', 'waiting', 'waiting'],
+        'Undo goes back to before that step, and its cards wait again');
+    await p.act('workshop-card-use', { card: ids[2] });
+    await p.WC._change('Edited the concept', next => { next.concept = 'Changed.'; });
+    await p.act('workshop-card-undo', { card: ids[2] });
+    deepEq([p.view().historyOpen, WorkshopStore.active(p.view().ws).state.notes], [true, 'Act 2 at the festival.'], 'with a step since, Undo opens the history instead');
+
+    await p.say('Thanks.');
+    const sent = p.calls.at(-1).messages[2].content;
+    assert.ok(sent.includes('new pin on Appearance & body: "a scar over one eye" (used)') && sent.includes('(turned down)'), 'what became of each card reaches the next request');
+});
+
+test('Co-writer cards: a locked section is never rewritten, a card whose part changed says so and can be written again, and a card waits for its own variant', async () => {
+    const reply = ['Three changes.',
+        '<card>{"type":"rewrite","section":"voice","brief":"Warmer.","why":"Softer."}</card>',
+        '<card>{"type":"pin","section":"appearance","add":"freckles","why":"Soft."}</card>',
+        '<card>{"type":"rewrite","section":"appearance","brief":"Taller still.","why":"Presence."}</card>'].join('\n');
+    const p = cardsPage([reply, { text: 'Very tall.', pins: {} }, { text: 'Very, very tall.', pins: {} }]);
+    await p.say('Go.');
+    const ids = p.chat().messages[1].cards;
+    deepEq([p.calls.length, p.card(ids[0]).draft], [2, null], 'the locked Voice is not written; Appearance is');
+    assert.ok(p.log().includes('Voice is locked.'));
+    await p.act('workshop-card-use', { card: ids[0] });
+    assert.equal(p.view().ws.commits.length, 1, 'and it cannot be used');
+
+    assert.equal(p.card(ids[2]).draft.basis, 'Tall.');
+    await p.WC._change('Edited Appearance & body', next => { next.sections.find(s => s.id === 'appearance').text = 'Tall, and scarred.'; });
+    assert.ok(p.log().includes('Changed since it was written.'));
+    await p.act('workshop-card-write', { card: ids[2] });
+    deepEq([p.card(ids[2]).draft.text, p.card(ids[2]).draft.basis], ['Very, very tall.', 'Tall, and scarred.'], 'Write it again reads the section as it is now');
+    assert.ok(!p.log().includes('Changed since it was written.'));
+
+    p.view().ws = WorkshopStore.branch(p.view().ws, WorkshopStore.active(p.view().ws).head, { name: 'Darker', variantId: 'v2' });
+    assert.ok(p.log().includes('Written for Main.'));
+    await p.act('workshop-card-use', { card: ids[1] });
+    assert.equal(p.card(ids[1]).status, 'waiting', 'on another variant it waits');
+    p.view().ws = WorkshopStore.switchVariant(p.view().ws, 'v_main');
+    await p.act('workshop-card-use', { card: ids[1] });
+    assert.equal(p.card(ids[1]).status, 'used');
+});
+
+test("Co-writer cards: Change it writes a card again from your note or edits its words, and a variant card takes its reply's other cards with it", async () => {
+    const reply = ['Try it apart.',
+        '<card>{"type":"variant","name":"Darker","why":"Try it apart."}</card>',
+        '<card>{"type":"rewrite","section":"appearance","brief":"Scarred.","why":"History."}</card>',
+        '<card>{"type":"concept","text":"A medic who trusts no one.","why":"Tighter."}</card>'].join('\n');
+    const p = cardsPage([reply, { text: 'Tall and scarred.', pins: {} }, { text: 'Tall, scarred and tired.', pins: {} }]);
+    await p.say('Darker?');
+    const ids = p.chat().messages[1].cards;
+    assert.equal(p.WC._waitingCards(p.view()), 3, 'the Co-writer tab shows a dot while cards wait');
+
+    p.act('workshop-card-change', { card: ids[1] });
+    assert.ok(p.log().includes('What should change?'));
+    p.el('ws-card-note').value = 'Tired too.';
+    await p.act('workshop-card-change-save', { card: ids[1] });
+    assert.match(p.calls[2].messages[1].content, /What should change: Scarred\.\nThe author also asked: Tired too\./);
+    deepEq([p.card(ids[1]).draft.text, p.card(ids[1]).note], ['Tall, scarred and tired.', 'Tired too.']);
+
+    p.act('workshop-card-change', { card: ids[2] });
+    p.el('ws-card-text').value = 'A night medic who trusts no one.';
+    await p.act('workshop-card-change-save', { card: ids[2] });
+    deepEq([p.card(ids[2]).text, p.card(ids[2]).edited], ['A night medic who trusts no one.', true], 'the other cards change their words in place');
+
+    await p.act('workshop-card-use', { card: ids[0] });
+    const darker = WorkshopStore.active(p.view().ws);
+    assert.equal(darker.name, 'Darker');
+    deepEq([p.card(ids[1]).variant, p.card(ids[2]).variant], [darker.id, darker.id], "the reply's other cards go with it");
+    await p.act('workshop-card-all', { message: p.chat().messages[1].id });
+    deepEq([WorkshopStore.active(p.view().ws).name, WorkshopStore.active(p.view().ws).state.concept], ['Darker', 'A night medic who trusts no one.']);
+    assert.equal(p.view().ws.variants.find(v => v.id === 'v_main').state.concept, 'A medic on the night shift.', 'Main is left as it was');
+    assert.equal(p.WC._waitingCards(p.view()), 0);
+    const source = fs.readFileSync(path.join(__dirname, 'js', 'controllers', 'workshop.js'), 'utf8');
+    assert.ok(source.includes("classList.toggle('has-dot'"), 'the dot is on the Co-writer tab');
+});
+
+test('Co-writer cards: Stop while the writer drafts leaves the rest to write later, and a failed draft says why, with Write it', async () => {
+    const reply = ['Two rewrites.',
+        '<card>{"type":"rewrite","section":"appearance","brief":"Scarred.","why":"History."}</card>',
+        '<card>{"type":"rewrite","section":"background","brief":"Dockside.","why":"Roots."}</card>'].join('\n');
+    const p = cardsPage([reply, { stop: '' }, new Error('Too many requests right now.'), { text: 'Raised on the docks.', pins: {} }]);
+    await p.say('Go.');
+    const ids = p.chat().messages[1].cards;
+    deepEq([p.calls.length, p.card(ids[0]).draft, p.card(ids[1]).draft, p.view().busy], [2, null, null, null], 'Stop ends the drafting');
+    assert.ok(p.log().includes('Not written yet.') && p.log().includes('data-action="workshop-card-write"'));
+    await p.act('workshop-card-write', { card: ids[0] });
+    assert.equal(p.card(ids[0]).error, 'Too many requests right now.');
+    assert.ok(p.log().includes('Too many requests right now.'));
+    await p.act('workshop-card-write', { card: ids[1] });
+    deepEq([p.card(ids[1]).draft.text, p.card(ids[1]).error], ['Raised on the docks.', null]);
 });
 
 test('Co-writer screen: its tab shows on the phone, and on a wide screen it shares the right column with the card', () => {
