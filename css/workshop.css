@@ -1170,6 +1170,87 @@
             min-width: 0;
         }
 
+        /* Your message with its Edit and Delete under it. */
+        .ws-cw-you {
+            align-self: flex-end;
+            max-width: 85%;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 0.15rem;
+        }
+
+        .ws-cw-you .ws-cw-msg.is-you {
+            max-width: 100%;
+        }
+
+        .ws-cw-actions {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0 0.9rem;
+            font-size: 0.78rem;
+            color: #8b98a9;
+        }
+
+        .ws-cw-act {
+            padding: 0.3rem 0;
+            color: #8b98a9;
+            font-weight: 600;
+        }
+
+        .ws-cw-act:hover:not(:disabled) {
+            color: #5eead4;
+        }
+
+        .ws-cw-act:disabled,
+        .ws-cw-ver:disabled {
+            opacity: 0.4;
+            cursor: default;
+        }
+
+        .ws-cw-actions.is-asking {
+            padding: 0.2rem 0.7rem;
+            border-radius: 0.6rem;
+            border: 1px solid rgba(248, 113, 113, 0.3);
+            background: rgba(248, 113, 113, 0.08);
+            color: var(--text-secondary);
+        }
+
+        .ws-cw-act.is-danger {
+            color: #fca5a5;
+        }
+
+        .ws-cw-act.is-danger:hover:not(:disabled) {
+            color: #fecaca;
+        }
+
+        .ws-cw-versions {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .ws-cw-ver {
+            width: 1.7rem;
+            height: 1.7rem;
+            border-radius: 999px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            color: var(--text-secondary);
+            line-height: 1;
+        }
+
+        .ws-cw-ver:hover:not(:disabled) {
+            border-color: rgba(20, 184, 166, 0.55);
+            color: #fff;
+        }
+
+        .ws-cw-undo {
+            margin: 0;
+        }
+
         .ws-cw-who {
             font-size: 0.7rem;
             font-weight: 700;

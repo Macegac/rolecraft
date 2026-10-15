@@ -1675,12 +1675,18 @@
                 if (typing && log.contains(typing) && typing.matches('input, textarea')) return;
                 const near = log.scrollHeight - log.scrollTop - log.clientHeight < 160;
                 const chat = this._openChat(view);
-                const messages = chat ? chat.messages : [];
                 const streaming = (view.cwStreaming && chat && view.cwStreaming.chatId === chat.id) ? view.cwStreaming : null;
+                // A reroll streams in where the reply it replaces was.
+                const messages = chat ? (streaming && streaming.reroll ? chat.messages.slice(0, -1) : chat.messages) : [];
                 const error = (view.errors || {})._cowriter;
+                const undo = this._logUndo(view, chat);
                 const parts = [this._readsBlock(view)];
+                messages.forEach((m, i) => {
+                    if (undo && undo.at === i) parts.push(this._logUndoLine(undo));
+                    parts.push(this._cwMessage(m, { isLast: i === messages.length - 1 && !streaming, after: messages.length - 1 - i, failed: !!error && !view.busy }));
+                });
+                if (undo && undo.at >= messages.length) parts.push(this._logUndoLine(undo));
                 if (messages.length === 0 && !streaming) parts.push(this._emptyChat(view));
-                messages.forEach((m, i) => parts.push(this._cwMessage(m, i === messages.length - 1 && !streaming)));
                 if (streaming) {
                     parts.push(DOM.html`
                         <div class="ws-cw-msg is-cowriter">
@@ -1784,8 +1790,14 @@
                 menu.innerHTML = view.cwMenu ? DOM.html`${this._startersHtml(view)}`.toString() : '';
             },
 
-            _cwMessage(m, isLast) {
-                if (m.role === 'you') return DOM.html`<div class="ws-cw-msg is-you">${m.text}</div>`.toString();
+            _cwMessage(m, { isLast = false, after = 0, failed = false } = {}) {
+                if (m.role === 'you') {
+                    return DOM.html`
+                        <div class="ws-cw-you">
+                            <div class="ws-cw-msg is-you">${m.text}</div>
+                            ${this._cwActions(m, { isLast, after, failed })}
+                        </div>`.toString();
+                }
                 const proposed = m.proposed ? DOM.html`
                     <p class="ws-hint">It also wrote ${m.proposed === 1 ? 'a change card' : `${m.proposed} change cards`}. Change cards come in the next update; until then, make the change yourself.</p>` : '';
                 const unread = (m.unreadable || []).map(u => DOM.html`
@@ -1798,7 +1810,62 @@
                         ${m.ask ? this._askBlock(m, isLast) : ''}
                         ${proposed}
                         ${unread}
+                        ${this._cwActions(m, { isLast, after })}
                     </div>`.toString();
+            },
+
+            /**
+             * Under a message: Edit on yours, Reroll and its versions on the newest reply, Delete on
+             * every one. Your newest message, when nothing answered it, can get a reply.
+             */
+            _cwActions(m, { isLast, after, failed }) {
+                const view = this.RUNTIME.view;
+                const off = view.busy ? 'disabled' : '';
+                const chat = this._openChat(view);
+                if (this._deleting(view, chat) === m.id) {
+                    return DOM.html`
+                        <div class="ws-cw-actions is-asking" role="group" aria-label="Delete what?">
+                            <span>Delete:</span>
+                            <button type="button" class="ws-cw-act is-danger" data-action="workshop-cw-delete-one" data-message="${m.id}" ${off}>Just this one</button>
+                            <button type="button" class="ws-cw-act is-danger" data-action="workshop-cw-delete-after" data-message="${m.id}" ${off}>This and the ${after === 1 ? 'one' : after} after it</button>
+                            <button type="button" class="ws-cw-act" data-action="workshop-cw-delete-cancel">Cancel</button>
+                        </div>`;
+                }
+                const items = [];
+                if (m.role === 'you') {
+                    items.push(DOM.html`<button type="button" class="ws-cw-act" data-action="workshop-cw-edit" data-message="${m.id}" ${off} title="Take this and everything after it out, and change what you said">Edit</button>`);
+                    if (isLast && !failed) items.push(DOM.html`<button type="button" class="ws-cw-act" data-action="workshop-cw-retry" ${off}>Get a reply</button>`);
+                } else if (isLast) {
+                    const count = Array.isArray(m.versions) ? m.versions.length : 1;
+                    const at = m.shown || 0;
+                    if (count > 1) {
+                        items.push(DOM.html`
+                            <span class="ws-cw-versions">
+                                <button type="button" class="ws-cw-ver" data-action="workshop-cw-version" data-message="${m.id}" data-step="-1" aria-label="Earlier version" ${off || (at === 0 ? 'disabled' : '')}>‹</button>
+                                <span>${at + 1}/${count}</span>
+                                <button type="button" class="ws-cw-ver" data-action="workshop-cw-version" data-message="${m.id}" data-step="1" aria-label="Later version" ${off || (at === count - 1 ? 'disabled' : '')}>›</button>
+                            </span>`);
+                    }
+                    items.push(DOM.html`<button type="button" class="ws-cw-act" data-action="workshop-cw-reroll" data-message="${m.id}" ${off} title="Ask again; this reply is kept to flip back to">Reroll</button>`);
+                }
+                items.push(DOM.html`<button type="button" class="ws-cw-act" data-action="workshop-cw-delete" data-message="${m.id}" ${off}>Delete</button>`);
+                return DOM.html`<div class="ws-cw-actions">${items}</div>`;
+            },
+
+            /** The message waiting for "just this one, or everything after", while nothing has changed in the chat since. */
+            _deleting(view, chat) {
+                const d = view.cwDeleting;
+                return (d && chat && d.messages === chat.messages) ? d.id : null;
+            },
+
+            /** The Undo for messages just taken out, while nothing has changed in that chat since. */
+            _logUndo(view, chat) {
+                const undo = view.cwLogUndo;
+                return (undo && chat && undo.chatId === chat.id && undo.messages === chat.messages) ? undo : null;
+            },
+
+            _logUndoLine(undo) {
+                return DOM.html`<p class="ws-hint ws-cw-undo">${undo.text} <button type="button" class="ws-link" data-action="workshop-cw-log-undo">Undo</button></p>`.toString();
             },
 
             /** A question with its choices. Only the newest one can be answered; a choice, once made, stays. */
@@ -1890,22 +1957,33 @@
                 return option === undefined ? Promise.resolve() : this.cowriterSend(option, { picked: index });
             },
 
-            /** Asks again after a failure, without a new message. */
+            /**
+             * Asks again without a new message: after a failure, or for a reply to your newest
+             * message. When the co-writer spoke last, that reply is rerolled.
+             */
             cowriterRetry() {
                 const view = this.RUNTIME.view;
                 const chat = view && this._openChat(view);
-                if (!chat || view.busy) return Promise.resolve();
+                if (!chat || chat.messages.length === 0 || view.busy) return Promise.resolve();
+                view.cwDeleting = null;
                 return this._ask('cowriter', null, null, chat.id);
             },
 
             /**
              * One reply: everything the co-writer reads goes with the chat so far, the words appear
              * as they arrive, and the reply is kept with its question. Stop keeps what was said.
+             * When the co-writer spoke last, this is a reroll: the same request again without that
+             * reply, and the new one is kept beside it as another version.
              */
             async _cowriterReply(view, name, chatId, onDelta) {
                 const cw = WorkshopStore.cowriterOf(view.ws);
                 const chat = cw.chats.find(c => c.id === chatId);
                 if (!chat) return;
+                const last = chat.messages[chat.messages.length - 1];
+                const again = last && last.role === 'cowriter' ? last : null;
+                const keep = reply => {
+                    view.ws = again ? WorkshopStore.addVersion(view.ws, chatId, again.id, reply) : WorkshopStore.addMessage(view.ws, chatId, reply);
+                };
                 const active = WorkshopStore.active(view.ws);
                 const characters = (ReactiveStore.state && ReactiveStore.state.characters) || [];
                 const { messages, labels } = CowriterPrompts.request({
@@ -1913,9 +1991,9 @@
                     variants: { active: active.name, others: view.ws.variants.filter(v => !v.deletedAt && v.id !== active.id).map(v => v.name) },
                     history: WorkshopStore.lineage(view.ws, active.head).reverse().map(c => ({ at: c.at, origin: c.origin, summary: c.summary })),
                     play: CowriterPrompts.playFrom(ReactiveStore.state, { characters, leadId: view.charId }),
-                    chat, cards: cw.cards, withCards: false
+                    chat: again ? { ...chat, messages: chat.messages.slice(0, -1) } : chat, cards: cw.cards, withCards: false
                 });
-                view.cwStreaming = { chatId, text: '' };
+                view.cwStreaming = { chatId, text: '', reroll: !!again };
                 if (this.RUNTIME.view === view) this.renderCowriterLog(true);
                 let reply;
                 try {
@@ -1930,7 +2008,7 @@
                     const said = CowriterPrompts.readReply(view.cwStreaming ? view.cwStreaming.text : '', labels).prose;
                     view.cwStreaming = null;
                     if (err && err.name === 'AbortError' && said) {
-                        view.ws = WorkshopStore.addMessage(view.ws, chatId, { role: 'cowriter', text: said, stopped: true, variant: view.ws.active });
+                        keep({ role: 'cowriter', text: said, stopped: true, variant: view.ws.active });
                         await this._saveWs(view);
                     }
                     throw err;
@@ -1941,8 +2019,93 @@
                 if (read.ask) message.ask = { ...read.ask, picked: null };
                 if (read.cards.length) message.proposed = read.cards.length;
                 if (read.unreadable.length) message.unreadable = read.unreadable;
-                view.ws = WorkshopStore.addMessage(view.ws, chatId, message);
+                keep(message);
                 await this._saveWs(view);
+            },
+
+            /** Reroll: the newest reply asked for again. The new one shows, and the old one is kept to flip back to. */
+            cowriterReroll(messageId) {
+                const view = this.RUNTIME.view;
+                const chat = view && this._openChat(view);
+                const last = chat && chat.messages[chat.messages.length - 1];
+                if (!last || last.id !== messageId || last.role !== 'cowriter') return Promise.resolve();
+                if (view.busy) {
+                    UIManager.showNotification('Wait for the AI to finish, or stop it, first.', 'info');
+                    return Promise.resolve();
+                }
+                view.cwDeleting = null;
+                return this._ask('cowriter', null, null, chat.id);
+            },
+
+            /** Flips the newest reply to an earlier or later version. */
+            cowriterVersion(messageId, step) {
+                const view = this.RUNTIME.view;
+                const chat = view && this._openChat(view);
+                const last = chat && chat.messages[chat.messages.length - 1];
+                if (!last || last.id !== messageId || !Array.isArray(last.versions) || view.busy) return Promise.resolve();
+                const index = Math.min(Math.max((last.shown || 0) + (step < 0 ? -1 : 1), 0), last.versions.length - 1);
+                if (index === last.shown) return Promise.resolve();
+                view.ws = WorkshopStore.showVersion(view.ws, chat.id, messageId, index);
+                this.renderCowriterLog();
+                return this._saveWs(view);
+            },
+
+            /** Delete: the newest message goes at once; one with messages after it asks first: just it, or it and everything after. */
+            cowriterDelete(messageId) {
+                const view = this.RUNTIME.view;
+                const chat = view && this._openChat(view);
+                const at = chat ? chat.messages.findIndex(m => m.id === messageId) : -1;
+                if (at === -1) return Promise.resolve();
+                if (view.busy) {
+                    UIManager.showNotification('Wait for the AI to finish, or stop it, first.', 'info');
+                    return Promise.resolve();
+                }
+                if (at === chat.messages.length - 1) return this._cowriterCut(messageId);
+                view.cwDeleting = { id: messageId, messages: chat.messages };
+                this.renderCowriterLog();
+                return Promise.resolve();
+            },
+
+            /**
+             * Takes messages out of the open chat, with Undo instead of asking first. Edit takes your
+             * message and everything after it, and puts your words back in the box to change.
+             */
+            _cowriterCut(messageId, { after = false, edit = false } = {}) {
+                const view = this.RUNTIME.view;
+                const chat = view && this._openChat(view);
+                const at = chat ? chat.messages.findIndex(m => m.id === messageId) : -1;
+                if (at === -1 || (edit && chat.messages[at].role !== 'you')) return Promise.resolve();
+                if (view.busy) {
+                    UIManager.showNotification('Wait for the AI to finish, or stop it, first.', 'info');
+                    return Promise.resolve();
+                }
+                const before = chat.messages;
+                const words = String(before[at].text || '');
+                view.ws = WorkshopStore.removeMessages(view.ws, chat.id, messageId, { after: after || edit });
+                const messages = this._openChat(view).messages;
+                const gone = before.length - messages.length;
+                const box = document.getElementById('ws-cw-input');
+                view.cwDeleting = null;
+                view.errors = { ...(view.errors || {}), _cowriter: null };
+                view.cwLogUndo = {
+                    chatId: chat.id, at, messages,
+                    text: edit
+                        ? `Took out your message${gone > 1 ? ` and the ${gone === 2 ? 'one' : gone - 1} after it` : ''}. Your words are in the box to change.`
+                        : `Deleted ${gone === 1 ? 'a message' : `${gone} messages`}.`,
+                    run: () => {
+                        view.ws = WorkshopStore.putMessages(view.ws, chat.id, before);
+                        if (edit && box && box.value === words) box.value = '';
+                        this.renderCowriter();
+                        return this._saveWs(view);
+                    }
+                };
+                this.renderCowriter();
+                if (edit && box) {
+                    box.value = words;
+                    box.focus();
+                    if (box.setSelectionRange) box.setSelectionRange(words.length, words.length);
+                }
+                return this._saveWs(view);
             },
 
             /** Talk it over: the co-writer comes into view with "About …: " ready in the box. */
@@ -2481,6 +2644,21 @@
                 });
                 ActionHandler.register('workshop-cw-pick', (ds) => this.cowriterPick(ds.message, Number(ds.index)));
                 ActionHandler.register('workshop-cw-retry', () => this.cowriterRetry());
+                ActionHandler.register('workshop-cw-reroll', (ds) => this.cowriterReroll(ds.message));
+                ActionHandler.register('workshop-cw-version', (ds) => this.cowriterVersion(ds.message, Number(ds.step)));
+                ActionHandler.register('workshop-cw-edit', (ds) => this._cowriterCut(ds.message, { edit: true }));
+                ActionHandler.register('workshop-cw-delete', (ds) => this.cowriterDelete(ds.message));
+                ActionHandler.register('workshop-cw-delete-one', (ds) => this._cowriterCut(ds.message));
+                ActionHandler.register('workshop-cw-delete-after', (ds) => this._cowriterCut(ds.message, { after: true }));
+                ActionHandler.register('workshop-cw-delete-cancel', withView(view => {
+                    view.cwDeleting = null;
+                    this.renderCowriterLog();
+                }));
+                ActionHandler.register('workshop-cw-log-undo', withView(view => {
+                    const undo = this._logUndo(view, this._openChat(view));
+                    view.cwLogUndo = null;
+                    return undo ? undo.run() : undefined;
+                }));
                 ActionHandler.register('workshop-cw-menu', withView(view => {
                     view.cwMenu = !view.cwMenu;
                     this.renderCowriterMenu();

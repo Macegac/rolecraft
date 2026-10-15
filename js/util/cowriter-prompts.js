@@ -192,20 +192,23 @@
             /**
              * This chat's last turns. Each reply ends with what became of its cards, and of its
              * question, so the co-writer knows what was used and what was turned down; a second
-             * opinion is added to the reply it answered.
+             * opinion is added to the reply it answered. Messages in a row from one side (after a
+             * delete, or a failed reply) go as one turn, since some backends refuse two in a row.
              */
             _turns(chat, cards, state, extras) {
                 const turns = [];
+                const add = (role, content) => {
+                    const last = turns[turns.length - 1];
+                    if (last && last.role === role) last.content += `\n\n${content}`;
+                    else turns.push({ role, content });
+                };
                 for (const m of ((chat && chat.messages) || []).slice(-this.LIMITS.turns)) {
                     if (m.role === 'you') {
-                        turns.push({ role: 'user', content: String(m.text || '') });
+                        add('user', String(m.text || ''));
                         continue;
                     }
                     if (m.role === 'second') {
-                        const note = `[A second opinion from another model: ${String(m.text || '').trim()}]`;
-                        const last = turns[turns.length - 1];
-                        if (last && last.role === 'assistant') last.content += `\n\n${note}`;
-                        else turns.push({ role: 'assistant', content: note });
+                        add('assistant', `[A second opinion from another model: ${String(m.text || '').trim()}]`);
                         continue;
                     }
                     const notes = [];
@@ -213,7 +216,7 @@
                     if (made.length) notes.push(`Your cards: ${made.map(c => `${this._cardLine(c, state, extras)} (${this._outcome(c)})`).join('; ')}`);
                     if (m.ask && m.ask.question) notes.push(`You asked: ${m.ask.question} (${(m.ask.options || []).join(' / ')})`);
                     if (m.stopped) notes.push('The author stopped this reply part way.');
-                    turns.push({ role: 'assistant', content: [String(m.text || '').trim(), ...notes.map(n => `[${n}]`)].filter(Boolean).join('\n\n') });
+                    add('assistant', [String(m.text || '').trim(), ...notes.map(n => `[${n}]`)].filter(Boolean).join('\n\n'));
                 }
                 return turns;
             },

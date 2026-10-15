@@ -4811,6 +4811,53 @@ test("WorkshopStore: the co-writer's chats and cards live outside the history, r
         'chats ride along in an exported card, so moving a character between phone and PC keeps them');
 });
 
+test('WorkshopStore: co-writer messages come out one at a time or from one on, and Undo puts them back; a question left newest opens again', () => {
+    let ws = WorkshopStore.newChat(WorkshopStore.create({ now: 1, commitId: 'c0' }), { id: 'k1', now: 10 });
+    ws = WorkshopStore.addMessage(ws, 'k1', { role: 'you', text: 'Slow her down.' }, 11);
+    ws = WorkshopStore.addMessage(ws, 'k1', { role: 'cowriter', text: 'Agreed.', ask: { question: 'How?', options: ['Patience', 'A promise'], multi: false, picked: 0 } }, 12);
+    ws = WorkshopStore.addMessage(ws, 'k1', { role: 'you', text: 'Patience' }, 13);
+    ws = WorkshopStore.addMessage(ws, 'k1', { role: 'cowriter', text: 'Patience it is.' }, 14);
+    const before = WorkshopStore.cowriterOf(ws).chats[0].messages;
+    const ids = before.map(m => m.id);
+    const texts = w => WorkshopStore.cowriterOf(w).chats[0].messages.map(m => m.text);
+
+    deepEq(texts(WorkshopStore.removeMessages(ws, 'k1', ids[3])), ['Slow her down.', 'Agreed.', 'Patience']);
+    let cut = WorkshopStore.removeMessages(ws, 'k1', ids[2]);
+    deepEq(texts(cut), ['Slow her down.', 'Agreed.', 'Patience it is.'], 'just this one');
+    assert.equal(WorkshopStore.cowriterOf(cut).chats[0].messages[1].ask.picked, 0, 'a question with a reply after it stays answered');
+
+    cut = WorkshopStore.removeMessages(ws, 'k1', ids[2], { after: true });
+    deepEq(texts(cut), ['Slow her down.', 'Agreed.'], 'this one and everything after it');
+    assert.equal(WorkshopStore.cowriterOf(cut).chats[0].messages[1].ask.picked, null, 'the question its answer went with is open again');
+    assert.equal(before[1].ask.picked, 0, 'the chat it came from is left as it was');
+    assert.equal(WorkshopStore.removeMessages(ws, 'k1', 'nope'), ws, 'an unknown message changes nothing');
+    assert.equal(WorkshopStore.removeMessages(ws, 'k9', ids[0]), ws);
+
+    deepEq(WorkshopStore.cowriterOf(WorkshopStore.putMessages(cut, 'k1', before)).chats[0].messages, JSON.parse(JSON.stringify(before)), 'Undo puts them back as they were');
+    assert.equal(cut.commits.length, 1, 'none of it changes the character');
+});
+
+test('WorkshopStore: a rerolled reply keeps each version, shows the newest, and flips back with nothing carried over between them', () => {
+    let ws = WorkshopStore.newChat(WorkshopStore.create({ now: 1, commitId: 'c0' }), { id: 'k1', now: 10 });
+    ws = WorkshopStore.addMessage(ws, 'k1', { role: 'you', text: 'Go.' }, 11);
+    ws = WorkshopStore.addMessage(ws, 'k1', { role: 'cowriter', text: 'First.', ask: { question: 'Which?', options: ['A', 'B'], multi: false, picked: null }, model: 'm1', provider: 'P1', variant: 'v_main' }, 12);
+    const id = WorkshopStore.cowriterOf(ws).chats[0].messages[1].id;
+    ws = WorkshopStore.addVersion(ws, 'k1', id, { text: 'Second.', model: 'm2', provider: 'P2', stopped: true, variant: 'v_main' }, 20);
+    let reply = WorkshopStore.cowriterOf(ws).chats[0].messages[1];
+    deepEq([reply.id, reply.role, reply.text, reply.model, reply.stopped, 'ask' in reply, reply.shown, reply.versions.length],
+        [id, 'cowriter', 'Second.', 'm2', true, false, 1, 2], "the new version shows, and the old one's question doesn't linger");
+    assert.equal(WorkshopStore.cowriterOf(ws).chats[0].updated, 20);
+
+    ws = WorkshopStore.showVersion(ws, 'k1', id, 0);
+    reply = WorkshopStore.cowriterOf(ws).chats[0].messages[1];
+    deepEq([reply.text, reply.model, 'stopped' in reply, reply.ask.question, reply.shown], ['First.', 'm1', false, 'Which?', 0]);
+    assert.equal(WorkshopStore.showVersion(ws, 'k1', id, 5), ws, 'no such version');
+
+    ws = WorkshopStore.updateMessage(ws, 'k1', id, { ask: { ...reply.ask, picked: 1 } });
+    ws = WorkshopStore.showVersion(WorkshopStore.showVersion(ws, 'k1', id, 1), 'k1', id, 0);
+    assert.equal(WorkshopStore.cowriterOf(ws).chats[0].messages[1].ask.picked, 1, 'a change to the version shown stays with it');
+});
+
 const CowriterPrompts = vm.runInNewContext(['js/util/workshop-prompts.js', 'js/util/cowriter-prompts.js']
     .map(file => fs.readFileSync(path.join(__dirname, file), 'utf8')).join('\n') + '\nCowriterPrompts', {});
 
@@ -4987,6 +5034,20 @@ test('CowriterPrompts: what happened in play comes from the open chat: its messa
     deepEq(play.relationships, ['Kael → Sam: wary friends', 'kael and elara: old allies'], "this character's lines, by full or first name");
     deepEq(play.world, [{ title: 'The inn', content: 'A warm inn.' }]);
     assert.equal(CowriterPrompts.playFrom(null, { characters, leadId: 'ch1' }), null);
+});
+
+test('CowriterPrompts: back-to-back messages from one side go as one turn, since some backends refuse two in a row', () => {
+    const chat = {
+        messages: [
+            { role: 'you', text: 'First thought.' },
+            { role: 'you', text: 'Second thought.' },
+            { role: 'cowriter', text: 'One.' },
+            { role: 'cowriter', text: 'Two.' },
+            { role: 'you', text: 'Third.' }
+        ]
+    };
+    const { messages } = CowriterPrompts.request({ name: 'Kael', state: cowriterState(), chat });
+    deepEq(messages.slice(1).map(m => [m.role, m.content]), [['user', 'First thought.\n\nSecond thought.'], ['assistant', 'One.\n\nTwo.'], ['user', 'Third.']]);
 });
 
 test("WorkshopPrompts: a steer, the co-writer's brief plus any note of yours, reaches the section writer", () => {
@@ -5230,6 +5291,110 @@ test('Co-writer: Talk it over opens it with "About …:" ready; starters send th
     assert.ok(reads.includes('deepseek/deepseek-v4.1-flash'));
     const sections = fs.readFileSync(path.join(__dirname, 'js', 'controllers', 'workshop.js'), 'utf8');
     assert.ok((sections.match(/data-action="workshop-cw-about"/g) || []).length >= 3, 'Talk it over on the sections, the openings and the example dialogue');
+});
+
+test('Co-writer: Reroll asks again from the same point and keeps both replies to flip between; the chat carries on from the one shown', async () => {
+    const p = cowriterPage(['First take.', 'Second take.', 'Noted.']);
+    await p.say('Slow her down.');
+    const id = p.chat().messages[1].id;
+    assert.ok(p.log().includes(`data-action="workshop-cw-reroll" data-message="${id}"`), 'the newest reply has Reroll');
+    await p.act('workshop-cw-reroll', { message: id });
+    deepEq(p.calls[1].messages.slice(1).map(m => [m.role, m.content]), [['user', 'Slow her down.']], 'the same request again, without the reply it replaces');
+    const reply = p.chat().messages[1];
+    deepEq([p.chat().messages.length, reply.id, reply.text, reply.shown, reply.versions.length], [2, id, 'Second take.', 1, 2]);
+    assert.ok(p.log().includes('2/2'), 'which version shows');
+
+    await p.act('workshop-cw-version', { message: id, step: '-1' });
+    assert.equal(p.chat().messages[1].text, 'First take.');
+    assert.equal(p.characters[1].workshop.cowriter.chats[0].messages[1].text, 'First take.', 'saved');
+    await p.say('Go on.');
+    assert.equal(p.calls[2].messages[2].content, 'First take.', 'the next request reads the version shown');
+    const log = p.log();
+    assert.ok(!log.includes(`data-action="workshop-cw-reroll" data-message="${id}"`) && !log.includes(`data-action="workshop-cw-version" data-message="${id}"`),
+        'only the newest reply rerolls and flips');
+});
+
+test('Co-writer: a reroll stopped part way is kept as a version; one that fails leaves the reply as it was, and Try again rerolls it', async () => {
+    const p = cowriterPage(['First take.', { stop: 'Half a ta' }, new Error('Too many requests right now.'), 'Third take.']);
+    await p.say('Go.');
+    const id = p.chat().messages[1].id;
+    await p.act('workshop-cw-reroll', { message: id });
+    let reply = p.chat().messages[1];
+    deepEq([p.chat().messages.length, reply.text, !!reply.stopped, reply.versions.length], [2, 'Half a ta', true, 2]);
+    await p.act('workshop-cw-reroll', { message: id });
+    assert.equal(p.view().errors._cowriter, 'Too many requests right now.');
+    deepEq([p.chat().messages.length, p.chat().messages[1].text], [2, 'Half a ta'], 'nothing lost');
+    await p.act('workshop-cw-retry');
+    reply = p.chat().messages[1];
+    deepEq([p.chat().messages.length, reply.text, reply.versions.length, reply.shown], [2, 'Third take.', 3, 2], 'Try again rerolls it, rather than adding a reply');
+    deepEq(p.calls.map(c => c.messages.length), [2, 2, 2, 2], 'each one asked from the same point');
+});
+
+test('Co-writer: Delete takes the newest message out at once, and otherwise asks: just this one, or this and everything after; Undo puts them back', async () => {
+    const p = cowriterPage([ASK_PATIENCE, 'Patience it is.', 'Sure.']);
+    await p.say('Help me slow her down.');
+    await p.act('workshop-cw-pick', { message: p.chat().messages[1].id, index: '0' });
+    const ids = p.chat().messages.map(m => m.id);
+    const texts = () => p.chat().messages.map(m => m.text);
+
+    await p.act('workshop-cw-delete', { message: ids[3] });
+    deepEq(texts(), ['Help me slow her down.', 'Agreed, she warms up too fast.', 'Patience'], 'the newest goes at once');
+    let log = p.log();
+    assert.ok(log.includes('Deleted a message.') && log.includes('data-action="workshop-cw-log-undo"'), 'with Undo, instead of asking first');
+    assert.ok(log.includes('data-action="workshop-cw-retry"'), 'your message, now the newest, can get a reply');
+    await p.act('workshop-cw-log-undo');
+    assert.equal(p.chat().messages.length, 4);
+
+    await p.act('workshop-cw-delete', { message: ids[1] });
+    assert.equal(p.chat().messages.length, 4, 'with messages after it, it asks first');
+    log = p.log();
+    assert.ok(log.includes('data-action="workshop-cw-delete-one"') && log.includes('This and the 2 after it'));
+    await p.act('workshop-cw-delete-cancel');
+    assert.ok(!p.log().includes('data-action="workshop-cw-delete-one"'));
+
+    await p.act('workshop-cw-delete', { message: ids[2] });
+    await p.act('workshop-cw-delete-one', { message: ids[2] });
+    deepEq(texts(), ['Help me slow her down.', 'Agreed, she warms up too fast.', 'Patience it is.'], 'just this one');
+    await p.act('workshop-cw-log-undo');
+
+    await p.act('workshop-cw-delete', { message: ids[1] });
+    await p.act('workshop-cw-delete-after', { message: ids[1] });
+    deepEq(texts(), ['Help me slow her down.'], 'this and everything after');
+    assert.ok(p.log().includes('Deleted 3 messages.'));
+    await p.act('workshop-cw-retry');
+    deepEq(texts(), ['Help me slow her down.', 'Sure.'], 'Get a reply answers it again');
+    assert.ok(!p.log().includes('data-action="workshop-cw-log-undo"'), 'Undo goes once the chat moves on');
+    assert.equal(p.characters[1].workshop.cowriter.chats[0].messages.length, 2, 'saved');
+
+    p.view().busy = { kind: 'cowriter', controller: new AbortController() };
+    await p.act('workshop-cw-delete', { message: ids[0] });
+    assert.equal(p.chat().messages.length, 2, 'nothing comes out while the AI is busy');
+    assert.equal(p.notices.at(-1)[0], 'Wait for the AI to finish, or stop it, first.');
+});
+
+test('Co-writer: Edit takes your message and everything after it out and puts your words in the box; Undo puts them back and empties it', async () => {
+    const p = cowriterPage([ASK_PATIENCE, 'Patience it is.', 'A promise, then.']);
+    await p.say('Help me slow her down.');
+    await p.act('workshop-cw-pick', { message: p.chat().messages[1].id, index: '0' });
+    const ids = p.chat().messages.map(m => m.id);
+    const log = p.log();
+    assert.ok(log.includes(`data-action="workshop-cw-edit" data-message="${ids[2]}"`), 'your messages have Edit');
+    assert.ok(!log.includes(`data-action="workshop-cw-edit" data-message="${ids[1]}"`), "the co-writer's don't");
+
+    await p.act('workshop-cw-edit', { message: ids[2] });
+    deepEq(p.chat().messages.map(m => m.text), ['Help me slow her down.', 'Agreed, she warms up too fast.']);
+    assert.equal(p.chat().messages[1].ask.picked, null, 'the question is open again');
+    assert.equal(p.el('ws-cw-input').value, 'Patience');
+    assert.ok(p.log().includes('data-action="workshop-cw-log-undo"'));
+    await p.act('workshop-cw-log-undo');
+    assert.equal(p.chat().messages.length, 4);
+    assert.equal(p.el('ws-cw-input').value, '', 'Undo empties the box it filled');
+
+    await p.act('workshop-cw-edit', { message: ids[2] });
+    await p.say('A promise kept, and kept again.');
+    deepEq(p.chat().messages.map(m => m.text), ['Help me slow her down.', 'Agreed, she warms up too fast.', 'A promise kept, and kept again.', 'A promise, then.']);
+    assert.equal(p.chat().messages[1].ask.picked, 'other', 'the new words answer the open question');
+    deepEq(p.calls[2].messages.slice(1).map(m => m.role), ['user', 'assistant', 'user'], 'and the co-writer reads the chat as it is now');
 });
 
 test('Co-writer screen: its tab shows on the phone, and on a wide screen it shares the right column with the card', () => {

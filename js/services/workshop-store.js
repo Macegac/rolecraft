@@ -430,8 +430,77 @@
                 return `${title.charAt(0).toUpperCase()}${title.slice(1)}${words.length > 6 ? '…' : ''}`;
             },
 
+            /** Changes a message. On a rerolled reply the change goes to the version shown, too. */
             updateMessage(ws, chatId, messageId, patch) {
-                return this._mapChat(ws, chatId, c => ({ ...c, messages: c.messages.map(m => (m.id === messageId ? { ...m, ...patch } : m)) }));
+                return this._mapChat(ws, chatId, c => ({
+                    ...c,
+                    messages: c.messages.map(m => {
+                        if (m.id !== messageId) return m;
+                        const next = { ...m, ...patch };
+                        if (Array.isArray(m.versions) && m.versions[m.shown]) {
+                            next.versions = m.versions.map((v, i) => (i === m.shown ? { ...v, ...this._version(patch) } : v));
+                        }
+                        return next;
+                    })
+                }));
+            },
+
+            /**
+             * Takes a message out of a chat, or it and everything after it. A question left as the
+             * newest message is open again, since nothing answers it any more.
+             */
+            removeMessages(ws, chatId, messageId, { after = false } = {}) {
+                const chat = this.cowriterOf(ws).chats.find(c => c.id === chatId);
+                const at = chat ? chat.messages.findIndex(m => m.id === messageId) : -1;
+                if (at === -1) return ws;
+                const messages = after ? chat.messages.slice(0, at) : chat.messages.filter(m => m.id !== messageId);
+                const cut = this.putMessages(ws, chatId, messages);
+                const last = messages[messages.length - 1];
+                if (last && last.role === 'cowriter' && last.ask && last.ask.picked !== null && last.ask.picked !== undefined) {
+                    return this.updateMessage(cut, chatId, last.id, { ask: { ...last.ask, picked: null } });
+                }
+                return cut;
+            },
+
+            /** A chat's messages, put back as they were (Undo). */
+            putMessages(ws, chatId, messages) {
+                return this._mapChat(ws, chatId, c => ({ ...c, messages }));
+            },
+
+            /** What makes each version of a rerolled reply its own. */
+            VERSION_KEYS: ['text', 'ask', 'proposed', 'unreadable', 'stopped', 'model', 'provider', 'variant', 'cards', 'at'],
+
+            /** A reply asked for again: the new one shows, and every earlier one is kept to flip back to. */
+            addVersion(ws, chatId, messageId, reply, now = Date.now()) {
+                return this._mapChat(ws, chatId, c => ({
+                    ...c,
+                    updated: now,
+                    messages: c.messages.map(m => {
+                        if (m.id !== messageId) return m;
+                        const versions = [...(Array.isArray(m.versions) ? m.versions : [this._version(m)]), this._version({ at: now, ...reply })];
+                        return this._showing({ ...m, versions }, versions.length - 1);
+                    })
+                }));
+            },
+
+            showVersion(ws, chatId, messageId, index) {
+                const chat = this.cowriterOf(ws).chats.find(c => c.id === chatId);
+                const message = chat && chat.messages.find(m => m.id === messageId);
+                if (!message || !Array.isArray(message.versions) || !message.versions[index]) return ws;
+                return this._mapChat(ws, chatId, c => ({ ...c, messages: c.messages.map(m => (m.id === messageId ? this._showing(m, index) : m)) }));
+            },
+
+            _version(m) {
+                const version = {};
+                this.VERSION_KEYS.forEach(k => { if (m[k] !== undefined) version[k] = m[k]; });
+                return version;
+            },
+
+            /** The message showing one of its versions, with nothing left over from the one before. */
+            _showing(m, index) {
+                const shown = { ...m };
+                this.VERSION_KEYS.forEach(k => { delete shown[k]; });
+                return { ...shown, ...m.versions[index], shown: index };
             },
 
             /** Keeps a reply's cards, each waiting for an answer and marked with the variant it was written for. */
