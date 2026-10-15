@@ -3465,6 +3465,95 @@ test('Workshop screen: wired in, with every way in and every button handled', ()
     const boot = fs.readFileSync(path.join(__dirname, 'js', 'boot.js'), 'utf8');
     assert.ok(boot.includes('WorkshopController.openPending();'), 'a new character opens in the Workshop after its story loads');
     assert.ok(controller.includes("history.pushState(") && controller.includes("addEventListener('popstate'"), "Android's back button closes it");
+    assert.ok(ui.includes('data-action="workshop-from-library" data-id="${story.id}"'), "a story in the library opens its character in the Workshop, beside Continue");
+    assert.ok(controller.includes("ActionHandler.register('workshop-from-library'"));
+});
+
+/** The Workshop controller with a library of four stories: s1 (two characters, two chats), s2 (open), s3 (no chat yet), s4 (only you). */
+function libraryEntryPage() {
+    const calls = [];
+    const notices = [];
+    const opened = [];
+    const focused = [];
+    const session = {};
+    const story = (id, characters, scenarios, narratives) => ({ id, characters: [{ id: 'me', name: 'You', is_user: true }, ...characters], scenarios, narratives });
+    const library = {
+        active_story_id: 's2',
+        active_narrative_id: 'n2',
+        stories: [
+            story('s1', [{ id: 'nar', name: 'Narrator', is_narrator: true }, { id: 'kael', name: 'Kael' }, { id: 'elara', name: 'Elara' }],
+                [{ id: 'sc1', opening_character_id: 'elara' }],
+                [{ id: 'old', last_modified: '2026-10-01T00:00:00Z' }, { id: 'new', last_modified: '2026-10-10T00:00:00Z' }]),
+            story('s2', [{ id: 'ch1', name: 'Kael' }], [{ id: 'sc2' }], [{ id: 'n2', last_modified: '2026-10-12T00:00:00Z' }]),
+            story('s3', [{ id: 'ch3', name: 'Nova' }], [{ id: 'sc3' }], []),
+            story('s4', [], [{ id: 'sc4' }], [])
+        ]
+    };
+    const store = {
+        state: { characters: library.stories[1].characters },
+        async forceSave() { calls.push(['forceSave']); },
+        blockAutoSave() { calls.push(['blockAutoSave']); }
+    };
+    const handlers = {};
+    const element = id => ({ focus() { focused.push(id); }, classList: { add() { }, remove() { } }, addEventListener() { } });
+    const source = ['js/core/dom.js', 'js/services/workshop-store.js', 'js/util/workshop-prompts.js', 'js/util/cowriter-prompts.js', 'js/controllers/workshop.js']
+        .map(file => fs.readFileSync(path.join(__dirname, file), 'utf8')).join('\n');
+    const WC = vm.runInNewContext(source + '\nWorkshopController', {
+        document: { getElementById: element, querySelector: () => null, querySelectorAll: () => [], activeElement: null, body: element('body') },
+        sessionStorage: { getItem: k => (k in session ? session[k] : null), setItem: (k, v) => { session[k] = String(v); }, removeItem: k => { delete session[k]; } },
+        ReactiveStore: store, StateManager: { getLibrary: () => library }, UTILITY,
+        LibraryController: {
+            loadNarrative: (storyId, narrativeId) => calls.push(['loadNarrative', storyId, narrativeId]),
+            async createNarrativeFromScenario(storyId, scenarioId) { calls.push(['createNarrativeFromScenario', storyId, scenarioId]); }
+        },
+        AppController: { closeModal: id => calls.push(['closeModal', id]) },
+        UIManager: { showNotification: (text, type) => notices.push([text, type]) },
+        ActionHandler: { register: (name, fn) => { handlers[name] = fn; } }, window: { addEventListener() { }, matchMedia: () => ({ matches: false }) }, debounce: fn => fn
+    });
+    WC.registerActions();
+    WC.open = id => opened.push(id);
+    return { WC, calls, notices, opened, focused, session, library, store, act: (name, dataset = {}) => handlers[name](dataset) };
+}
+
+test('Workshop from the library: a story opens its lead, after loading its latest chat, or a new one from its first opening; the open story needs no reload', async () => {
+    const p = libraryEntryPage();
+    await p.act('workshop-from-library', { id: 's1' });
+    deepEq(p.calls, [['forceSave'], ['blockAutoSave'], ['loadNarrative', 's1', 'new']], 'its latest chat loads, saved first');
+    deepEq(JSON.parse(p.session['rolecraft-workshop-open']), { id: 'elara' }, 'and its lead waits across the reload: whoever speaks the first opening');
+
+    p.library.active_story_id = 's1';
+    p.store.state.characters = p.library.stories[0].characters;
+    p.WC.openPending();
+    deepEq(p.opened, ['elara'], 'once the story has loaded, the Workshop opens');
+    deepEq(p.focused, [], 'without the keyboard: it is not a new character');
+    assert.equal(p.session['rolecraft-workshop-open'], undefined, 'and only once');
+
+    p.calls.length = 0;
+    await p.act('workshop-from-library', { id: 's3' });
+    deepEq(p.calls, [['createNarrativeFromScenario', 's3', 'sc3']], 'a story with no chat yet starts one from its first opening');
+    deepEq(JSON.parse(p.session['rolecraft-workshop-open']), { id: 'ch3' });
+
+    p.calls.length = 0;
+    await p.act('workshop-from-library', { id: 's1' });
+    deepEq(p.calls, [['closeModal', 'story-details-modal'], ['closeModal', 'story-library-modal']], 'the story already open just closes the library');
+    deepEq(p.opened, ['elara', 'elara']);
+
+    p.calls.length = 0;
+    await p.act('workshop-from-library', { id: 's4' });
+    deepEq(p.calls, [], 'a story with only you opens nothing');
+    assert.equal(p.notices.at(-1)[0], 'This story has no character to open in the Workshop.');
+});
+
+test('Workshop from the library: a new character still opens at the concept, ready to type, as it did before', () => {
+    const p = libraryEntryPage();
+    p.session['rolecraft-workshop-open'] = JSON.stringify({ id: 'ch1', concept: true });
+    p.WC.openPending();
+    deepEq([p.opened, p.focused], [['ch1'], ['ws-concept']]);
+    p.session['rolecraft-workshop-open'] = 'ch1';
+    p.WC.openPending();
+    deepEq([p.opened, p.focused], [['ch1', 'ch1'], ['ws-concept', 'ws-concept']], 'a plain id, waiting from before this change, too');
+    const controller = fs.readFileSync(path.join(__dirname, 'js', 'controllers', 'workshop.js'), 'utf8');
+    assert.ok(controller.includes('JSON.stringify({ id: character.id, concept: true })'), 'New character asks for the concept');
 });
 
 // ─── Writing with the Workshop's AI ──────────────────────────────────────────

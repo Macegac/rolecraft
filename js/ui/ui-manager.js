@@ -1022,6 +1022,10 @@
 
                 const hasImages = (story.characters || []).some(c => UIManager.getPortraitSrc(c));
 
+                // The character the Workshop button opens: the story's lead.
+                const leadId = typeof WorkshopStore !== 'undefined' ? WorkshopStore.leadOf(story.characters, story.scenarios) : null;
+                const workshopLead = leadId ? (story.characters || []).find(c => c.id === leadId) : null;
+
                 // Extract custom typography config from the story object natively
                 const customFont = story.font || 'var(--font-primary)';
                 const customColor = story.chatTextColor || 'inherit';
@@ -1110,16 +1114,24 @@
                             </div>
                         </div>
 
-                        <!-- Action Button (Shrinks to wrap) -->
-                        ${sortedNarrativeStubs.length > 0 ? DOM.html`
-                        <div class="w-full md:w-auto flex-shrink-0">
+                        <!-- Action Buttons (Shrink to wrap): Continue, and the story's character in the Workshop -->
+                        ${(sortedNarrativeStubs.length > 0 || workshopLead) ? DOM.html`
+                        <div class="w-full md:w-auto flex-shrink-0 flex flex-col sm:flex-row gap-2">
+                            ${sortedNarrativeStubs.length > 0 ? DOM.html`
                             <button onclick="LibraryController.loadNarrative('${story.id}', '${sortedNarrativeStubs[0].id}')" class="w-full md:w-auto px-6 py-2.5 bg-teal-600 hover:bg-teal-500 text-white font-bold rounded-lg shadow-[0_0_15px_rgba(13,148,136,0.2)] hover:shadow-[0_0_25px_rgba(13,148,136,0.3)] transition-all flex items-center justify-center gap-2.5 group text-base transform hover:-translate-y-0.5 border border-teal-500/30">
                                 <svg class="w-5 h-5 group-hover:scale-110 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
                                 </svg>
                                 Continue
-                            </button>
+                            </button>` : ''}
+                            ${workshopLead ? DOM.html`
+                            <button data-action="workshop-from-library" data-id="${story.id}" class="w-full md:w-auto px-6 py-2.5 bg-gray-800 hover:bg-gray-700 text-teal-300 hover:text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2.5 text-base border border-teal-500/40" title="Open ${workshopLead.name || 'its character'} in the Character Workshop">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                                </svg>
+                                Workshop
+                            </button>` : ''}
                         </div>
                         ` : ''}
 

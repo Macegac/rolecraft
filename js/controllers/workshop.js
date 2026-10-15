@@ -13,7 +13,7 @@
                 view: null
             },
 
-            /** A character made with "New character" waits here across the page reload that opens its story. */
+            /** A character waits here, from "New character" or the library's Workshop button, across the page reload that opens its story. */
             PENDING_KEY: 'rolecraft-workshop-open',
 
             /** Fills in the Workshop block. Runs every time the settings fields are filled from storage. */
@@ -390,19 +390,74 @@
                 if (view.editorWasOpen) UIManager.openCharacterDetailModal(view.charId);
             },
 
-            /** Opens the character that "New character" made, once its story has loaded. */
+            /**
+             * Opens the character waiting from "New character", or from a story's Workshop button in
+             * the library, once its story has loaded. Only a new character opens at the concept,
+             * ready to type.
+             */
             openPending() {
-                let charId = null;
+                let pending = null;
                 try {
-                    charId = sessionStorage.getItem(this.PENDING_KEY);
+                    pending = sessionStorage.getItem(this.PENDING_KEY);
                     sessionStorage.removeItem(this.PENDING_KEY);
                 } catch (e) {
                     return;
                 }
+                let charId = pending;
+                let atConcept = true;
+                try {
+                    const waiting = JSON.parse(pending);
+                    if (waiting && waiting.id) {
+                        charId = waiting.id;
+                        atConcept = !!waiting.concept;
+                    }
+                } catch (e) {
+                    // A plain id, left waiting by an earlier version: a new character.
+                }
                 if (!charId || !this.canOpen(charId)) return;
                 this.open(charId);
-                const concept = document.getElementById('ws-concept');
+                const concept = atConcept && document.getElementById('ws-concept');
                 if (concept) concept.focus();
+            },
+
+            /**
+             * "Workshop" on a story in the library: its lead opens in the Workshop. The story already
+             * open just closes the library. Another one loads its latest chat first, or a new chat
+             * from its first opening when it has none, and the lead waits across that reload.
+             */
+            async openFromLibrary(storyId) {
+                const library = StateManager.getLibrary();
+                const story = library.stories.find(s => s.id === storyId);
+                const leadId = story ? WorkshopStore.leadOf(story.characters, story.scenarios) : null;
+                if (!leadId) {
+                    UIManager.showNotification('This story has no character to open in the Workshop.', 'info');
+                    return;
+                }
+                if (library.active_story_id === storyId && this.canOpen(leadId)) {
+                    AppController.closeModal('story-details-modal');
+                    AppController.closeModal('story-library-modal');
+                    this.open(leadId);
+                    return;
+                }
+                const latest = (story.narratives || []).slice().sort((a, b) => new Date(b.last_modified) - new Date(a.last_modified))[0];
+                const opening = (story.scenarios || [])[0];
+                if (!latest && !opening) {
+                    UIManager.showNotification('This story has no opening to start a chat from.', 'info');
+                    return;
+                }
+                try {
+                    sessionStorage.setItem(this.PENDING_KEY, JSON.stringify({ id: leadId }));
+                } catch (e) {
+                    // Without session storage the story still opens, just not in the Workshop.
+                }
+                if (!latest) {
+                    await LibraryController.createNarrativeFromScenario(storyId, opening.id);
+                    return;
+                }
+                // Saved first, and autosave held, so nothing of the open story is lost or written into this one.
+                if (ReactiveStore.forceSave) await ReactiveStore.forceSave();
+                if (ReactiveStore.blockAutoSave) ReactiveStore.blockAutoSave();
+                LibraryController.loadNarrative(storyId, latest.id);
             },
 
             /**
@@ -427,7 +482,7 @@
                     const library = StateManager.getLibrary();
                     library.stories.push(story);
                     StateManager.saveLibrary();
-                    sessionStorage.setItem(this.PENDING_KEY, character.id);
+                    sessionStorage.setItem(this.PENDING_KEY, JSON.stringify({ id: character.id, concept: true }));
                     await LibraryController.createNarrativeFromScenario(story.id, story.scenarios[0].id);
                 } catch (err) {
                     UIManager.hideLoadingSpinner();
@@ -2554,6 +2609,7 @@
                     if (dropdown) dropdown.classList.add('hidden');
                     this.newCharacter();
                 });
+                ActionHandler.register('workshop-from-library', (ds) => this.openFromLibrary(ds.id));
                 ActionHandler.register('workshop-close', () => this.close());
                 ActionHandler.register('workshop-rename', (ds, val) => this.rename(val));
                 ActionHandler.register('workshop-tab', (ds) => {
