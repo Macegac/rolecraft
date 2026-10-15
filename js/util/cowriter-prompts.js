@@ -9,8 +9,12 @@
          */
         const CowriterPrompts = {
 
-            /** How much of each part one request carries. */
-            LIMITS: { history: 20, playMessages: 40, playChars: 24000, timeline: 30, relationships: 20, worldChars: 6000, turns: 30 },
+            /**
+             * How much of each part one request carries. A chat's last 30 messages go to a local
+             * model, which has less room; OpenRouter's models read the last 100, so a long
+             * interview keeps its early answers in view.
+             */
+            LIMITS: { history: 20, playMessages: 40, playChars: 24000, timeline: 30, relationships: 20, worldChars: 6000, turns: 30, turnsOpenRouter: 100 },
 
             /** Who the co-writer is and how it works. Every request starts with it. */
             JOB: [
@@ -102,14 +106,15 @@
              * @param {{messages: Array}} [opts.chat] - The chat being talked in.
              * @param {Object<string, Object>} [opts.cards] - Every card, by id.
              * @param {boolean} [opts.withCards] - Whether the co-writer may propose cards.
+             * @param {number} [opts.turns] - How many of the chat's last messages it reads.
              * @returns {{messages: Array<{role: string, content: string}>, labels: Object}}
              */
-            request({ name, state, extras = null, variants = {}, history = [], play = null, chat = null, cards = {}, withCards = false }) {
+            request({ name, state, extras = null, variants = {}, history = [], play = null, chat = null, cards = {}, withCards = false, turns = this.LIMITS.turns }) {
                 const labels = this.labels(state, extras);
                 const job = [this.JOB, withCards ? this.CARDS : this.TALK_ONLY, this.ASK].join('\n\n');
                 const context = this.context({ name, state, extras, variants, history, play, labels });
                 return {
-                    messages: [{ role: 'system', content: `${job}\n\n${context}` }, ...this._turns(chat, cards, state, extras)],
+                    messages: [{ role: 'system', content: `${job}\n\n${context}` }, ...this._turns(chat, cards, state, extras, turns)],
                     labels
                 };
             },
@@ -195,14 +200,14 @@
              * opinion is added to the reply it answered. Messages in a row from one side (after a
              * delete, or a failed reply) go as one turn, since some backends refuse two in a row.
              */
-            _turns(chat, cards, state, extras) {
+            _turns(chat, cards, state, extras, limit = this.LIMITS.turns) {
                 const turns = [];
                 const add = (role, content) => {
                     const last = turns[turns.length - 1];
                     if (last && last.role === role) last.content += `\n\n${content}`;
                     else turns.push({ role, content });
                 };
-                for (const m of ((chat && chat.messages) || []).slice(-this.LIMITS.turns)) {
+                for (const m of ((chat && chat.messages) || []).slice(-limit)) {
                     if (m.role === 'you') {
                         add('user', String(m.text || ''));
                         continue;

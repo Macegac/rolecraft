@@ -1797,12 +1797,17 @@
                     const read = play === 1 ? 'its one message' : `its last ${Math.min(play, CowriterPrompts.LIMITS.playMessages)} messages`;
                     items.push(`The open chat: ${read}, the timeline, relationships and World Knowledge`);
                 }
-                items.push('This chat');
+                items.push(`This chat, up to its last ${this._turnsRead()} messages`);
                 // Only OpenRouter is sent a thinking level; local servers think as their model does.
                 const cfg = WorkshopAI.settings();
                 const thinking = cfg.backend === 'openrouter' && cfg.reasoning && cfg.reasoning !== 'off' ? `, thinking at ${cfg.reasoning}` : '';
                 items.push(`It answers with ${cfg.model || 'the loaded model'}${thinking}.`);
                 return items;
+            },
+
+            /** How many of a chat's last messages the co-writer reads: more on OpenRouter, fewer for a local model with less room. */
+            _turnsRead() {
+                return WorkshopAI.settings().backend === 'openrouter' ? CowriterPrompts.LIMITS.turnsOpenRouter : CowriterPrompts.LIMITS.turns;
             },
 
             /** Ways to start a chat. What happened in play waits until the open chat has more than its opening. */
@@ -2046,7 +2051,8 @@
                     variants: { active: active.name, others: view.ws.variants.filter(v => !v.deletedAt && v.id !== active.id).map(v => v.name) },
                     history: WorkshopStore.lineage(view.ws, active.head).reverse().map(c => ({ at: c.at, origin: c.origin, summary: c.summary })),
                     play: CowriterPrompts.playFrom(ReactiveStore.state, { characters, leadId: view.charId }),
-                    chat: again ? { ...chat, messages: chat.messages.slice(0, -1) } : chat, cards: cw.cards, withCards: false
+                    chat: again ? { ...chat, messages: chat.messages.slice(0, -1) } : chat, cards: cw.cards, withCards: false,
+                    turns: this._turnsRead()
                 });
                 view.cwStreaming = { chatId, text: '', reroll: !!again };
                 if (this.RUNTIME.view === view) this.renderCowriterLog(true);

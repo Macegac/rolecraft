@@ -5147,6 +5147,15 @@ test('CowriterPrompts: what happened in play comes from the open chat: its messa
     assert.equal(CowriterPrompts.playFrom(null, { characters, leadId: 'ch1' }), null);
 });
 
+test('CowriterPrompts: a request reads the last 30 messages of its chat, or as many as it is told', () => {
+    const chat = { messages: Array.from({ length: 120 }, (_, i) => ({ role: i % 2 ? 'cowriter' : 'you', text: `Message ${i + 1}.` })) };
+    const short = CowriterPrompts.request({ name: 'Kael', state: cowriterState(), chat }).messages;
+    deepEq([short.length, short[1].content], [1 + 30, 'Message 91.']);
+    const long = CowriterPrompts.request({ name: 'Kael', state: cowriterState(), chat, turns: 100 }).messages;
+    deepEq([long.length, long[1].content], [1 + 100, 'Message 21.']);
+    deepEq([CowriterPrompts.LIMITS.turns, CowriterPrompts.LIMITS.turnsOpenRouter], [30, 100]);
+});
+
 test('CowriterPrompts: back-to-back messages from one side go as one turn, since some backends refuse two in a row', () => {
     const chat = {
         messages: [
@@ -5239,7 +5248,7 @@ function cowriterPage(answers = []) {
     WC.RUNTIME.view = { charId: 'ch1', ws: WorkshopStore.create({ now: 1, commitId: 'c0' }), tab: 'sections', editing: null, addingPin: null };
     const chat = () => WorkshopStore.cowriterOf(WC.RUNTIME.view.ws).chats.find(c => c.id === WorkshopStore.cowriterOf(WC.RUNTIME.view.ws).open);
     return {
-        WC, events, notices, calls, streamed, characters, store, elements, el: byId,
+        WC, events, notices, calls, streamed, characters, store, elements, el: byId, ai: WorkshopAI,
         act: (name, dataset = {}, value) => handlers[name](dataset, value),
         view: () => WC.RUNTIME.view,
         chat,
@@ -5406,6 +5415,23 @@ test('Co-writer: Talk it over opens it with "About …:" ready; starters send th
     assert.ok(reads.includes('deepseek/deepseek-v4.1-flash'));
     const sections = fs.readFileSync(path.join(__dirname, 'js', 'controllers', 'workshop.js'), 'utf8');
     assert.ok((sections.match(/data-action="workshop-cw-about"/g) || []).length >= 3, 'Talk it over on the sections, the openings and the example dialogue');
+});
+
+test('Co-writer: on OpenRouter it reads the last 100 messages of a long chat; a local model, with less room, the last 30', async () => {
+    const p = cowriterPage(['Noted.', 'Noted again.']);
+    let ws = WorkshopStore.newChat(p.view().ws, { id: 'k1', now: 10 });
+    for (let i = 0; i < 60; i++) ws = WorkshopStore.addMessage(ws, 'k1', { role: i % 2 ? 'cowriter' : 'you', text: `Answer ${i + 1}.` }, 11 + i);
+    p.view().ws = ws;
+    p.act('workshop-cw-reads');
+    await p.say('Where were we?');
+    assert.equal(p.calls[0].messages.length, 1 + 61, 'the whole chat, well inside 100');
+    assert.equal(p.calls[0].messages[1].content, 'Answer 1.');
+    assert.ok(p.log().includes('This chat, up to its last 100 messages'), 'What it reads says how much');
+
+    p.ai.settings = () => ({ backend: 'koboldcpp', model: '', reasoning: 'medium' });
+    await p.say('And now?');
+    assert.equal(p.calls[1].messages.length, 1 + 30, 'a local model reads the last 30');
+    assert.ok(p.log().includes('This chat, up to its last 30 messages'));
 });
 
 test('Co-writer: Reroll asks again from the same point and keeps both replies to flip between; the chat carries on from the one shown', async () => {
