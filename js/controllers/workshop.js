@@ -2188,7 +2188,7 @@
                         ${c.id === cw.open
                             ? DOM.html`<span class="ws-variant-tag">Open</span>`
                             : DOM.html`<button type="button" class="ws-btn" data-action="workshop-cw-open" data-chat="${c.id}">Open</button>`}
-                        <button type="button" class="ws-link" data-action="workshop-cw-hide" data-chat="${c.id}">Hide</button>
+                        <button type="button" class="ws-link is-danger" data-action="workshop-cw-delete-chat" data-chat="${c.id}">Delete</button>
                         <span class="ws-cw-chat-meta">${this._when(c.updated || c.at)} · ${c.messages.length} message${c.messages.length === 1 ? '' : 's'}</span>
                     </div>`);
                 const hidden = cw.chats.filter(c => c.hiddenAt);
@@ -2288,16 +2288,24 @@
                     next => { next.notebook = WorkshopStore.removeDecision(next, id).notebook; }, () => this._afterNotebook());
             },
 
-            /** Hides a chat, with Undo instead of asking first. */
-            cowriterHide(chatId) {
+            /** Deletes a chat for good, with Undo while the list stays open instead of asking first. */
+            cowriterDeleteChat(chatId) {
                 const view = this.RUNTIME.view;
-                const chat = view && WorkshopStore.cowriterOf(view.ws).chats.find(c => c.id === chatId);
-                if (!chat) return Promise.resolve();
-                view.ws = WorkshopStore.hideChat(view.ws, chatId);
+                const cw = view && WorkshopStore.cowriterOf(view.ws);
+                const at = cw ? cw.chats.findIndex(c => c.id === chatId) : -1;
+                if (at === -1) return Promise.resolve();
+                if (view.busy) {
+                    UIManager.showNotification('Wait for the AI to finish, or stop it, first.', 'info');
+                    return Promise.resolve();
+                }
+                const chat = cw.chats[at];
+                const wasOpen = cw.open === chatId;
+                view.ws = WorkshopStore.deleteChat(view.ws, chatId);
                 view.cwUndo = {
-                    text: `Hid "${chat.title}".`,
+                    text: `Deleted "${chat.title}".`,
                     run: () => {
-                        view.ws = WorkshopStore.unhideChat(view.ws, chatId);
+                        view.ws = WorkshopStore.restoreChat(view.ws, chat, { at, open: wasOpen });
+                        this.renderCowriterSheet();
                         this.renderCowriter();
                         return this._saveWs(view);
                     }
@@ -2682,7 +2690,7 @@
                     return this._chatsChange(WorkshopStore.openChat(view.ws, ds.chat));
                 }));
                 ActionHandler.register('workshop-cw-rename', withView((view, ds, value) => this._chatsChange(WorkshopStore.renameChat(view.ws, ds.chat, value))));
-                ActionHandler.register('workshop-cw-hide', (ds) => this.cowriterHide(ds.chat));
+                ActionHandler.register('workshop-cw-delete-chat', (ds) => this.cowriterDeleteChat(ds.chat));
                 ActionHandler.register('workshop-cw-unhide', withView((view, ds) => this._chatsChange(WorkshopStore.unhideChat(view.ws, ds.chat))));
                 ActionHandler.register('workshop-cw-undo', withView(view => {
                     const undo = view.cwUndo;

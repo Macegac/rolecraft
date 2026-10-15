@@ -639,6 +639,10 @@
             text-underline-offset: 2px;
         }
 
+        .ws-link.is-danger {
+            color: #fca5a5;
+        }
+
         .ws-btn.is-primary {
             background: rgba(20, 184, 166, 0.45);
         }

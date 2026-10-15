@@ -411,6 +411,24 @@
                 });
             },
 
+            /** Deletes a chat for good, so it stops taking up space. Deleting the open one opens the next one shown. */
+            deleteChat(ws, chatId) {
+                const cw = this.cowriterOf(ws);
+                if (!cw.chats.some(c => c.id === chatId)) return ws;
+                const chats = cw.chats.filter(c => c.id !== chatId);
+                const open = cw.open === chatId ? ((chats.find(c => !c.hiddenAt) || {}).id || null) : cw.open;
+                return { ...ws, cowriter: { ...cw, chats, open } };
+            },
+
+            /** A deleted chat put back in its place (Undo), and opened again if it was open. */
+            restoreChat(ws, chat, { at = 0, open = false } = {}) {
+                const cw = this.cowriterOf(ws);
+                if (!chat || cw.chats.some(c => c.id === chat.id)) return ws;
+                const chats = cw.chats.slice();
+                chats.splice(Math.min(Math.max(at, 0), chats.length), 0, chat);
+                return { ...ws, cowriter: { ...cw, chats, open: open ? chat.id : cw.open } };
+            },
+
             /** Adds a message to a chat. A chat still called "New chat" is named after the first thing you say in it. */
             addMessage(ws, chatId, message, now = Date.now()) {
                 const entry = { id: this.newId('m'), at: now, ...message };

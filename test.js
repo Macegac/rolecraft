@@ -4858,6 +4858,28 @@ test('WorkshopStore: a rerolled reply keeps each version, shows the newest, and 
     assert.equal(WorkshopStore.cowriterOf(ws).chats[0].messages[1].ask.picked, 1, 'a change to the version shown stays with it');
 });
 
+test('WorkshopStore: a co-writer chat is deleted for good, the next one opens, and Undo puts it back where it was', () => {
+    let ws = WorkshopStore.newChat(WorkshopStore.create({ now: 1, commitId: 'c0' }), { id: 'k1', now: 10 });
+    ws = WorkshopStore.addMessage(ws, 'k1', { role: 'you', text: 'First.' }, 11);
+    ws = WorkshopStore.newChat(ws, { id: 'k2', now: 20 });
+    ws = WorkshopStore.addMessage(ws, 'k2', { role: 'you', text: 'Second.' }, 21);
+    const gone = WorkshopStore.cowriterOf(ws).chats[0];
+
+    const cut = WorkshopStore.deleteChat(ws, 'k2');
+    deepEq(WorkshopStore.cowriterOf(cut).chats.map(c => c.id), ['k1'], 'gone, not hidden');
+    assert.equal(WorkshopStore.cowriterOf(cut).open, 'k1', 'the next one opens');
+    assert.equal(WorkshopStore.deleteChat(ws, 'nope'), ws, 'an unknown chat changes nothing');
+    assert.equal(WorkshopStore.cowriterOf(WorkshopStore.deleteChat(ws, 'k1')).open, 'k2', 'deleting another chat leaves the open one open');
+
+    const back = WorkshopStore.restoreChat(cut, gone, { at: 0, open: true });
+    deepEq(WorkshopStore.cowriterOf(back).chats.map(c => c.id), ['k2', 'k1'], 'Undo puts it back in its place');
+    assert.equal(WorkshopStore.cowriterOf(back).open, 'k2', 'open again, as it was');
+    assert.equal(WorkshopStore.restoreChat(back, gone, { at: 0 }), back, 'one already there is left alone');
+
+    deepEq(WorkshopStore.cowriterOf(WorkshopStore.deleteChat(cut, 'k1')), { open: null, chats: [], cards: {} }, 'deleting the last one leaves none open');
+    assert.equal(cut.commits.length, 1, 'none of it changes the character');
+});
+
 const CowriterPrompts = vm.runInNewContext(['js/util/workshop-prompts.js', 'js/util/cowriter-prompts.js']
     .map(file => fs.readFileSync(path.join(__dirname, file), 'utf8')).join('\n') + '\nCowriterPrompts', {});
 
@@ -5244,7 +5266,7 @@ test('Co-writer: the notebook is edited by hand as steps in the history, and a r
     assert.ok(p.head().includes('Notebook · 1'), 'the count is on the bar');
 });
 
-test('Co-writer: chats are listed newest first, renamed, hidden with Undo, and a new chat starts empty, with starters', async () => {
+test('Co-writer: chats are listed newest first, renamed, deleted with Undo, and a new chat starts empty, with starters', async () => {
     const p = cowriterPage(['One.', 'Two.']);
     await p.say('The first chat.');
     const first = p.chat().id;
@@ -5262,11 +5284,15 @@ test('Co-writer: chats are listed newest first, renamed, hidden with Undo, and a
     p.act('workshop-cw-rename', { chat: first }, 'Harder to win over');
     assert.equal(p.chat().title, 'Harder to win over');
     p.act('workshop-cw-sheet', { sheet: 'chats' });
-    await p.act('workshop-cw-hide', { chat: first });
-    assert.notEqual(p.chat().id, first, 'hiding the open chat opens the other one');
-    assert.ok(p.sheet().includes('data-action="workshop-cw-undo"'));
+    assert.ok(!p.sheet().includes('data-action="workshop-cw-hide"') && p.sheet().includes('data-action="workshop-cw-delete-chat"'), 'chats are deleted, not hidden');
+    await p.act('workshop-cw-delete-chat', { chat: first });
+    assert.notEqual(p.chat().id, first, 'deleting the open chat opens the other one');
+    assert.ok(!WorkshopStore.cowriterOf(p.view().ws).chats.some(c => c.id === first), 'gone, not kept hidden');
+    assert.ok(!p.characters[1].workshop.cowriter.chats.some(c => c.id === first), 'and gone from what is saved');
+    assert.ok(p.sheet().includes('Deleted &quot;Harder to win over&quot;.') && p.sheet().includes('data-action="workshop-cw-undo"'), 'with Undo, instead of asking first');
     await p.act('workshop-cw-undo');
-    assert.equal(WorkshopStore.cowriterOf(p.view().ws).chats.find(c => c.id === first).hiddenAt, undefined, 'brought back');
+    assert.equal(p.chat().id, first, 'Undo brings it back, open again');
+    deepEq(WorkshopStore.cowriterOf(p.view().ws).chats.map(c => c.title), ['The second chat.', 'Harder to win over'], 'in its place');
 });
 
 test('Co-writer: Talk it over opens it with "About …:" ready; starters send their request, and What happened in play waits for a chat to read', async () => {
