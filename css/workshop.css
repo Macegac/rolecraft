@@ -1358,6 +1358,15 @@
             align-self: flex-start;
         }
 
+        .ws-cw-cards-head {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.5rem 0.75rem;
+            font-size: 0.8rem;
+            color: #8b98a9;
+        }
+
         /* A dot on the Co-writer tab while cards wait. */
         .ws-tab.has-dot::after {
             content: '';

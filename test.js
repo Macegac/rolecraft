@@ -5208,6 +5208,13 @@ test('CowriterPrompts: proposed changes are suggestions, never cards, since a ca
     deepEq([cut.prose, cut.unreadable.map(u => u.reason)], ['Wait.', ['The reply was cut off before this was finished.']]);
 });
 
+test("CowriterPrompts: the co-writer never says it changed anything, points the author to Use all, and doesn't resend what's still waiting", () => {
+    const sent = CowriterPrompts.request({ name: 'Kael', state: cowriterState(), chat: { messages: [{ role: 'you', text: 'Did you write the intro yet?' }] }, withCards: true }).messages[0].content;
+    assert.ok(sent.includes('Your suggestions change nothing until the author uses them. Never say you wrote, added, changed or updated anything; say what you suggested.'));
+    assert.ok(sent.includes('After sending suggestions, end with one short line telling the author to tap Use all, or Use it on the ones they want.'));
+    assert.ok(sent.includes("When an earlier suggestion for the same change is still waiting (not answered yet), don't send it again: tell the author it's waiting above."));
+});
+
 test('CowriterPrompts: back-to-back messages from one side go as one turn, since some backends refuse two in a row', () => {
     const chat = {
         messages: [
@@ -5637,6 +5644,7 @@ test("Co-writer cards: a reply's cards wait under it, the writer drafts its rewr
     const log = p.log();
     assert.ok(log.includes('Cold, and slow to trust.') && log.includes('data-action="workshop-card-use"') && log.includes('data-action="workshop-card-all"'));
     assert.ok(log.includes('Use all 4 suggestions'), 'they are suggestions: a card is the finished character card');
+    assert.ok(log.includes('Nothing changes until you use them.') && log.split('data-action="workshop-card-all"').length === 3, 'with Use all at the top of the list too, and why it matters');
     assert.equal(p.view().ws.commits.length, 1, 'nothing changes until a card is used');
 
     await p.act('workshop-card-use', { card: ids[0] });

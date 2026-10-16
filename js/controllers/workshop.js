@@ -2568,7 +2568,13 @@
                 const ready = cards.filter(c => c.type !== 'variant' && this._cardReady(view, c));
                 const all = ready.length > 1 ? DOM.html`
                     <button type="button" class="ws-btn is-primary ws-cw-use-all" data-action="workshop-card-all" data-message="${m.id}" ${view.busy ? 'disabled' : ''}>Use all ${ready.length} suggestions</button>` : '';
-                return DOM.html`<div class="ws-cw-cards">${cards.map(c => this._cardHtml(view, c))}${all}</div>`;
+                // A long list on a phone hides the button at its end, so it shows above the list as well.
+                const head = ready.length > 1 ? DOM.html`
+                    <div class="ws-cw-cards-head">
+                        <span>Nothing changes until you use them.</span>
+                        ${all}
+                    </div>` : '';
+                return DOM.html`<div class="ws-cw-cards">${head}${cards.map(c => this._cardHtml(view, c))}${all}</div>`;
             },
 
             _cardHtml(view, card) {
