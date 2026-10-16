@@ -28,7 +28,7 @@
                 "5. Keep replies short, a few sentences, unless the author asks for depth. No preamble, and don't repeat back what they said.",
                 '6. Talk to the author as "you". Call the character by name, and the author\'s character {{user}}.',
                 '7. Answer in the language the author writes in.',
-                '8. Before you call anything done, check the character as it is shown below. It is read fresh for every message, and only what is there is on the card: something only said in this chat, or in a card that was not used, is not on it.',
+                '8. Before you call anything done, check the character as it is shown below. It is read fresh for every message, and only what is there is on the card: something only said in this chat, or in a suggestion that was not used, is not on it.',
                 '',
                 'What you know: the character as it stands now (every section, its pins and what is locked), its openings and example dialogue, the story notes, the notebook of decisions, the recent history of changes, and, when there is a chat, what has happened in play. What happened in play is not the card: a trait from play only joins the card if the author agrees.',
                 '',
@@ -38,14 +38,17 @@
             /** While cards are off, the co-writer only talks. */
             TALK_ONLY: "You can't change the character yourself. When you would change something, say exactly what you'd change and where, and the author makes the change.",
 
-            /** The cards it can propose once they are on, and how to write them. */
+            /**
+             * The suggestions it can propose once they are on, and how to write them. To the author a
+             * card is only the finished character card, so the co-writer calls these suggestions.
+             */
             CARDS: [
-                'You never change the character yourself. When you suggest a change, put a card for it after your words. The author uses it, changes it or turns it down, and nothing changes until they do.',
+                'You never change the character yourself. When you suggest a change, put a suggestion for it after your words. The author uses it, changes it or turns it down, and nothing changes until they do. When you mention them to the author, call them suggestions: to the author, a card is only the finished character card.',
                 '',
-                'Each card is one <card> block of JSON after your words, like this:',
-                '<card>{"type": "pin", "section": "voice", "add": "goes quiet instead of saying thank you", "why": "a tell for when something gets to her"}</card>',
+                'Each suggestion is one <suggestion> block of JSON after your words, like this:',
+                '<suggestion>{"type": "pin", "section": "voice", "add": "goes quiet instead of saying thank you", "why": "a tell for when something gets to her"}</suggestion>',
                 '',
-                'The kinds of card:',
+                'The kinds of suggestion:',
                 '- pin: add one to a section {"type": "pin", "section": "<section id>", "add": "the pin"}; reword one {"type": "pin", "pin": "P3", "text": "the new words"}; remove one {"type": "pin", "remove": "P3"}',
                 '- rewrite: rewrite a section {"type": "rewrite", "section": "<section id>", "brief": "what should change and how", "pins": {"add": ["a new pin"], "remove": ["P2"]}}',
                 '- opening: rewrite one {"type": "opening", "opening": "O1", "brief": "what should change"}; add one {"type": "opening", "new": "its name", "brief": "how it starts"}',
@@ -54,22 +57,22 @@
                 '- decision: add one to the notebook {"type": "decision", "add": "what was decided"}; change one {"type": "decision", "decision": "D2", "text": "the new words"}; remove one {"type": "decision", "remove": "D2"}',
                 '- variant: start a new variant from the character as it is now {"type": "variant", "name": "its name"}',
                 '- concept: replace the concept {"type": "concept", "text": "the new concept"}',
-                'Every card also has a "why": one short line on why.',
+                'Every suggestion also has a "why": one short line on why.',
                 '',
-                "Rewrite, opening and examples cards are written by the Workshop's writer from your brief, and it keeps every pin. The writer sees the character but not this chat, so the brief carries everything it needs from the chat: the details agreed, what to keep, what to drop. Say what the text should do; don't write the text yourself.",
+                "Rewrite, opening and examples suggestions are written by the Workshop's writer from your brief, and it keeps every pin. The writer sees the character but not this chat, so the brief carries everything it needs from the chat: the details agreed, what to keep, what to drop. Say what the text should do; don't write the text yourself.",
                 '',
-                'Rules for cards:',
-                '- One card per change. A rewrite can carry pin changes for its own section.',
-                '- To put what was agreed in this chat onto the card, send a card for each part it touches: a rewrite for each section, and opening, examples, notes, concept and decision cards as needed.',
+                'Rules for suggestions:',
+                '- One suggestion per change. A rewrite can carry pin changes for its own section.',
+                '- To put what was agreed in this chat onto the card, send a suggestion for each part it touches: a rewrite for each section, and opening, examples, notes, concept and decision suggestions as needed.',
                 '- Point at pins, openings and decisions by their labels (P3, O1, D2), and at sections by their ids.',
-                '- Card text uses {{char}} and {{user}}, never a literal name.',
-                '- When something is decided, add a decision card with its why, so later chats know.',
-                '- When you suggest rewriting something, check the openings and the example dialogue, and add a card for any that would clash.',
+                '- Suggestion text uses {{char}} and {{user}}, never a literal name.',
+                '- When something is decided, add a decision suggestion with its why, so later chats know.',
+                '- When you suggest rewriting something, check the openings and the example dialogue, and add a suggestion for any that would clash.',
                 "- Locked sections are final: don't propose rewriting them.",
-                "- Don't bring back a card the author turned down unless they ask."
+                "- Don't bring back a suggestion the author turned down unless they ask."
             ].join('\n'),
 
-            /** Questions with choices, which work with cards on or off. */
+            /** Questions with choices, which work with suggestions on or off. */
             ASK: [
                 'To ask the author something with a few clear answers, end your reply with one <ask> block of JSON. They tap a choice or type their own:',
                 '<ask>{"question": "What finally gets through to her?", "options": ["Patience, no pushing", "A promise kept", "Seeing {{user}} hurt"]}</ask>',
@@ -222,7 +225,7 @@
                     }
                     const notes = [];
                     const made = (m.cards || []).map(id => (cards || {})[id]).filter(Boolean);
-                    if (made.length) notes.push(`Your cards: ${made.map(c => `${this._cardLine(c, state, extras)} (${this._outcome(c)})`).join('; ')}`);
+                    if (made.length) notes.push(`Your suggestions: ${made.map(c => `${this._cardLine(c, state, extras)} (${this._outcome(c)})`).join('; ')}`);
                     if (m.ask && m.ask.question) notes.push(`You asked: ${m.ask.question} (${(m.ask.options || []).join(' / ')})`);
                     if (m.stopped) notes.push('The author stopped this reply part way.');
                     add('assistant', [String(m.text || '').trim(), ...notes.map(n => `[${n}]`)].filter(Boolean).join('\n\n'));
@@ -247,7 +250,7 @@
                         return card.action === 'change' ? `change a decision to "${card.text}"` : 'remove a decision';
                     case 'variant': return `new variant "${card.name}"`;
                     case 'concept': return 'new concept';
-                    default: return 'a card';
+                    default: return 'a suggestion';
                 }
             },
 
@@ -311,7 +314,8 @@
                 const unreadable = [];
                 const seen = new Set();
                 let ask = null;
-                let rest = String(text || '').replace(/<(card|ask)>([\s\S]*?)<\/\1>/gi, (whole, tag, body) => {
+                // <card> is how replies marked suggestions before they were called that; both still read.
+                let rest = String(text || '').replace(/<(suggestion|card|ask)>([\s\S]*?)<\/\1>/gi, (whole, tag, body) => {
                     const raw = whole.trim();
                     const data = this._json(body);
                     if (!data) {
@@ -337,7 +341,7 @@
                     }
                     return '';
                 });
-                const open = rest.search(/<(card|ask)>/i);
+                const open = rest.search(/<(suggestion|card|ask)>/i);
                 if (open !== -1) {
                     unreadable.push({ raw: rest.slice(open).trim(), reason: 'The reply was cut off before this was finished.' });
                     rest = rest.slice(0, open);
@@ -367,7 +371,7 @@
                         const pin = find(label, 'pin');
                         if (!pin) return { error: `There is no pin ${String(label || '').trim().toUpperCase() || 'named'}.` };
                         if (data.remove) return { type: 'pin', action: 'remove', section: pin.section, pin: pin.id, why };
-                        if (!text) return { error: 'A pin card adds, rewords or removes a pin.' };
+                        if (!text) return { error: 'A pin suggestion adds, rewords or removes a pin.' };
                         return { type: 'pin', action: 'reword', section: pin.section, pin: pin.id, text, why };
                     }
                     case 'rewrite': {
@@ -380,33 +384,33 @@
                         return { type: 'rewrite', section: data.section, brief, addPins, removePins, why };
                     }
                     case 'opening': {
-                        if (!brief) return { error: 'An opening card needs a brief.' };
+                        if (!brief) return { error: 'An opening suggestion needs a brief.' };
                         if (typeof data.new === 'string' && data.new.trim()) return { type: 'opening', opening: null, name: data.new.trim(), brief, why };
                         const opening = find(data.opening, 'opening');
                         if (!opening) return { error: `There is no opening ${String(data.opening || '').trim().toUpperCase() || 'named'}.` };
                         return { type: 'opening', opening: opening.id, brief, why };
                     }
                     case 'examples':
-                        return brief ? { type: 'examples', brief, why } : { error: 'An examples card needs a brief.' };
+                        return brief ? { type: 'examples', brief, why } : { error: 'An examples suggestion needs a brief.' };
                     case 'notes':
-                        return text ? { type: 'notes', text, why } : { error: 'A notes card needs the new notes.' };
+                        return text ? { type: 'notes', text, why } : { error: 'A notes suggestion needs the new notes.' };
                     case 'decision': {
                         if (typeof data.add === 'string' && data.add.trim()) return { type: 'decision', action: 'add', text: data.add.trim(), why };
                         const label = data.remove || data.decision;
                         const decision = find(label, 'decision');
                         if (!decision) return { error: `There is no decision ${String(label || '').trim().toUpperCase() || 'named'}.` };
                         if (data.remove) return { type: 'decision', action: 'remove', decision: decision.id, why };
-                        if (!text) return { error: 'A decision card adds, changes or removes a decision.' };
+                        if (!text) return { error: 'A decision suggestion adds, changes or removes a decision.' };
                         return { type: 'decision', action: 'change', decision: decision.id, text, why };
                     }
                     case 'variant': {
                         const name = typeof data.name === 'string' ? data.name.trim() : '';
-                        return name ? { type: 'variant', name, why } : { error: 'A variant card needs a name.' };
+                        return name ? { type: 'variant', name, why } : { error: 'A variant suggestion needs a name.' };
                     }
                     case 'concept':
-                        return text ? { type: 'concept', text, why } : { error: 'A concept card needs the new concept.' };
+                        return text ? { type: 'concept', text, why } : { error: 'A concept suggestion needs the new concept.' };
                     default:
-                        return { error: `There is no card type "${data.type}".` };
+                        return { error: `There is no suggestion type "${data.type}".` };
                 }
             },
 

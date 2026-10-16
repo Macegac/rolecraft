@@ -967,8 +967,8 @@
                 }
                 if (busy.kind === 'examples-write') return 'Writing the example dialogue';
                 if (busy.kind === 'examples-reweave') return 'Re-weaving the example dialogue';
-                if (busy.kind === 'cowriter') return view.cardWriting ? "Writing the co-writer's cards" : 'The co-writer is answering';
-                if (busy.kind === 'card-write') return 'Writing a card';
+                if (busy.kind === 'cowriter') return view.cardWriting ? "Writing the co-writer's suggestions" : 'The co-writer is answering';
+                if (busy.kind === 'card-write') return 'Writing a suggestion';
                 return {
                     write: `Writing ${title}`, reweave: `Re-weaving ${title}`, takes: `3 takes for ${title}`,
                     suggest: 'Suggesting pins', 'write-all': 'Writing the empty sections'
@@ -1766,9 +1766,9 @@
                 if (toEnd || near) log.scrollTop = log.scrollHeight;
             },
 
-            /** While a reply streams in, its words; a card or question being written stays out of sight until it's read. */
+            /** While a reply streams in, its words; a suggestion or question being written stays out of sight until it's read. */
             _shownWhileStreaming(text) {
-                return String(text || '').split(/<(?:card|ask)\b/i)[0];
+                return String(text || '').split(/<(?:suggestion|card|ask)\b/i)[0];
             },
 
             _streamInto(text) {
@@ -2183,8 +2183,9 @@
             },
 
             // ---------------------------------------------------------------------------------------
-            // Change cards: what the co-writer proposes, under its reply. Nothing changes until one
-            // is used, and each use is one step in the history, from "cowriter".
+            // Suggestions: what the co-writer proposes, under its reply. The code calls them cards;
+            // on screen they are suggestions, since to the author a card is the finished character
+            // card. Nothing changes until one is used, and each use is one step in the history.
             // ---------------------------------------------------------------------------------------
 
             /** Cards the Workshop's writer writes from the co-writer's brief: rewrites, openings and the example dialogue. */
@@ -2295,7 +2296,7 @@
                     return card && this._isWritten(card) && card.status === 'waiting' && !card.draft && !this._cardProblem(view, card);
                 });
                 for (const [i, id] of ids.entries()) {
-                    view.busy.label = `Card ${i + 1} of ${ids.length}: `;
+                    view.busy.label = `Suggestion ${i + 1} of ${ids.length}: `;
                     await this._draftCard(view, name, id, onDelta);
                 }
             },
@@ -2429,7 +2430,7 @@
                 if (used.length === 0) return;
                 const before = WorkshopStore.active(view.ws).head;
                 const next = used.reduce((state, card) => WorkshopStore.cardInto(state, card), WorkshopStore.active(view.ws).state);
-                const summary = used.length === 1 ? this._cardSummary(view, used[0]) : `Used ${used.length} cards from the co-writer`;
+                const summary = used.length === 1 ? this._cardSummary(view, used[0]) : `Used ${used.length} suggestions from the co-writer`;
                 let ws = WorkshopStore.commit(view.ws, next, { origin: 'cowriter', summary });
                 const head = WorkshopStore.active(ws).head;
                 for (const card of used) {
@@ -2566,7 +2567,7 @@
                 if (cards.length === 0) return '';
                 const ready = cards.filter(c => c.type !== 'variant' && this._cardReady(view, c));
                 const all = ready.length > 1 ? DOM.html`
-                    <button type="button" class="ws-btn is-primary ws-cw-use-all" data-action="workshop-card-all" data-message="${m.id}" ${view.busy ? 'disabled' : ''}>Use all ${ready.length}</button>` : '';
+                    <button type="button" class="ws-btn is-primary ws-cw-use-all" data-action="workshop-card-all" data-message="${m.id}" ${view.busy ? 'disabled' : ''}>Use all ${ready.length} suggestions</button>` : '';
                 return DOM.html`<div class="ws-cw-cards">${cards.map(c => this._cardHtml(view, c))}${all}</div>`;
             },
 
@@ -2642,7 +2643,7 @@
                     case 'concept':
                         return words(card.text);
                     case 'variant':
-                        return DOM.html`<p class="ws-cw-card-why">Starts a new variant from the character as it is now. This reply's other cards go with it.</p>`;
+                        return DOM.html`<p class="ws-cw-card-why">Starts a new variant from the character as it is now. This reply's other suggestions go with it.</p>`;
                     default: {
                         const section = WorkshopStore.active(view.ws).state.sections.find(s => s.id === card.section);
                         const pinText = id => ((section && section.pins.find(p => p.id === id)) || ((card.draft && card.draft.newPins) || []).find(p => p.id === id) || {}).text || '';
@@ -2679,7 +2680,7 @@
                 }
                 return DOM.html`
                     <div class="ws-cw-card-edit">
-                        <textarea id="ws-card-text" class="ws-field" rows="2" aria-label="The card's words">${card.type === 'variant' ? card.name : card.text}</textarea>
+                        <textarea id="ws-card-text" class="ws-field" rows="2" aria-label="The suggestion's words">${card.type === 'variant' ? card.name : card.text}</textarea>
                         <div class="ws-cw-card-foot">
                             <button type="button" class="ws-btn is-primary" data-action="workshop-card-change-save" data-card="${card.id}">Save</button>
                             ${cancel}

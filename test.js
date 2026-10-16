@@ -5074,7 +5074,7 @@ test('CowriterPrompts: a reply is its words, its cards and one question; a block
     ], "a repeated card counts once, and a rewrite only removes its own section's pins");
     deepEq(reply.ask, { question: 'What gets through to her?', options: ['Patience', 'A promise kept'], multi: false });
     deepEq(reply.unreadable.map(u => u.reason), [
-        'There is no card type "spell".',
+        'There is no suggestion type "spell".',
         'There is no pin P9.',
         'It is not JSON.',
         'Only one question at a time.',
@@ -5135,7 +5135,7 @@ test('CowriterPrompts: every request reads the whole character, the notebook, th
     assert.ok(shown.join('\n').length <= 24000, 'about 24,000 characters at most');
     assert.ok(shown.at(-1).endsWith(' 60'), 'the newest ones, oldest first');
     assert.match(sent, /\(\d+ earlier messages not shown\)/);
-    assert.ok(sent.includes('<card>'), 'the card format, when cards are on');
+    assert.ok(sent.includes('<suggestion>'), 'the suggestion format, when suggestions are on');
 
     deepEq(messages.slice(1).map(m => m.role), ['user', 'assistant', 'user']);
     assert.equal(messages[1].content, 'She warms up too fast.');
@@ -5149,7 +5149,7 @@ test('CowriterPrompts: every request reads the whole character, the notebook, th
     assert.equal(messages[3].content, 'Patience');
 
     const talk = CowriterPrompts.request({ name: 'Kael', state: cowriterState(), chat: { messages: [{ role: 'you', text: 'Hi.' }] } }).messages[0].content;
-    assert.ok(!talk.includes('<card>') && talk.includes('<ask>'), 'with cards off, only questions with choices');
+    assert.ok(!talk.includes('<suggestion>') && talk.includes('<ask>'), 'with suggestions off, only questions with choices');
     assert.ok(!talk.includes('WHAT HAS HAPPENED IN PLAY'), 'and nothing about play when there is no chat');
     const long = { messages: Array.from({ length: 40 }, (_, i) => ({ role: i % 2 ? 'cowriter' : 'you', text: `Turn ${i + 1}` })) };
     const turns = CowriterPrompts.request({ name: 'Kael', state: cowriterState(), chat: long }).messages.slice(1);
@@ -5195,6 +5195,17 @@ test("CowriterPrompts: the co-writer checks the card before calling anything don
     assert.ok(sent.includes('To put what was agreed in this chat onto the card'));
     const card = { type: 'pin', action: 'add', section: 'voice', text: 'goes quiet', status: 'used', edited: true };
     assert.equal(CowriterPrompts._outcome(card), 'used, after the author changed its words');
+});
+
+test('CowriterPrompts: proposed changes are suggestions, never cards, since a card is the finished character card; old <card> blocks still read', () => {
+    const sent = CowriterPrompts.request({ name: 'Kael', state: cowriterState(), chat: { messages: [{ role: 'you', text: 'Hi.' }] }, withCards: true }).messages[0].content;
+    assert.ok(sent.includes('call them suggestions'), 'the co-writer is told what to call them');
+    assert.ok(!/\bchange cards?\b|\bthe kinds of card\b|\brules for cards\b/i.test(sent), 'and its instructions never call them cards');
+    const labels = CowriterPrompts.labels(cowriterState(), COWRITER_EXTRAS);
+    const both = CowriterPrompts.readReply('Two.\n<suggestion>{"type":"notes","text":"New notes.","why":"A."}</suggestion>\n<card>{"type":"concept","text":"New concept.","why":"B."}</card>', labels);
+    deepEq([both.prose, both.cards.map(c => c.type), both.unreadable], ['Two.', ['notes', 'concept'], []]);
+    const cut = CowriterPrompts.readReply('Wait.\n<suggestion>{"type":"notes","te', labels);
+    deepEq([cut.prose, cut.unreadable.map(u => u.reason)], ['Wait.', ['The reply was cut off before this was finished.']]);
 });
 
 test('CowriterPrompts: back-to-back messages from one side go as one turn, since some backends refuse two in a row', () => {
@@ -5337,7 +5348,7 @@ test('Co-writer: a message starts a chat named after it, the reply streams in, a
     assert.ok(call.messages[0].content.includes('CHARACTER: Kael'));
     assert.ok(call.messages[0].content.includes('O1 "Default Start"'), 'the lead reads its openings');
     assert.ok(call.messages[0].content.includes('RECENT MESSAGES (oldest first):\nKael: Hello again.'), 'and what happened in the open chat');
-    assert.ok(call.messages[0].content.includes('<card>'), 'it proposes changes as cards');
+    assert.ok(call.messages[0].content.includes('<suggestion>'), 'it proposes changes as suggestions');
     deepEq(call.messages.slice(1).map(m => [m.role, m.content]), [['user', 'She warms up to {{user}} too fast.']]);
     deepEq(p.streamed, ['Agreed,'], 'the words appear as they arrive');
 
@@ -5625,6 +5636,7 @@ test("Co-writer cards: a reply's cards wait under it, the writer drafts its rewr
     deepEq([p.card(ids[3]).draft.text, p.card(ids[3]).draft.name], ['Kael waits for the coin.', 'Default Start']);
     const log = p.log();
     assert.ok(log.includes('Cold, and slow to trust.') && log.includes('data-action="workshop-card-use"') && log.includes('data-action="workshop-card-all"'));
+    assert.ok(log.includes('Use all 4 suggestions'), 'they are suggestions: a card is the finished character card');
     assert.equal(p.view().ws.commits.length, 1, 'nothing changes until a card is used');
 
     await p.act('workshop-card-use', { card: ids[0] });
@@ -5634,7 +5646,7 @@ test("Co-writer cards: a reply's cards wait under it, the writer drafts its rewr
     assert.equal(p.card(ids[3]).status, 'turned-down');
     await p.act('workshop-card-all', { message: reply.id });
     last = p.view().ws.commits.at(-1);
-    deepEq([last.summary, p.view().ws.commits.length], ['Used 2 cards from the co-writer', 3], 'Use all is one step for what still waits');
+    deepEq([last.summary, p.view().ws.commits.length], ['Used 2 suggestions from the co-writer', 3], 'Use all is one step for what still waits');
     let state = WorkshopStore.active(p.view().ws).state;
     const personality = state.sections.find(s => s.id === 'personality');
     deepEq([personality.text, personality.pins.map(x => x.text), state.notes], ['Cold, and slow to trust.', ['slow to trust', 'an idea not kept yet', 'cold at first'], 'Act 2 at the festival.']);
