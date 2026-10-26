@@ -314,6 +314,11 @@
                 // A character made with "New character" opens in the Workshop once its story has loaded.
                 WorkshopController.openPending();
 
+                // Opened from the mailbox's setup link: sending the session to the PC is switched on.
+                // The link may also arrive in a tab where Rolecraft is already open.
+                MailboxService.applyLink();
+                window.addEventListener('hashchange', () => MailboxService.applyLink());
+
                 // --- Onboarding: Show welcome modal on first-ever launch ---
                 if (isFirstLaunch && !localStorage.getItem('onboarding_dismissed')) {
                     setTimeout(() => {

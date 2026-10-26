@@ -1,6 +1,7 @@
         /**
          * Diagnostics
-         * Fills the problem-report diary (DiagLog) and offers "Copy problem report".
+         * Fills the problem-report diary (DiagLog) and offers "Copy problem report". While sending to
+         * the PC is on, the same watchers hand each event to MailboxService in full.
          *
          * Everything is recorded from here, by wrapping existing functions when the app starts, so the
          * features themselves stay free of logging code. The wrappers only watch: each one calls the
@@ -79,12 +80,14 @@
                     const where = e.filename ? ` (${String(e.filename).split('/').pop().split('?')[0]}:${e.lineno})` : '';
                     const text = `${e.message || e.error}${where}`;
                     DiagLog.add('crash', text);
+                    MailboxService.send('error', { crash: text });
                     if (typeof UIManager !== 'undefined' && UIManager.logError) UIManager.logError(`Unexpected error: ${e.message || e.error}`);
                 });
                 window.addEventListener('unhandledrejection', (e) => {
                     const reason = e.reason && (e.reason.message || String(e.reason));
                     if (e.reason && e.reason.name === 'AbortError') return; // a request the user stopped
                     DiagLog.add('crash', `Unhandled failure: ${reason}`);
+                    MailboxService.send('error', { crash: `Unhandled failure: ${reason}` });
                     if (typeof UIManager !== 'undefined' && UIManager.logError) UIManager.logError(`Unexpected error: ${reason}`);
                 });
 
@@ -121,13 +124,23 @@
                         } catch (e) { /* keep the raw address; redact() still scrubs it */ }
                         const method = (init && init.method) || 'GET';
                         const started = performance.now();
+                        // What a request asked for (model, temperature, length...) goes to the
+                        // mailbox; its text goes with the AI event.
+                        const mail = what => {
+                            if (method !== 'POST' || !init || typeof init.body !== 'string' || !MailboxService.settings().on) return;
+                            MailboxService.send('request', { url: target, ...what, params: MailboxService.requestParams(init.body) });
+                        };
                         try {
                             const res = await originalFetch(input, init);
-                            DiagLog.add(res.ok ? 'net' : 'error', `${method} ${target} → ${res.status} in ${Math.round(performance.now() - started)} ms`);
+                            const ms = Math.round(performance.now() - started);
+                            DiagLog.add(res.ok ? 'net' : 'error', `${method} ${target} → ${res.status} in ${ms} ms`);
+                            mail({ status: res.status, ms });
                             return res;
                         } catch (err) {
+                            const ms = Math.round(performance.now() - started);
                             DiagLog.add(err && err.name === 'AbortError' ? 'net' : 'error',
-                                `${method} ${target} → ${err && err.name === 'AbortError' ? 'stopped' : 'failed: ' + (err && err.message)} after ${Math.round(performance.now() - started)} ms`);
+                                `${method} ${target} → ${err && err.name === 'AbortError' ? 'stopped' : 'failed: ' + (err && err.message)} after ${ms} ms`);
+                            mail({ ms, error: (err && err.name === 'AbortError') ? 'stopped' : (err && err.message) });
                             throw err;
                         }
                     };
@@ -149,13 +162,20 @@
                         // On OpenRouter one model is served by many providers; name the one that answered.
                         const lastProvider = state.apiProvider === 'openrouter' ? APIService.lastProvider : null;
                         const via = (lastProvider && lastProvider.name) ? ' via ' + lastProvider.name : '';
-                        DiagLog.add('ai', `${state.apiProvider} / ${model}${via}${isJson ? ' (JSON)' : ''}: sent ${text.length} chars${images ? `, ${images} image(s)` : ''}, got ${out.length} chars${APIService.lastThinking ? ` + ${APIService.lastThinking.length} thinking` : ''} in ${Math.round(performance.now() - started)} ms`,
+                        const ms = Math.round(performance.now() - started);
+                        DiagLog.add('ai', `${state.apiProvider} / ${model}${via}${isJson ? ' (JSON)' : ''}: sent ${text.length} chars${images ? `, ${images} image(s)` : ''}, got ${out.length} chars${APIService.lastThinking ? ` + ${APIService.lastThinking.length} thinking` : ''} in ${ms} ms`,
                             { textLabel: 'prompt start', text: text.slice(0, 600) });
                         if (!out.trim()) DiagLog.add('warn', 'The AI returned an empty answer.');
+                        MailboxService.send('ai', {
+                            provider: state.apiProvider, model, via: (lastProvider && lastProvider.name) || '', json: !!isJson, images, ms,
+                            prompt: text, reply: out, thinking: APIService.lastThinking || ''
+                        });
                         return result;
                     } catch (err) {
-                        DiagLog.add('error', `${state.apiProvider} / ${model} request failed after ${Math.round(performance.now() - started)} ms: ${err && err.message}`,
+                        const ms = Math.round(performance.now() - started);
+                        DiagLog.add('error', `${state.apiProvider} / ${model} request failed after ${ms} ms: ${err && err.message}`,
                             { textLabel: 'prompt start', text: text.slice(0, 600) });
+                        MailboxService.send('ai', { provider: state.apiProvider, model, json: !!isJson, images, ms, prompt: text, error: (err && err.message) || String(err) });
                         throw err;
                     }
                 });
@@ -174,13 +194,20 @@
                         try {
                             const result = await original.apply(this, args);
                             const json = opts.json ? ` (JSON${result.attempts > 1 ? ', asked twice' : ''})` : '';
-                            DiagLog.add('ai', `Workshop: ${cfg.backend} / ${model}${result.provider ? ' via ' + result.provider : ''}${json}: sent ${sent} chars, got ${result.text.length} chars + ${result.thinking.length} thinking, finish ${result.finishReason || 'unknown'}, in ${Math.round(performance.now() - started)} ms`,
+                            const ms = Math.round(performance.now() - started);
+                            DiagLog.add('ai', `Workshop: ${cfg.backend} / ${model}${result.provider ? ' via ' + result.provider : ''}${json}: sent ${sent} chars, got ${result.text.length} chars + ${result.thinking.length} thinking, finish ${result.finishReason || 'unknown'}, in ${ms} ms`,
                                 { textLabel: 'last message', text: lastText.slice(0, 600) });
+                            MailboxService.send('workshop', {
+                                backend: cfg.backend, model, via: result.provider || '', json: !!opts.json, ms, finish: result.finishReason || '',
+                                messages, reply: result.text, thinking: result.thinking
+                            });
                             return result;
                         } catch (err) {
                             const stopped = err && err.name === 'AbortError';
-                            DiagLog.add(stopped ? 'net' : 'error', `Workshop: ${cfg.backend} / ${model} ${stopped ? 'stopped' : `failed: ${err && err.message}`} after ${Math.round(performance.now() - started)} ms`,
+                            const ms = Math.round(performance.now() - started);
+                            DiagLog.add(stopped ? 'net' : 'error', `Workshop: ${cfg.backend} / ${model} ${stopped ? 'stopped' : `failed: ${err && err.message}`} after ${ms} ms`,
                                 { textLabel: 'last message', text: lastText.slice(0, 600) });
+                            MailboxService.send('workshop', { backend: cfg.backend, model, json: !!opts.json, ms, messages, error: stopped ? 'stopped' : ((err && err.message) || String(err)) });
                             throw err;
                         }
                     });
@@ -197,24 +224,29 @@
                     const state = self._state();
                     DiagLog.add('send', `${inThread ? 'Text thread: ' : ''}${typed ? `sent a message (${typed.length} chars)` : 'asked for the next reply'}; speaker choice "${who}"; Director mode ${state.swarmMode ? 'on' : 'off'}`,
                         { textLabel: 'message', text: typed });
+                    MailboxService.send('send', { text: typed, speaker: who, director: !!state.swarmMode, thread: inThread });
                     return original.apply(this, args);
                 });
                 this._wrap(NarrativeController, 'handleRegen', function (original, args) {
                     DiagLog.beginTurn();
                     DiagLog.add('send', 'Rerolled the last reply');
+                    MailboxService.send('reroll', {});
                     return original.apply(this, args);
                 });
                 this._wrap(NarrativeController, 'handleDirectCharacter', function (original, args) {
                     DiagLog.beginTurn();
                     DiagLog.add('send', `Directed a character (${args[0]})${args[1] ? ', reroll' : ''}`);
+                    MailboxService.send('direct', { character: self._speaker(args[0]), reroll: !!args[1] });
                     return original.apply(this, args);
                 });
 
                 // A reply landing in the chat.
                 this._wrap(NarrativeController, 'startStreamingResponse', function (original, args) {
                     const [charId, fullText, , targetIndex, , thinking] = args;
-                    DiagLog.add('reply', `${self._speaker(charId)} replied (${(fullText || '').length} chars${thinking ? `, ${thinking.length} thinking` : ''})${targetIndex !== null && targetIndex !== undefined ? `, replacing message #${targetIndex}` : ''}`,
+                    const replacing = targetIndex !== null && targetIndex !== undefined;
+                    DiagLog.add('reply', `${self._speaker(charId)} replied (${(fullText || '').length} chars${thinking ? `, ${thinking.length} thinking` : ''})${replacing ? `, replacing message #${targetIndex}` : ''}`,
                         { textLabel: 'reply', text: fullText });
+                    MailboxService.send('reply', { speaker: self._speaker(charId), text: fullText || '', thinking: thinking || '', replacing: replacing ? targetIndex : null });
                     return original.apply(this, args);
                 });
 
@@ -240,6 +272,10 @@
                     const note = saved ? notes.filter(n => n.agentId === (agent && agent.id)).slice(-1)[0] : null;
                     DiagLog.add('agent', `${agent && agent.name} ${saved ? `saved a note (${note ? note.content.length : '?'} chars)` : 'saved nothing (empty answer, "nothing to report", or failed; see lines above)'}`,
                         { textLabel: 'note', text: note ? note.content : '' });
+                    MailboxService.send('agent', {
+                        agent: (agent && agent.name) || '', model: (agent && agent.brain && agent.brain.model) || '', manual: !!manual,
+                        saved: !!saved, note: note ? note.content : ''
+                    });
                     return saved;
                 });
 
@@ -252,6 +288,7 @@
                 // Anything the app already told the user.
                 this._wrap(UIManager, 'showNotification', function (original, args) {
                     DiagLog.add(args[1] === 'error' ? 'error' : 'info', `Shown to user: ${args[0]}`);
+                    if (args[1] === 'error') MailboxService.send('error', { shown: String(args[0]) });
                     return original.apply(this, args);
                 });
 
@@ -260,11 +297,13 @@
                     this._wrap(TextModeController, 'sendInThread', function (original, args) {
                         DiagLog.beginTurn();
                         DiagLog.add('send', `Text thread: sent a text (${(args[0] || '').length} chars)`, { textLabel: 'text', text: args[0] });
+                        MailboxService.send('send', { text: args[0] || '', thread: true });
                         return original.apply(this, args);
                     });
                     this._wrap(TextModeController, 'generateFollowUp', function (original, args) {
                         DiagLog.beginTurn();
                         DiagLog.add('send', 'Text thread: asked for the next text');
+                        MailboxService.send('send', { text: '', thread: true });
                         return original.apply(this, args);
                     });
                 }
@@ -388,5 +427,11 @@
                     const box = document.getElementById('diag-report-box');
                     if (box) box.classList.add('hidden');
                 });
+
+                // Sending the session to the mailbox on the PC (MailboxService).
+                ActionHandler.register('mailbox-toggle', (ds, val, e) => {
+                    MailboxService.setOn(!!(e && e.target && e.target.checked));
+                });
+                ActionHandler.register('mailbox-test', () => MailboxService.test());
             }
         };

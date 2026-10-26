@@ -5810,3 +5810,121 @@ test('Mailbox: keeps a message carrying its key as a line of JSON, turns away an
         fs.rmSync(dir, { recursive: true, force: true });
     }
 });
+
+// ─── js/services/mailbox.js, sending a session to the PC's mailbox ───────────────
+
+/** MailboxService with a phone's settings and a stand-in fetch that records each post. */
+function mailboxPage({ settings = {}, hash = '', fetchImpl } = {}) {
+    const calls = [];
+    const notices = [];
+    const saved = [];
+    const globalSettings = { ...settings };
+    const library = { active_story_id: 's1', active_narrative_id: 'n1', stories: [{ id: 's1', name: 'Night Medic' }] };
+    const ctx = {
+        URLSearchParams,
+        console,
+        fetch: fetchImpl || (async (url, init) => {
+            calls.push({ url, init });
+            return { ok: true, status: 200 };
+        }),
+        StateManager: {
+            data: { globalSettings },
+            saveGlobalSettings() { saved.push({ ...globalSettings }); },
+            getState: () => ({ apiProvider: 'openrouter' }),
+            getLibrary: () => library
+        },
+        UIManager: { showNotification: (text, type) => notices.push([text, type]) },
+        location: { hash, pathname: '/rolecraft/', search: '' },
+        history: { replaceState: (state, title, url) => calls.push({ replaced: url }) },
+        navigator: { userAgent: 'TestPhone' },
+        APP_BUILD_TIMESTAMP: 'Rolecraft 1.1.0 (build test)'
+    };
+    ctx.globalThis = ctx;
+    const source = ['js/util/diag-log.js', 'js/services/mailbox.js'].map(file => fs.readFileSync(path.join(__dirname, file), 'utf8')).join('\n');
+    const MailboxService = vm.runInNewContext(`${source}\nMailboxService`, ctx);
+    return { MailboxService, calls, notices, saved, globalSettings };
+}
+
+const MAILBOX_ON = { mailboxOn: true, mailboxUrl: 'https://pc.example.ts.net:8790/', mailboxKey: 'abcdefghijklmnopqrstuv' };
+
+test('MailboxService: the setup link gives the mailbox address and key and switches sending on, then leaves the address bar', () => {
+    const p = mailboxPage({ hash: '#mailbox=https%3A%2F%2Fpc.example.ts.net%3A8790&key=abcdefghijklmnopqrstuv' });
+    deepEq(p.MailboxService.readLink('#mailbox=https%3A%2F%2Fpc.example.ts.net%3A8790%2F&key=abcdefghijklmnopqrstuv'), { url: 'https://pc.example.ts.net:8790', key: 'abcdefghijklmnopqrstuv' });
+    assert.equal(p.MailboxService.readLink('#mailbox=http%3A%2F%2Fpc%3A8790&key=abcdefghijklmnopqrstuv'), null, 'only an https address: the app itself is served over https');
+    assert.equal(p.MailboxService.readLink('#mailbox=https%3A%2F%2Fpc%3A8790&key=short'), null, 'and a real key');
+    assert.equal(p.MailboxService.readLink(''), null);
+
+    assert.equal(p.MailboxService.applyLink(), true);
+    deepEq([p.globalSettings.mailboxUrl, p.globalSettings.mailboxKey, p.globalSettings.mailboxOn], ['https://pc.example.ts.net:8790', 'abcdefghijklmnopqrstuv', true]);
+    assert.equal(p.saved.length, 1, 'saved with the other settings');
+    assert.ok(p.calls.some(c => c.replaced === '/rolecraft/'), 'the address and key leave the address bar');
+    assert.match(p.notices[0][0], /mailbox on your PC/);
+    deepEq(p.calls.filter(c => c.url).map(c => JSON.parse(c.init.body).kind), ['setup'], 'and it says hello to the mailbox');
+    assert.equal(mailboxPage().MailboxService.applyLink(), false, 'with no link, nothing changes');
+});
+
+test('MailboxService: each event goes to the mailbox numbered, with its story, scrubbed of keys; nothing goes while it is off or half set up', async () => {
+    const p = mailboxPage({ settings: MAILBOX_ON });
+    assert.equal(await p.MailboxService.send('ai', { prompt: 'A key sk-or-v1-abcdef1234567890 in a prompt.', reply: 'Hi.' }), true);
+    await p.MailboxService.send('reply', { text: 'Second.' });
+    const posts = p.calls.filter(c => c.url);
+    deepEq(posts.map(c => [c.url, c.init.method, c.init.headers['X-Mailbox-Key']]),
+        [['https://pc.example.ts.net:8790/log', 'POST', 'abcdefghijklmnopqrstuv'], ['https://pc.example.ts.net:8790/log', 'POST', 'abcdefghijklmnopqrstuv']]);
+    const first = JSON.parse(posts[0].init.body);
+    deepEq([first.kind, first.n, first.story, first.storyId, first.chat, first.build, first.reply], ['ai', 1, 'Night Medic', 's1', 'n1', 'Rolecraft 1.1.0 (build test)', 'Hi.']);
+    assert.ok(!posts[0].init.body.includes('sk-or-v1-abcdef1234567890') && first.prompt.includes('[key removed]'), 'keys are scrubbed, as in the problem report');
+    assert.equal(JSON.parse(posts[1].init.body).n, 2, 'numbered, so they read in order');
+    assert.ok(p.MailboxService.lastSent > 0);
+
+    p.globalSettings.mailboxOn = false;
+    assert.equal(await p.MailboxService.send('ai', {}), false);
+    p.globalSettings.mailboxOn = true;
+    p.globalSettings.mailboxKey = '';
+    assert.equal(await p.MailboxService.send('ai', {}), false);
+    assert.equal(p.calls.filter(c => c.url).length, 2, 'nothing goes while it is off or has no key');
+});
+
+test("MailboxService: when the PC can't be reached the event is skipped, and why is kept for Settings to show", async () => {
+    const off = mailboxPage({ settings: MAILBOX_ON, fetchImpl: async () => { throw new TypeError('Failed to fetch'); } });
+    assert.equal(await off.MailboxService.send('ai', {}), false);
+    assert.equal(off.MailboxService.lastError, "Couldn't reach the mailbox (Failed to fetch).");
+    const refused = mailboxPage({ settings: MAILBOX_ON, fetchImpl: async () => ({ ok: false, status: 403 }) });
+    assert.equal(await refused.MailboxService.send('ai', {}), false);
+    assert.equal(refused.MailboxService.lastError, 'The mailbox answered 403.');
+});
+
+test("MailboxService: a request's settings go without its long text, which the AI event carries in full", () => {
+    const p = mailboxPage();
+    const body = JSON.stringify({
+        model: 'deepseek/x', temperature: 0.8, max_tokens: 900, provider: { ignore: ['X'] },
+        messages: [
+            { role: 'system', content: 'S'.repeat(5000) },
+            { role: 'user', content: [{ type: 'text', text: 'Hi.' }, { type: 'image_url', image_url: { url: `data:image/png;base64,${'A'.repeat(3000)}` } }] }
+        ]
+    });
+    deepEq(p.MailboxService.requestParams(body), {
+        model: 'deepseek/x', temperature: 0.8, max_tokens: 900, provider: { ignore: ['X'] },
+        messages: [
+            { role: 'system', content: '[5000 characters]' },
+            { role: 'user', content: [{ type: 'text', text: 'Hi.' }, { type: 'image_url', image_url: { url: '[data, 3022 characters]' } }] }
+        ]
+    });
+    deepEq(p.MailboxService.requestParams('not json'), { body: '8 characters, not JSON' });
+});
+
+test('Mailbox wiring: the watchers that fill the problem report also send to the mailbox, the setup link is read at startup, and Settings has the switch', () => {
+    const diag = fs.readFileSync(path.join(__dirname, 'js', 'controllers', 'diagnostics.js'), 'utf8');
+    for (const kind of ['ai', 'workshop', 'request', 'send', 'reroll', 'direct', 'reply', 'agent', 'error']) {
+        assert.ok(diag.includes(`MailboxService.send('${kind}'`), `${kind} events go to the mailbox`);
+    }
+    assert.ok(diag.includes("ActionHandler.register('mailbox-test'") && diag.includes("ActionHandler.register('mailbox-toggle'"));
+    const boot = fs.readFileSync(path.join(__dirname, 'js', 'boot.js'), 'utf8');
+    assert.ok(boot.includes('MailboxService.applyLink();') && boot.includes("window.addEventListener('hashchange', () => MailboxService.applyLink());"), 'at startup, and when the link opens in a tab already showing Rolecraft');
+    const html = fs.readFileSync(HTML_PATH, 'utf8');
+    const at = html.indexOf('js/services/mailbox.js');
+    assert.ok(at !== -1 && at < html.indexOf('js/controllers/diagnostics.js'), 'loaded before the watchers');
+    for (const id of ['mailbox-on', 'mailbox-status']) assert.ok(html.includes(`id="${id}"`), `${id} is in Settings`);
+    assert.ok(html.includes('data-action="mailbox-test"'));
+    const app = fs.readFileSync(path.join(__dirname, 'js', 'controllers', 'app.js'), 'utf8');
+    assert.ok(app.includes('MailboxService.renderSettings()'), 'Settings shows whether it is on');
+});

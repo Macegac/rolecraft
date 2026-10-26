@@ -808,6 +808,7 @@
                     if (buildDisplay && typeof APP_BUILD_TIMESTAMP !== 'undefined') {
                         buildDisplay.textContent = APP_BUILD_TIMESTAMP;
                     }
+                    if (typeof MailboxService !== 'undefined') MailboxService.renderSettings();
                 }
 
                 tabs.forEach(tab => {

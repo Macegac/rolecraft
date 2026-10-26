@@ -2044,6 +2044,18 @@
                         <label class="diag-check mt-2"><input type="checkbox" data-diag-include-text> Include story text (messages, replies, agent notes)</label>
                         <label class="diag-check mt-2"><input type="checkbox" data-diag-console data-action="diag-console-toggle"> Print every prompt to the browser console (slower, uses memory)</label>
                     </div>
+
+                    <!-- Send my RP to my PC (MailboxService) -->
+                    <div class="mt-4 pt-4 border-t border-indigo-500/10">
+                        <div class="diag-row">
+                            <div>
+                                <h4 class="text-xs font-bold text-gray-200 uppercase tracking-widest">Send my RP to my PC</h4>
+                                <p class="text-[10px] text-gray-500 font-medium" id="mailbox-status">Not set up. Open the setup link on this phone.</p>
+                            </div>
+                            <button class="diag-copy-btn" data-action="mailbox-test">Send a test</button>
+                        </div>
+                        <label class="diag-check mt-2"><input type="checkbox" id="mailbox-on" data-action="mailbox-toggle"> Send every prompt, reply and error to the mailbox on my PC. API keys are never sent.</label>
+                    </div>
                 </div>
             </div>
             <div>
@@ -4377,7 +4389,7 @@
 
     <!-- [SEC:JS:CORE] -->
     <!-- Application Logic -->
-    <script src="js/core/build-info.js?v=63b4c53c2b"></script>
+    <script src="js/core/build-info.js?v=e1cceade74"></script>
     <script src="js/core/dom.js?v=63eb132604"></script>
     <script src="js/core/action-handler.js?v=0db5af7600"></script>
     <script src="js/core/debounce.js?v=dce774dcea"></script>
@@ -4399,6 +4411,7 @@
     <script src="js/util/agent-starters.js?v=8320d65f66"></script>
     <script src="js/util/undo-stack.js?v=44e25af094"></script>
     <script src="js/util/diag-log.js?v=2a43613d07"></script>
+    <script src="js/services/mailbox.js?v=3f58142bfa"></script>
     <script src="js/util/prompt-builder.js?v=c2d5f60eee"></script>
     <script src="js/util/provider-blacklist.js?v=e64560663f"></script>
     <script src="js/util/workshop-prompts.js?v=d40d7fb872"></script>
@@ -4411,7 +4424,7 @@
     <script src="js/state/reactive-store.js?v=15c3ac99a8"></script>
     <script src="js/ui/ui-components.js?v=dc91210157"></script>
     <script src="js/ui/ui-manager.js?v=645a367dc0"></script>
-    <script src="js/controllers/app.js?v=e698fea115"></script>
+    <script src="js/controllers/app.js?v=3518e74b81"></script>
     <script src="js/controllers/story-generation.js?v=0327e295bc"></script>
     <script src="js/controllers/in-story-generation.js?v=7adf398b93"></script>
     <script src="js/controllers/hub.js?v=580ef37402"></script>
@@ -4426,11 +4439,11 @@
     <script src="js/controllers/inventory.js?v=d60cd29afb"></script>
     <script src="js/controllers/agents.js?v=6a67e60458"></script>
     <script src="js/controllers/history.js?v=ef41f00c31"></script>
-    <script src="js/controllers/diagnostics.js?v=b96c876187"></script>
+    <script src="js/controllers/diagnostics.js?v=0682aa046f"></script>
     <script src="js/controllers/workshop.js?v=ed8d5cf12d"></script>
     <script src="js/controllers/cardcraft-move.js?v=565288f09b"></script>
     <script src="js/controllers/action-dispatcher.js?v=0ec1c44d71"></script>
-    <script src="js/boot.js?v=93ba2d0bfd"></script>
+    <script src="js/boot.js?v=cdd662f7fc"></script>
     <!-- Onboarding Welcome Modal: Shown on first launch to guide new users -->
     <div id="onboarding-modal" class="hidden fixed inset-0 z-[90] flex items-center justify-center onboarding-backdrop">
         <div class="onboarding-container">
