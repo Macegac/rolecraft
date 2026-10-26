@@ -5768,3 +5768,45 @@ test('Co-writer prompts: loaded with the other Workshop files, before the action
     assert.ok(at > html.indexOf('js/util/workshop-prompts.js'), 'after the Workshop prompts it builds on');
     assert.ok(at < html.indexOf('js/controllers/action-dispatcher.js'));
 });
+
+// ─── tools/mailbox.js, the PC's mailbox for RP logs ─────────────────────────────
+// Rolecraft on the phone sends each exchange here over Tailscale, so the PC holds the record.
+
+const Mailbox = require('./tools/mailbox.js');
+
+test('Mailbox: keeps a message carrying its key as a line of JSON, turns away anything else, and answers the browser checks', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rolecraft-mailbox-'));
+    const box = await Mailbox.start({ port: 0, dir, quiet: true, maxBytes: 200 });
+    const url = `http://127.0.0.1:${box.port}`;
+    try {
+        assert.equal(fs.readFileSync(path.join(dir, 'key.txt'), 'utf8').trim(), box.key, 'its key is kept in its own folder');
+        assert.ok(box.key.length >= 20);
+        assert.equal(await (await fetch(`${url}/ping`)).text(), 'mailbox ok');
+
+        const check = await fetch(`${url}/log`, {
+            method: 'OPTIONS',
+            headers: { Origin: 'https://macegac.github.io', 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'content-type,x-mailbox-key', 'Access-Control-Request-Private-Network': 'true' }
+        });
+        deepEq([check.status, check.headers.get('access-control-allow-origin'), check.headers.get('access-control-allow-private-network')],
+            [204, 'https://macegac.github.io', 'true'], 'the app may send from its own site to a private address');
+        const stranger = await fetch(`${url}/log`, { method: 'OPTIONS', headers: { Origin: 'https://example.com', 'Access-Control-Request-Method': 'POST' } });
+        assert.equal(stranger.headers.get('access-control-allow-origin'), null, 'no other site may');
+
+        const post = (body, key) => fetch(`${url}/log`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(key ? { 'X-Mailbox-Key': key } : {}) }, body });
+        assert.equal((await post(JSON.stringify({ kind: 'test' }), 'wrong')).status, 403, 'a wrong key is turned away');
+        assert.equal((await post(JSON.stringify({ kind: 'test' }))).status, 403, 'and so is none');
+        assert.equal((await post('not json', box.key)).status, 400);
+        assert.equal((await post(JSON.stringify({ kind: 'reply', text: 'x'.repeat(300) }), box.key)).status, 413, 'a message too big for it is refused');
+        const ok = await post(JSON.stringify({ kind: 'reply', text: 'Hello.' }), box.key);
+        deepEq([ok.status, await ok.json()], [200, { ok: true }]);
+
+        const files = fs.readdirSync(path.join(dir, 'logs'));
+        assert.equal(files.length, 1);
+        assert.match(files[0], /^\d{4}-\d{2}-\d{2}\.jsonl$/, 'a file a day');
+        const lines = fs.readFileSync(path.join(dir, 'logs', files[0]), 'utf8').trim().split('\n').map(line => JSON.parse(line));
+        deepEq(lines.map(l => [l.kind, l.text, typeof l.received]), [['reply', 'Hello.', 'string']], 'only the message with the key was kept, with when it arrived');
+    } finally {
+        await box.close();
+        fs.rmSync(dir, { recursive: true, force: true });
+    }
+});

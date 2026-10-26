@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Mailbox test</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 24px 16px;
+            background: #0f172a;
+            color: #e2e8f0;
+            font: 16px/1.5 system-ui, sans-serif;
+        }
+
+        h1 {
+            margin: 0 0 8px;
+            font-size: 20px;
+        }
+
+        p {
+            margin: 0 0 16px;
+            color: #94a3b8;
+        }
+
+        button {
+            padding: 14px 20px;
+            border: 0;
+            border-radius: 12px;
+            background: #0d9488;
+            color: #fff;
+            font: inherit;
+            font-weight: 700;
+        }
+
+        a {
+            color: #5eead4;
+        }
+
+        #result {
+            margin: 16px 0;
+            padding: 14px;
+            border-radius: 12px;
+            background: #1e293b;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+        }
+
+        .ok {
+            color: #5eead4;
+        }
+
+        .bad {
+            color: #fca5a5;
+        }
+    </style>
+</head>
+<body>
+    <h1>Rolecraft mailbox test</h1>
+    <p>Sends one test message from this site to the mailbox on your PC, the way Rolecraft would.</p>
+    <button id="send" type="button">Send a test message</button>
+    <div id="result">Not sent yet.</div>
+    <p id="direct"></p>
+    <script>
+        // The mailbox's address and key come in the link, after the #, so no server ever sees them.
+        const params = new URLSearchParams(location.hash.slice(1));
+        const to = (params.get('to') || '').replace(/\/+$/, '');
+        const key = params.get('key') || '';
+        const result = document.getElementById('result');
+        const show = (text, ok) => {
+            result.textContent = text;
+            result.className = ok ? 'ok' : 'bad';
+        };
+
+        if (to) {
+            const direct = document.getElementById('direct');
+            direct.textContent = 'If it fails, try opening the mailbox directly: ';
+            const link = document.createElement('a');
+            link.href = `${to}/ping`;
+            link.textContent = 'open the mailbox';
+            direct.appendChild(link);
+            direct.append('. "mailbox ok" there means your phone reaches the PC, and only the browser blocked the test.');
+        }
+
+        document.getElementById('send').addEventListener('click', async () => {
+            if (!to || !key) {
+                show('This link is missing the mailbox address or its key.', false);
+                return;
+            }
+            show('Sending…', true);
+            const started = Date.now();
+            try {
+                const res = await fetch(`${to}/log`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-Mailbox-Key': key },
+                    body: JSON.stringify({ kind: 'test', sentAt: new Date().toISOString(), from: navigator.userAgent }),
+                    // Chrome asks before a public page may reach a device on a private network.
+                    targetAddressSpace: 'local'
+                });
+                const text = await res.text();
+                if (res.ok) show(`Arrived. The mailbox answered in ${Date.now() - started} ms.`, true);
+                else show(`The mailbox answered ${res.status}: ${text}`, false);
+            } catch (err) {
+                show(`It didn't get through (${(err && err.message) || err}). The browser blocked it, or the PC can't be reached.`, false);
+            }
+        });
+    </script>
+</body>
+</html>
