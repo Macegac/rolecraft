@@ -2263,6 +2263,18 @@ test('style guide: switching it on adopts the sampler it was tuned at', () => {
         'nothing may be set after the spread or it would override the preset value');
 });
 
+test('openrouter sampling: no penalty that grows with every use of a word', () => {
+    const api = fs.readFileSync(path.join(__dirname, 'js', 'services', 'api.js'), 'utf8');
+    const at = api.indexOf('StyleGuide.sampling : {');
+    assert.ok(at > -1, 'the defaults sit beside the style guide spread');
+    const defaults = vm.runInNewContext('(' + api.slice(api.indexOf('{', at), api.indexOf('})', at) + 1) + ')');
+    assert.equal(defaults.frequency_penalty, 0,
+        'it priced "the" and the comma out of a long reply, which ran on as a list of unrelated words');
+    assert.ok(defaults.top_p < 1, 'the long tail of unlikely words is trimmed');
+    assert.ok(defaults.temperature < 1);
+    assert.ok(defaults.repetition_penalty > 1, 'the flat guard against looping stays');
+});
+
 test('style guide: the last-mile block is the last instruction before the reply', () => {
     const pb = fs.readFileSync(path.join(__dirname, 'js', 'util', 'prompt-builder.js'), 'utf8');
     const at = pb.indexOf('StyleGuide.lastMile');
@@ -5927,4 +5939,12 @@ test('Mailbox wiring: the watchers that fill the problem report also send to the
     assert.ok(html.includes('data-action="mailbox-test"'));
     const app = fs.readFileSync(path.join(__dirname, 'js', 'controllers', 'app.js'), 'utf8');
     assert.ok(app.includes('MailboxService.renderSettings()'), 'Settings shows whether it is on');
+});
+
+test('Mailbox: each AI call says how it ended, so a reply cut off at the cap reads differently from one that finished', () => {
+    const diag = fs.readFileSync(path.join(__dirname, 'js', 'controllers', 'diagnostics.js'), 'utf8');
+    assert.ok(/MailboxService\.send\('ai', \{[^}]*\bfinish,/.test(diag), 'the ai event carries finish');
+    const api = fs.readFileSync(path.join(__dirname, 'js', 'services', 'api.js'), 'utf8');
+    assert.ok(api.includes('this.lastFinishReason = "";'), 'cleared before each call');
+    assert.ok(api.includes('this.lastFinishReason = finishReason;'), "and set from the provider's answer");
 });

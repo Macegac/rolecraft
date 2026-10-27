@@ -11,6 +11,8 @@
             webllmInitProgress: "",
             openRouterModelCache: null,
             lastThinking: "",
+            // How the most recent reply ended: 'stop' when finished, 'length' when cut off at the cap.
+            lastFinishReason: "",
 
             // How long an un-signaled (background) call may take before it is given up on.
             // The main story turn is exempt: it passes its own signal so the stop button owns it.
@@ -403,6 +405,7 @@
 
                 let responseText = "";
                 this.lastThinking = "";
+                this.lastFinishReason = "";
                 try {
                     let rawResult = null;
                     if (provider === 'gemini') {
@@ -427,6 +430,7 @@
                     } else {
                         responseText = rawResult;
                     }
+                    this.lastFinishReason = finishReason;
 
                     // Defend against providers that return null/undefined or non-strings.
                     if (responseText == null) responseText = "";
@@ -740,11 +744,17 @@
                         // settings, so switching it on adopts them. Sending it at this app's
                         // defaults would be testing something the author never tested.
                         ...(state.enableStyleGuide && typeof StyleGuide !== 'undefined' ? StyleGuide.sampling : {
-                            temperature: 1.0,
-                            top_p: 1.0,
-                            // Deliberately mild. Roleplay reuses names and pronouns constantly,
-                            // so a heavy hand here reads as a model avoiding the words it needs.
-                            frequency_penalty: 0.2,
+                            // At 1.0 and 1.0 every token in the vocabulary stayed in play, so one
+                            // unlikely word could start a derailment with nothing to pull it back.
+                            temperature: 0.8,
+                            top_p: 0.95,
+                            // No frequency penalty: it grows with every use of a word. A few
+                            // paragraphs in, "the", "and" and the comma cost more than any word not
+                            // yet used, and a DeepSeek reply on 2026-10-26 dropped its small words
+                            // and ran on for 17,000 characters as a list of unrelated nouns.
+                            // The repetition penalty is the guard against looping; it is flat, so
+                            // it does not build up over a long reply.
+                            frequency_penalty: 0.0,
                             presence_penalty: 0.0,
                             repetition_penalty: 1.05
                         })

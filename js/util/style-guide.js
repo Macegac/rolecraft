@@ -42,7 +42,7 @@
             // own default, which on a prompt this size is most of the budget.
             reasoning: { effort: 'low' },
 
-            // The preset's own sampler settings. This app otherwise sends temperature 1.0, top_p 1.0,
-            // frequency_penalty 0.2 and repetition_penalty 1.05, which are not what it was tuned at.
+            // The preset's own sampler settings. This app otherwise sends temperature 0.8, top_p 0.95
+            // and repetition_penalty 1.05, which are not what it was tuned at.
             sampling: { temperature: 0.7, top_p: 0.8, frequency_penalty: 0, presence_penalty: 0, repetition_penalty: 1 }
         };

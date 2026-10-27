@@ -166,8 +166,9 @@
                         DiagLog.add('ai', `${state.apiProvider} / ${model}${via}${isJson ? ' (JSON)' : ''}: sent ${text.length} chars${images ? `, ${images} image(s)` : ''}, got ${out.length} chars${APIService.lastThinking ? ` + ${APIService.lastThinking.length} thinking` : ''} in ${ms} ms`,
                             { textLabel: 'prompt start', text: text.slice(0, 600) });
                         if (!out.trim()) DiagLog.add('warn', 'The AI returned an empty answer.');
+                        const finish = (result && typeof result === 'object' && result.finishReason) || APIService.lastFinishReason || '';
                         MailboxService.send('ai', {
-                            provider: state.apiProvider, model, via: (lastProvider && lastProvider.name) || '', json: !!isJson, images, ms,
+                            provider: state.apiProvider, model, via: (lastProvider && lastProvider.name) || '', json: !!isJson, images, ms, finish,
                             prompt: text, reply: out, thinking: APIService.lastThinking || ''
                         });
                         return result;
